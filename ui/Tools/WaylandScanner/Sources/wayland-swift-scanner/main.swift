@@ -1,0 +1,258 @@
+// wayland-swift-scanner INPUT.xml OUTPUT.swift
+//
+// Makes the server side of a Wayland protocol in Swift, for the Wayland
+// module in ui/Sources/Wayland. For each interface <name> it makes:
+//
+//   enum <Name>: Interface      the interface name and version, a Request
+//                               enum, and the decoder for requests
+//   <Name>.<Enum>               the protocol enums (OptionSet for bitfields)
+//   extension Resource<Name>    one send<Event>() method for each event
+
+import Foundation
+
+// MARK: - Names
+
+let keywords: Set<String> = [
+    "as", "associatedtype", "break", "case", "catch", "class", "continue", "default", "defer", "deinit",
+    "do", "else", "enum", "extension", "fallthrough", "false", "for", "func", "guard", "if", "import",
+    "in", "init", "inout", "internal", "is", "let", "nil", "operator", "private", "protocol", "public",
+    "repeat", "rethrows", "return", "self", "Self", "static", "struct", "subscript", "super", "switch",
+    "throw", "throws", "true", "try", "typealias", "var", "where", "while", "Type", "Protocol", "Any",
+]
+
+func words(_ name: String) -> [String] { name.split(separator: "_").map(String.init) }
+
+/// wl_surface -> WlSurface
+func typeName(_ name: String) -> String {
+    words(name).map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined()
+}
+
+/// set_title -> setTitle; 90 -> _90; class -> `class`
+func memberName(_ name: String) -> String {
+    let parts = words(name)
+    guard let first = parts.first else { return "_" }
+    let joined = first + parts.dropFirst().map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined()
+    if joined.first!.isNumber { return "_" + joined }
+    return keywords.contains(joined) ? "`\(joined)`" : joined
+}
+
+/// An enum's type name. "error" would hide Swift.Error in the interface.
+func enumTypeName(_ name: String) -> String {
+    name == "error" ? "ErrorCode" : typeName(name)
+}
+
+func summary(_ node: Node) -> String? {
+    let text = node.element("description")?["summary"] ?? node["summary"]
+    return text.map { $0.split(whereSeparator: \.isNewline).joined(separator: " ") }
+}
+
+// MARK: - Arguments
+
+struct Argument {
+    /// The name as a variable (a keyword is escaped).
+    let name: String
+    /// The name as an argument label (keywords need no escape there).
+    let label: String
+    let type: String
+    let interface: String?
+    let nullable: Bool
+
+    init(_ node: Node) {
+        name = memberName(node["name"]!)
+        label = name.trimmingCharacters(in: CharacterSet(charactersIn: "`"))
+        type = node["type"]!
+        interface = node["interface"].map(typeName)
+        nullable = node["allow-null"] == "true"
+    }
+
+    /// The Swift type of a request argument.
+    var requestType: String {
+        switch type {
+        case "int": "Int32"
+        case "uint": "UInt32"
+        case "fixed": "Double"
+        case "string": nullable ? "String?" : "String"
+        case "object": (interface.map { "Resource<\($0)>" } ?? "AnyResource") + (nullable ? "?" : "")
+        case "new_id": interface.map { "NewID<\($0)>" } ?? "UntypedNewID"
+        case "array": "[UInt8]"
+        case "fd": "Int32"
+        default: fatalError("unknown argument type \(type)")
+        }
+    }
+
+    /// The Swift type of an event argument.
+    var eventType: String {
+        switch type {
+        case "new_id": interface.map { "Resource<\($0)>" } ?? "AnyResource"
+        default: requestType
+        }
+    }
+
+    var decode: String {
+        switch type {
+        case "int": "try message.int()"
+        case "uint": "try message.uint()"
+        case "fixed": "try message.fixed()"
+        case "string": nullable ? "try message.optionalString()" : "try message.string()"
+        case "object":
+            if let interface {
+                nullable ? "try message.optionalObject(\(interface).self)" : "try message.object(\(interface).self)"
+            } else {
+                nullable ? "try message.optionalAnyObject()" : "try message.anyObject()"
+            }
+        case "new_id": interface.map { "try message.newID(\($0).self, version: version)" } ?? "try message.untypedNewID()"
+        case "array": "try message.array()"
+        case "fd": "try message.fd()"
+        default: fatalError("unknown argument type \(type)")
+        }
+    }
+
+    var encode: String {
+        switch type {
+        case "int": "event.int(\(name))"
+        case "uint": "event.uint(\(name))"
+        case "fixed": "event.fixed(\(name))"
+        case "string": "event.string(\(name))"
+        case "object": "event.object(\(name))"
+        case "new_id": "event.newID(\(name))"
+        case "array": "event.array(\(name))"
+        case "fd": "event.fd(\(name))"
+        default: fatalError("unknown argument type \(type)")
+        }
+    }
+}
+
+// MARK: - Code
+
+func generate(_ protocolNode: Node, source: String) -> String {
+    var out = """
+    // Generated by wayland-swift-scanner from \(source). Do not edit.
+    // Regenerate with `make protocols`.
+
+    """
+    for interface in protocolNode.elements("interface") {
+        out += "\n" + generate(interface: interface)
+    }
+    return out
+}
+
+func generate(interface node: Node) -> String {
+    let name = node["name"]!
+    let type = typeName(name)
+    let requests = node.elements("request")
+    let events = node.elements("event")
+    var out = ""
+
+    if let summary = summary(node) { out += "/// \(name): \(summary)\n" }
+    out += "public enum \(type): Interface {\n"
+    out += "    public static let name = \"\(name)\"\n"
+    out += "    public static let version: UInt32 = \(node["version"]!)\n\n"
+
+    // Requests.
+    out += "    public enum Request {\n"
+    for request in requests {
+        if let summary = summary(request) { out += "        /// \(summary)\n" }
+        let arguments = request.elements("arg").map(Argument.init)
+        let labels = arguments.map { "\($0.label): \($0.requestType)" }.joined(separator: ", ")
+        out += "        case \(memberName(request["name"]!))\(arguments.isEmpty ? "" : "(\(labels))")\n"
+    }
+    out += "    }\n\n"
+
+    out += "    public static func decode(opcode: UInt16, from message: inout MessageReader, version: UInt32) throws(ProtocolError) -> Request {\n"
+    out += "        switch opcode {\n"
+    for (opcode, request) in requests.enumerated() {
+        let arguments = request.elements("arg").map(Argument.init)
+        let caseName = memberName(request["name"]!)
+        out += "        case \(opcode):\n"
+        if let since = request["since"], since != "1" {
+            // A request newer than the object's version is an error.
+            out += "            guard version >= \(since) else { throw message.invalidOpcode(opcode) }\n"
+        }
+        for argument in arguments {
+            out += "            let \(argument.name) = \(argument.decode)\n"
+        }
+        let values = arguments.map { "\($0.label): \($0.name)" }.joined(separator: ", ")
+        out += "            return .\(caseName)\(arguments.isEmpty ? "" : "(\(values))")\n"
+    }
+    out += "        default:\n"
+    out += "            throw message.invalidOpcode(opcode)\n"
+    out += "        }\n"
+    out += "    }\n\n"
+
+    let destructors = requests.enumerated().filter { $0.element["type"] == "destructor" }.map { String($0.offset) }
+    out += "    public static func isDestructor(opcode: UInt16) -> Bool {\n"
+    out += destructors.isEmpty ? "        false\n" : "        [\(destructors.joined(separator: ", "))].contains(opcode)\n"
+    out += "    }\n"
+
+    // Enums.
+    for enumNode in node.elements("enum") {
+        out += "\n" + generate(enum: enumNode)
+    }
+    out += "}\n"
+
+    // Events.
+    if !events.isEmpty {
+        out += "\nextension Resource where I == \(type) {\n"
+        for (opcode, event) in events.enumerated() {
+            let arguments = event.elements("arg").map(Argument.init)
+            let since = event["since"] ?? "1"
+            if let summary = summary(event) { out += "    /// \(summary)\n" }
+            let parameters = arguments.map {
+                ($0.label == $0.name ? $0.name : "\($0.label) \($0.name)") + ": \($0.eventType)"
+            }.joined(separator: ", ")
+            out += "    public func send\(typeName(event["name"]!))(\(parameters)) {\n"
+            out += "        guard \(arguments.isEmpty ? "let" : "var") event = beginEvent(opcode: \(opcode), since: \(since)) else { return }\n"
+            for argument in arguments {
+                out += "        \(argument.encode)\n"
+            }
+            out += "        send(event)\n"
+            out += "    }\n"
+            if opcode < events.count - 1 { out += "\n" }
+        }
+        out += "}\n"
+    }
+    return out
+}
+
+func generate(enum node: Node) -> String {
+    let type = enumTypeName(node["name"]!)
+    var out = ""
+    if let summary = summary(node) { out += "    /// \(summary)\n" }
+    if node["bitfield"] == "true" {
+        out += "    public struct \(type): OptionSet, Sendable {\n"
+        out += "        public let rawValue: UInt32\n"
+        out += "        public init(rawValue: UInt32) { self.rawValue = rawValue }\n"
+        // A zero entry ("none") is the empty set, [], in Swift.
+        for entry in node.elements("entry") where Int(entry["value"]!.replacingOccurrences(of: "0x", with: ""), radix: 16) != 0 {
+            if let summary = summary(entry) { out += "        /// \(summary)\n" }
+            out += "        public static let \(memberName(entry["name"]!)) = \(type)(rawValue: \(entry["value"]!))\n"
+        }
+    } else {
+        out += "    public enum \(type): UInt32, Sendable {\n"
+        for entry in node.elements("entry") {
+            if let summary = summary(entry) { out += "        /// \(summary)\n" }
+            out += "        case \(memberName(entry["name"]!)) = \(entry["value"]!)\n"
+        }
+    }
+    out += "    }\n"
+    return out
+}
+
+// MARK: - Main (last: the tables above must be initialised first)
+
+let arguments = CommandLine.arguments
+guard arguments.count == 3 else {
+    FileHandle.standardError.write(Data("usage: wayland-swift-scanner INPUT.xml OUTPUT.swift\n".utf8))
+    exit(2)
+}
+
+do {
+    let input = URL(fileURLWithPath: arguments[1])
+    let document = try parseXML(String(contentsOf: input, encoding: .utf8))
+    guard let protocolNode = document.element("protocol") else { throw XMLError(description: "no <protocol>") }
+    let code = generate(protocolNode, source: input.lastPathComponent)
+    try code.write(to: URL(fileURLWithPath: arguments[2]), atomically: true, encoding: .utf8)
+} catch {
+    FileHandle.standardError.write(Data("wayland-swift-scanner: \(error)\n".utf8))
+    exit(1)
+}

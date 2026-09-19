@@ -126,9 +126,15 @@ ui-container: builder volumes
 		find "$$(swift build --package-path ui --scratch-path /work/swiftpm/dev --show-bin-path)" \
 			-maxdepth 1 -type f -perm -u+x -exec cp {} out/ui/ \; && ls out/ui'
 
-# Regenerate Wayland protocol C code in ui/ (commit the result).
-protocols: builder
+# Regenerate the Wayland protocol code in ui/ (commit the result): the XML
+# files and the C client code from the builder, then the Swift server code.
+WAYLAND_SCANNER = $(SWIFT_MAC)/usr/bin/swift run --package-path ui/Tools/WaylandScanner -c release \
+	wayland-swift-scanner
+
+protocols: builder $(SWIFT_MAC)/usr/bin/swift
 	$(RUN) $(IMAGE) ui/Scripts/generate-protocols.sh
+	$(WAYLAND_SCANNER) ui/Protocols/wayland.xml ui/Sources/Wayland/Protocols/Wayland.swift
+	$(WAYLAND_SCANNER) ui/Protocols/xdg-shell.xml ui/Sources/Wayland/Protocols/XDGShell.swift
 
 shell: builder volumes
 	$(RUN) -it $(IMAGE) bash

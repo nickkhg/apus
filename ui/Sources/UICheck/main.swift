@@ -14,7 +14,6 @@ import CInput
 import CSeat
 import CUdev
 import CWaylandClient
-import CWaylandServer
 import CXKBCommon
 import Glibc
 
@@ -88,12 +87,6 @@ check("xkbcommon") {
 }
 
 check("libseat") { linked(libseat_open_seat) }
-
-check("wayland-server") {
-    guard let display = wl_display_create() else { return nil }
-    wl_display_destroy(display)
-    return "display created"
-}
 
 check("wayland-client") { linked(wl_display_connect) }
 

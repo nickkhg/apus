@@ -1,5 +1,6 @@
 import DRMKit
 import Glibc
+import Wayland
 
 /// The compositor: owns the screen, input and the Wayland server, keeps the
 /// window list and turns it into a display list for each frame.
@@ -42,15 +43,15 @@ public final class Compositor {
         debug("screen \(drm.path) \(screen.output); starting input")
         input = try Input(seat: seat)
         debug("input ready; starting Wayland server")
-        server = try WaylandServer()
-        loop = EventLoop(loop: server.eventLoop)
+        loop = try EventLoop()
+        server = try WaylandServer(loop: loop)
         pointer = (Double(screen.width) / 2, Double(screen.height) / 2)
 
         loop.watch(fd: seat.fd) { [unowned self] in seat.dispatch() }
         loop.watch(fd: drm.fd) { [unowned self] in drm.handleEvents() }
         loop.watch(fd: input.fd) { [unowned self] in input.dispatch() }
-        loop.onSignal(SIGINT) { [unowned self] in running = false }
-        loop.onSignal(SIGTERM) { [unowned self] in running = false }
+        try loop.onSignal(SIGINT) { [unowned self] in running = false }
+        try loop.onSignal(SIGTERM) { [unowned self] in running = false }
 
         screen.draw = { [unowned self] canvas in SoftwareRenderer.render(displayList(), into: canvas) }
         screen.frameShown = { [unowned self] in

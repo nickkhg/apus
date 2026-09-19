@@ -1,4 +1,4 @@
 out/
 build/cache/
-ui/.build/
+.build/
 xcuserdata/
