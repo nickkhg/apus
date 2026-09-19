@@ -45,8 +45,8 @@ The builder container mounts the repository at the same path as on the Mac. Thus
 | `image/repart.d/` | The partition layout of the live image. |
 | `image/esp/` | systemd-boot configuration of the live image. |
 | `packages/` | Source of the mydistro packages (one `PKGBUILD` in each directory). |
-| `ui/` | The Swift package: the compositor, the Wayland server, the toolkit, the shell, the tools, and the C library modules. |
-| `ui/Tests/` | The unit tests of the toolkit and the shell (`make test-ui`). |
+| `ui/` | The display server: the compositor, the Wayland server, the tools, and the C library modules. |
+| `ui/Toolkit/` | A Swift package of its own: the toolkit (`Render`, `Toolkit`) and the shell UI (`Shell`), with their tests. It also builds for macOS. |
 | `ui/Protocols/` | The Wayland protocol XML files. |
 | `ui/Tools/WaylandScanner/` | The generator of the Swift protocol code. |
 | `mydistro.xcodeproj`, `xcode/` | The Xcode project, and the script that its targets run. |

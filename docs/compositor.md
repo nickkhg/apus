@@ -33,7 +33,7 @@ mydistro-hello-client &
 | `Compositor.swift` | `Compositor` | Connects the parts. It keeps the window list, draws the shell panel, and makes the display list for each frame. |
 | `Support.swift` | | Logging, the monotonic clock, and `permanent(_:)` for C handler tables. |
 
-The display list and the CPU renderer are in the `Render` library (`ui/Sources/Render/`). The views and the layout are in the `Toolkit` library, and the panel is in the `Shell` library. See [toolkit.md](toolkit.md).
+The display list, the views and the shell UI are in the package `ui/Toolkit/`: the libraries `Render`, `Toolkit` and `Shell`. See [toolkit.md](toolkit.md).
 
 The `DRMKit` library (`ui/Sources/DRMKit/`) finds outputs, makes framebuffers, puts them on the screen, and does page flips.
 
@@ -64,9 +64,11 @@ The display list is the interface between the UI layer and the pixels. The toolk
 
 The top 28 pixels of the screen are the shell panel. The compositor draws it with the toolkit, over the windows and under the pointer. It has the name of the system, the title of the front window, and the time in it.
 
-The compositor gives the panel a `PanelState` for each frame: the window titles from the Wayland toplevels, and the time from `localtime_r`. A timer in the event loop reads the clock every second and asks for a frame when the minute changes.
+The compositor draws `RootView` from the `Shell` library over the whole screen. `RootView` puts the panel at the top and leaves the space under it free, and `RootView.windowArea(screen:)` tells the compositor where the windows go. Thus the shell decides how much space it takes.
 
-The panel is a view, so its tests need no screen. See [toolkit.md](toolkit.md).
+The compositor gives the shell a `ShellState` for each frame: the window titles from the Wayland toplevels, and the time from `localtime_r`. A timer in the event loop reads the clock every second and asks for a frame when the minute changes.
+
+The shell is a view, so its tests need no screen. See [toolkit.md](toolkit.md).
 
 ## Wayland support
 

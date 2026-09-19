@@ -1,21 +1,7 @@
 import Toolkit
 
-// The shell: the parts of the screen that mydistro itself draws. The panel is
-// the first one. It is a view, so it says what it contains and the toolkit
-// lays it out. The compositor gives it the state and draws the result.
-
-/// What the panel shows. The compositor fills it in for each frame.
-public struct PanelState: Equatable, Sendable {
-    /// The titles of the open windows, back to front.
-    public var windowTitles: [String]
-    /// The time, as "14:05".
-    public var clock: String
-
-    public init(windowTitles: [String] = [], clock: String = "") {
-        self.windowTitles = windowTitles
-        self.clock = clock
-    }
-}
+// The panel is the first part of the shell UI. It is a view, so it says what
+// it contains and the toolkit lays it out. See RootView.swift.
 
 /// The bar at the top of the screen: the name of the system, the title of the
 /// front window, and the time.
@@ -27,9 +13,9 @@ public struct Panel: View {
     static let nameColor = Color(hex: 0xC8A8F0)
     static let titleColor = Color(white: 0.8)
 
-    let state: PanelState
+    let state: ShellState
 
-    public init(state: PanelState) {
+    public init(state: ShellState) {
         self.state = state
     }
 

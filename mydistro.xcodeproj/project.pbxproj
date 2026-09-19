@@ -140,6 +140,9 @@
 			);
 			mainGroup = 6D79646F000000000000010C;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				6D79646F0000000000000120 /* XCLocalSwiftPackageReference "ui/Toolkit" */,
+			);
 			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
@@ -213,6 +216,13 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		6D79646F0000000000000120 /* XCLocalSwiftPackageReference "ui/Toolkit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ui/Toolkit;
+		};
+/* End XCLocalSwiftPackageReference section */
 	};
 	rootObject = 6D79646F000000000000010D /* Project object */;
 }

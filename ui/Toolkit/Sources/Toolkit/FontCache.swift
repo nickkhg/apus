@@ -1,6 +1,10 @@
 import CFreeType
 import CHarfBuzz
+#if canImport(Glibc)
 import Glibc
+#else
+import Darwin
+#endif
 
 // Text needs two C libraries: FreeType turns a glyph into pixels, and
 // HarfBuzz decides which glyphs a string needs and where they go. The cache
@@ -50,17 +54,23 @@ final class FontCache {
     private var faces: [String: LoadedFace] = [:]
     private let lock = Lock()
 
-    /// The font files to look for. The first one that opens wins.
-    /// ttf-dejavu installs them; the mydistro-ui package depends on it.
+    /// The font files to look for. The first one that opens wins. On
+    /// mydistro the ttf-dejavu package installs the DejaVu files, and the
+    /// mydistro-ui package depends on it. The macOS files are for the tests
+    /// and for a preview on the Mac: the Mac draws a different face.
     private static let files: [(monospaced: Bool, bold: Bool, paths: [String])] = [
         (false, false, ["/usr/share/fonts/TTF/DejaVuSans.ttf",
-                        "/usr/share/fonts/dejavu/DejaVuSans.ttf"]),
+                        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+                        "/System/Library/Fonts/Supplemental/Arial.ttf"]),
         (false, true, ["/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
-                       "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"]),
+                       "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+                       "/System/Library/Fonts/Supplemental/Arial Bold.ttf"]),
         (true, false, ["/usr/share/fonts/TTF/DejaVuSansMono.ttf",
-                       "/usr/share/fonts/dejavu/DejaVuSansMono.ttf"]),
+                       "/usr/share/fonts/dejavu/DejaVuSansMono.ttf",
+                       "/System/Library/Fonts/Menlo.ttc"]),
         (true, true, ["/usr/share/fonts/TTF/DejaVuSansMono-Bold.ttf",
-                      "/usr/share/fonts/dejavu/DejaVuSansMono-Bold.ttf"]),
+                      "/usr/share/fonts/dejavu/DejaVuSansMono-Bold.ttf",
+                      "/System/Library/Fonts/Menlo.ttc"]),
     ]
 
     private init() {

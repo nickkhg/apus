@@ -69,6 +69,7 @@ Product > Clean does nothing. Use `make clean` in a terminal.
 ### Limits of Xcode
 
 - Xcode cannot compile for Linux, and it cannot use a Swift SDK. Thus, code completion and jump to definition do not work for the Linux modules in Xcode. Errors such as `No such module 'Glibc'` in the Xcode editor are normal. The build is correct.
+- The toolkit and the shell are different: `ui/Toolkit/` also builds for macOS. Open `ui/Toolkit/Package.swift` in Xcode to get code completion for your UI code.
 - The Xcode debugger cannot attach to a program in the VM.
 
 ### Code completion in other editors
@@ -77,18 +78,23 @@ Product > Clean does nothing. Use `make clean` in a terminal.
 
 A test with SourceKit-LSP gave the documentation of the C function `libinput_dispatch` and no errors in `Input.swift`.
 
-## The package
+## The two packages
+
+`ui/` has the display server. It builds for mydistro only.
+
+`ui/Toolkit/` is a package of its own: the toolkit and the shell (`Render`, `Toolkit`, `Shell`). It builds for mydistro and for macOS. Write UI code there. See [toolkit.md](toolkit.md).
+
+`make ui` builds both, because `ui/` depends on `ui/Toolkit/`.
+
+## The display server package
 
 | Target | Kind | Content |
 |---|---|---|
-| `CDRM`, `CGBM`, `CEGL`, `CGLES`, `CInput`, `CUdev`, `CXKBCommon`, `CSeat`, `CWaylandClient`, `CFreeType`, `CHarfBuzz` | System library | The C libraries |
+| `CDRM`, `CGBM`, `CEGL`, `CGLES`, `CInput`, `CUdev`, `CXKBCommon`, `CSeat`, `CWaylandClient` | System library | The C libraries |
 | `CLinux` | System library | The glibc headers for epoll and signalfd. No library and no C code. |
 | `CXDGShellClient` | C | The `xdg-shell` client code that `wayland-scanner` makes, for the test client |
 | `DRMKit` | Swift library | A Swift layer over libdrm |
 | `Wayland` | Swift library | The Wayland server. See [compositor.md](compositor.md). |
-| `Render` | Swift library | The display list and the software renderer |
-| `Toolkit` | Swift library | The views, the layout, and the text. See [toolkit.md](toolkit.md). |
-| `Shell` | Swift library | What mydistro draws itself, as views. Now: the panel. |
 | `Compositor` | Swift library | The compositor. See [compositor.md](compositor.md). |
 | `mydistro-compositor` | Program | Runs the compositor |
 | `mydistro-hello-client` | Program | A small Wayland app with one window. It uses libwayland-client, as most apps do. |
@@ -149,7 +155,7 @@ It must run as root, when no other program uses the display.
 
 ## Tests
 
-`make test-ui` runs the unit tests of `ui/` in the builder container, with the Linux toolchain. They test the layout, the text, and the panel. They need no screen and no VM, and they take approximately one second. See [toolkit.md](toolkit.md#tests).
+`make test-ui` runs the unit tests of the toolkit and the shell on the Mac. They test the layout, the text, and the panel. They need no screen, no VM and no container. `make test-ui-linux` runs the same tests on mydistro, in the builder container. See [toolkit.md](toolkit.md#tests).
 
 The tests that need a screen run in the VM. See [testing.md](testing.md).
 

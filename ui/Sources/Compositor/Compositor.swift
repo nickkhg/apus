@@ -32,8 +32,8 @@ public final class Compositor {
     private var windows: [Window] = []   // back to front
     private var pointer: (x: Double, y: Double)
     private var running = true
-    /// What the shell panel shows. The clock updates it every minute.
-    private var panel = PanelState()
+    /// What the shell shows. The clock updates it every minute.
+    private var shell = ShellState()
 
     public var socketName: String { server.socketName }
     public var screenSize: (width: Int, height: Int) { (screen.width, screen.height) }
@@ -64,7 +64,7 @@ public final class Compositor {
             for window in windows { window.surface.sendFrameDone(time: now) }
         }
         input.handler = { [unowned self] event in handle(event) }
-        panel.clock = Compositor.clockText()
+        shell.clock = Compositor.clockText()
         // The clock changes once a minute. A one-second timer keeps it right
         // without a frame between minutes.
         try loop.onTimer(milliseconds: 1000) { [unowned self] in updateClock() }
@@ -108,23 +108,21 @@ public final class Compositor {
                 list.append(.bitmap(content, x: window.x, y: window.y))
             }
         }
-        // The shell panel goes over the windows, and the pointer over both.
-        var state = panel
+        // The shell goes over the windows, and the pointer over both.
+        var state = shell
         state.windowTitles = windows.map { $0.surface.toplevel?.title ?? "" }
-        ViewRenderer.render(Panel(state: state), in: panelRect, into: &list)
+        ViewRenderer.render(RootView(state: state), in: screenRect, into: &list)
         list.append(.bitmap(Cursor.bitmap, x: Int(pointer.x), y: Int(pointer.y)))
         return list
     }
 
-    /// The bar at the top of the screen.
-    private var panelRect: Rect {
-        Rect(x: 0, y: 0, width: screen.width, height: Int(Panel.height))
+    private var screenRect: Rect {
+        Rect(x: 0, y: 0, width: screen.width, height: screen.height)
     }
 
-    /// The part of the screen that windows use.
+    /// The part of the screen that windows use. The shell says where it is.
     private var windowArea: Rect {
-        Rect(x: 0, y: Int(Panel.height),
-             width: screen.width, height: screen.height - Int(Panel.height))
+        RootView.windowArea(screen: screenRect)
     }
 
     /// "14:05" from the system clock, in local time.
@@ -140,8 +138,8 @@ public final class Compositor {
 
     private func updateClock() {
         let text = Compositor.clockText()
-        guard text != panel.clock else { return }
-        panel.clock = text
+        guard text != shell.clock else { return }
+        shell.clock = text
         screen.setNeedsFrame()
     }
 

@@ -35,13 +35,16 @@ If `out/vm/target.qcow2` does not exist, `vm/run.sh` makes an 8 GB disk. To star
 | `make gui` | Boots the target disk in a window. |
 | `make demo` | Boots the target disk in a window and starts the compositor with a test window. |
 | `make test` | Runs the three tests. |
-| `make test-ui` | Runs the unit tests of `ui/` in the builder container. No VM. |
+| `make test-ui` | Runs the unit tests of the toolkit and the shell on the Mac. No VM and no container. |
+| `make test-ui-linux` | Runs the same tests on mydistro, in the builder container. |
 | `make test-dev` | Runs `make ui`, then the compositor test with the programs from `out/ui/` (through `/mnt/host/ui`). Needs the disk from `make test`. |
 | `make demo-dev` | The same as `make demo`, with the programs from `out/ui/`. |
 
 ## Unit tests
 
-`make test-ui` runs the unit tests of the Swift package in the builder container (`swift test`). They test the layout of the toolkit, the text, and the shell panel. A test makes a display list from a view and looks at the items in it, so it needs no screen. See [toolkit.md](toolkit.md#tests).
+`make test-ui` runs the unit tests of `ui/Toolkit/` on the Mac, because that package also builds for macOS. A run takes a few seconds. They test the layout of the toolkit, the text, and the shell panel. A test makes a display list from a view and looks at the items in it, so it needs no screen.
+
+`make test-ui-linux` runs the same tests on mydistro, in the builder container. Run it before a commit. See [toolkit.md](toolkit.md#tests).
 
 ## The tests
 

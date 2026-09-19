@@ -1,6 +1,8 @@
 # Toolkit
 
-The toolkit is the declarative user interface layer of mydistro. It has the shape of SwiftUI: a view is a value, and the `body` of a view says what it contains. The code is in `ui/Sources/Toolkit/`. The shell uses it (`ui/Sources/Shell/`), and the compositor draws the result.
+The toolkit is the declarative user interface layer of mydistro. It has the shape of SwiftUI: a view is a value, and the `body` of a view says what it contains.
+
+The toolkit and the shell are a Swift package of their own, in `ui/Toolkit/`. **Write your UI in `ui/Toolkit/Sources/Shell/`.** The rest of `ui/` is the display server, and you rarely change it.
 
 ```swift
 HStack(spacing: 12) {
@@ -56,13 +58,73 @@ A stack shares the length along its axis between the children. It gives the spac
 
 A stack is only as large as its children need. To make a stack fill its space, put `Spacer` in it, or use `.frame(maxWidth: .infinity, maxHeight: .infinity)`.
 
-## The parts
+## Where the files are
+
+```
+ui/
+├── Package.swift          mydistro-ui: the display server, for mydistro only
+├── Sources/               THE SYSTEM
+│   ├── Compositor/        screen, input, windows, the display list
+│   ├── Wayland/           the Wayland server
+│   ├── DRMKit/  C*/       the kernel-facing libraries
+│   └── CompositorMain/  HelloClient/  DisplayProbe/  UICheck/
+└── Toolkit/               A SWIFT PACKAGE: mydistro-toolkit
+    ├── Package.swift
+    ├── Sources/
+    │   ├── Render/        the display list and the software renderer
+    │   ├── Toolkit/       View, the layout, the text
+    │   └── Shell/         YOUR UI
+    │       ├── RootView.swift
+    │       └── Panel.swift
+    └── Tests/
+```
 
 | Module | Content |
 |---|---|
 | `Render` | `Rect`, `Bitmap`, `DisplayItem`, `DisplayList`, `Canvas`, and `SoftwareRenderer`. No other module of ours is below it. |
 | `Toolkit` | The views, the layout, the text, and `ViewRenderer`. It makes display lists. It knows nothing about the screen or about Wayland. |
-| `Shell` | What mydistro draws itself. `Panel` is the bar at the top of the screen. It gets a `PanelState` from the compositor. |
+| `Shell` | What mydistro draws itself. |
+
+### The root view
+
+`RootView` is the whole screen. The compositor draws it for each frame, over the windows of the apps and under the pointer:
+
+```swift
+public struct RootView: View {
+    let state: ShellState
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            Panel(state: state)
+                .frame(height: Panel.height)
+            Spacer()            // the windows are behind this space
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+```
+
+To add a part to the interface, write a `View` in `ui/Toolkit/Sources/Shell/` and put it in the body of `RootView`.
+
+`ShellState` is what the compositor gives the shell for each frame: the window titles and the time. Add a value to it when your UI needs more.
+
+`RootView.windowArea(screen:)` says which part of the screen the windows use. The compositor asks the shell, so the shell decides how much space it takes.
+
+### The two systems
+
+The toolkit package builds for mydistro and for macOS:
+
+| Command | Builds for | Time | Use |
+|---|---|---|---|
+| `make test-ui` | macOS | Seconds | The usual test run while you write UI code |
+| `make test-ui-linux` | mydistro (in the container) | Approximately 30 seconds | Before a commit |
+| `make ui` | mydistro (cross, with the Swift SDK) | Approximately 3 seconds | Run it in the VM |
+
+Because the package builds for macOS, Xcode gives code completion for the toolkit and the shell. Open `ui/Toolkit/Package.swift` in Xcode. For the display server, Xcode cannot do this (see [ui.md](ui.md#limits-of-xcode)).
+
+The only platform-dependent code is in `FontCache.swift`: which directory the font files are in. On mydistro the font is DejaVu, and on the Mac it is Arial. Thus the same test measures different glyph widths, and the tests do not compare exact widths.
+
+`ui/Toolkit/Package.swift` runs pkg-config for FreeType and HarfBuzz. `MYDISTRO_CROSS=1` stops this. `make ui` sets that variable, because then the Swift SDK supplies the include directories. Without this, pkg-config on the Mac answers with the macOS libraries of Homebrew.
 
 ## The views
 
@@ -106,9 +168,11 @@ A `body` uses `if`, `if`/`else`, `switch`, and `for` loops, as SwiftUI does.
 2. For a view that contains other views, write `var body: some View`. That is all.
 3. For a view that draws, add `public typealias Body = Never`, write a `LayoutNode` subclass with `computeSize(fitting:)` and `render(in:into:)`, and make the node in `makeNodes(into:environment:)`.
 
+A view of the interface goes in `ui/Toolkit/Sources/Shell/`. A view that every UI can use goes in `ui/Toolkit/Sources/Toolkit/`.
+
 ## Tests
 
-`make test-ui` runs the unit tests in the builder container. They need no screen. `Tests/ToolkitTests/` tests the layout, the modifiers, and the text. `Tests/ShellTests/` tests the panel.
+`make test-ui` runs the unit tests on the Mac, and `make test-ui-linux` runs the same tests on mydistro. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, and the text. `ui/Toolkit/Tests/ShellTests/` tests the panel.
 
 A test lays out a view in a rectangle and looks at the display list. For example, this is the test of a spacer:
 
