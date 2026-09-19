@@ -45,7 +45,7 @@ RUN = container run --rm --cap-add ALL -c $(CPUS) -m $(MEM) \
 	-v $(VOL_PKG):/var/cache/pacman/pkg \
 	-w $(CURDIR)
 
-.PHONY: help builder volumes build sdk ui ui-container protocols shell live installed gui demo demo-dev test test-dev clean distclean
+.PHONY: help builder volumes build sdk ui ui-container protocols shell live installed gui demo demo-dev test test-dev test-ui clean distclean
 
 help:
 	@echo "make build      build out/live.img"
@@ -58,6 +58,7 @@ help:
 	@echo "make ui-container  the same build in the build container"
 	@echo "make sdk        the macOS Swift toolchain and the mydistro Swift SDK (make ui does this)"
 	@echo "make test       install, display and compositor tests"
+	@echo "make test-ui    unit tests of ui/ (layout and drawing) in the container"
 	@echo "make test-dev   the compositor test, with the programs from 'make ui'"
 	@echo "make shell      root shell in the build container"
 	@echo "make clean      remove build output (keeps package cache)"
@@ -125,6 +126,11 @@ ui-container: builder volumes
 		--static-swift-stdlib && mkdir -p out/ui && \
 		find "$$(swift build --package-path ui --scratch-path /work/swiftpm/dev --show-bin-path)" \
 			-maxdepth 1 -type f -perm -u+x -exec cp {} out/ui/ \; && ls out/ui'
+
+# Unit tests of the ui package: layout and drawing. They need no screen and
+# no VM, so they run in the builder container.
+test-ui: builder volumes
+	$(RUN) $(IMAGE) swift test --package-path ui --scratch-path /work/swiftpm/test
 
 # Regenerate the Wayland protocol code in ui/ (commit the result): the XML
 # files and the C client code from the builder, then the Swift server code.

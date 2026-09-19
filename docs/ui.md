@@ -86,6 +86,9 @@ A test with SourceKit-LSP gave the documentation of the C function `libinput_dis
 | `CXDGShellClient` | C | The `xdg-shell` client code that `wayland-scanner` makes, for the test client |
 | `DRMKit` | Swift library | A Swift layer over libdrm |
 | `Wayland` | Swift library | The Wayland server. See [compositor.md](compositor.md). |
+| `Render` | Swift library | The display list and the software renderer |
+| `Toolkit` | Swift library | The views, the layout, and the text. See [toolkit.md](toolkit.md). |
+| `Shell` | Swift library | What mydistro draws itself, as views. Now: the panel. |
 | `Compositor` | Swift library | The compositor. See [compositor.md](compositor.md). |
 | `mydistro-compositor` | Program | Runs the compositor |
 | `mydistro-hello-client` | Program | A small Wayland app with one window. It uses libwayland-client, as most apps do. |
@@ -143,6 +146,12 @@ To add a protocol to the compositor:
 3. It puts the framebuffer on the screen, waits, and restores the screen.
 
 It must run as root, when no other program uses the display.
+
+## Tests
+
+`make test-ui` runs the unit tests of `ui/` in the builder container, with the Linux toolchain. They test the layout, the text, and the panel. They need no screen and no VM, and they take approximately one second. See [toolkit.md](toolkit.md#tests).
+
+The tests that need a screen run in the VM. See [testing.md](testing.md).
 
 ## Development loop
 

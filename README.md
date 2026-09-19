@@ -1,6 +1,6 @@
 # mydistro
 
-mydistro is a Linux distribution for aarch64, based on Arch Linux ARM. It uses systemd and pacman. A live image boots in a VM and installs the system to a disk. The user interface is a Wayland compositor in Swift 6.4.
+mydistro is a Linux distribution for aarch64, based on Arch Linux ARM. It uses systemd and pacman. A live image boots in a VM and installs the system to a disk. The user interface is a Wayland compositor in Swift 6.4, with a declarative toolkit of its own.
 
 ## Requirements
 
@@ -59,6 +59,7 @@ To install software on a running system, use pacman. For example: `pacman -S hto
 | [Packages](docs/packages.md) | The `[mydistro]` repository, the branding package, and how to add packages |
 | [User interface](docs/ui.md) | The Swift toolchains, the Swift SDK, Xcode, the Swift package, and the development loop |
 | [Compositor](docs/compositor.md) | The design of `mydistro-compositor` and of its Wayland server in Swift |
+| [Toolkit](docs/toolkit.md) | The declarative UI layer: views, layout, and text |
 | [Testing](docs/testing.md) | The VM, the tests, and the screenshot checks |
 | [Decisions](docs/decisions.md) | The main decisions, with the reasons and the evidence |
 | [Troubleshooting](docs/troubleshooting.md) | Problems that occurred, and their solutions |

@@ -1,8 +1,10 @@
-// The compositor draws each frame from a display list: a flat, back-to-front
-// list of drawing items. Window contents, the cursor and (later) the shell's
-// own UI all become items. A declarative UI layer (such as OpenSwiftUI, once
-// it runs on Linux) plugs in by producing items; the renderer is the only
-// code that touches pixels, so it can move to the GPU without changing that.
+// The screen is drawn from a display list: a flat, back-to-front list of
+// drawing items. Window contents, the cursor and the shell's own UI all
+// become items. The renderer is the only code that writes pixels, so a GPU
+// renderer can replace SoftwareRenderer and nothing above it changes.
+//
+// This module is the bottom of the UI stack. The Toolkit module makes
+// display lists from views, and the Compositor module composites windows.
 
 /// A rectangle in screen pixels.
 public struct Rect: Sendable, Equatable {
@@ -41,6 +43,10 @@ public struct Canvas {
     public let width: Int
     public let height: Int
     public let stride: Int
+
+    public init(pixels: UnsafeMutablePointer<UInt32>, width: Int, height: Int, stride: Int) {
+        (self.pixels, self.width, self.height, self.stride) = (pixels, width, height, stride)
+    }
 }
 
 /// Draws display lists with the CPU.

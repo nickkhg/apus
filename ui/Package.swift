@@ -29,6 +29,9 @@ func system(_ name: String, pkgConfig: String, package: String) -> Target {
 let package = Package(
     name: "mydistro-ui",
     products: [
+        .library(name: "Render", targets: ["Render"]),
+        .library(name: "Toolkit", targets: ["Toolkit"]),
+        .library(name: "Shell", targets: ["Shell"]),
         .library(name: "DRMKit", targets: ["DRMKit"]),
         .library(name: "Wayland", targets: ["Wayland"]),
         .library(name: "Compositor", targets: ["Compositor"]),
@@ -70,10 +73,25 @@ let package = Package(
         // libDRM.a would hide libdrm.so from the linker.)
         .target(name: "DRMKit", dependencies: ["CDRM"]),
 
-        // The compositor: screen, input, seat, window list, display list and
-        // software renderer, and the Wayland globals that apps use.
+        // Drawing: the display list (what to draw) and the software renderer
+        // (how to draw it). The bottom of the UI stack: no other module of
+        // ours is below it.
+        .target(name: "Render"),
+
+        // The toolkit: views, layout and text. It makes display lists, so it
+        // knows nothing about the screen, the windows or Wayland.
+        .target(name: "Toolkit", dependencies: ["Render", "CFreeType", "CHarfBuzz"]),
+
+        // The shell: what mydistro draws itself, as toolkit views. It gets
+        // the state (window titles, the time) from the compositor, so it
+        // needs no display and the tests need no screen.
+        .target(name: "Shell", dependencies: ["Toolkit"]),
+
+        // The compositor: screen, input, seat, window list, and the Wayland
+        // globals that apps use. It draws the shell with the toolkit.
         .target(name: "Compositor", dependencies: [
-            "DRMKit", "CDRM", "CInput", "CUdev", "CXKBCommon", "CSeat", "Wayland",
+            "DRMKit", "CDRM", "CInput", "CUdev", "CXKBCommon", "CSeat",
+            "Wayland", "Render", "Toolkit", "Shell",
         ]),
         .executableTarget(name: "CompositorMain", dependencies: ["Compositor"]),
 
@@ -89,5 +107,10 @@ let package = Package(
             "CDRM", "CGBM", "CEGL", "CGLES", "CInput", "CUdev", "CXKBCommon", "CSeat",
             "CWaylandClient", "CFreeType", "CHarfBuzz",
         ]),
+
+        // Layout and drawing tests for the toolkit. They need no screen:
+        // `swift test` in the builder container runs them.
+        .testTarget(name: "ToolkitTests", dependencies: ["Toolkit", "Render"]),
+        .testTarget(name: "ShellTests", dependencies: ["Shell", "Toolkit", "Render"]),
     ]
 )

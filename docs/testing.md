@@ -35,8 +35,13 @@ If `out/vm/target.qcow2` does not exist, `vm/run.sh` makes an 8 GB disk. To star
 | `make gui` | Boots the target disk in a window. |
 | `make demo` | Boots the target disk in a window and starts the compositor with a test window. |
 | `make test` | Runs the three tests. |
+| `make test-ui` | Runs the unit tests of `ui/` in the builder container. No VM. |
 | `make test-dev` | Runs `make ui`, then the compositor test with the programs from `out/ui/` (through `/mnt/host/ui`). Needs the disk from `make test`. |
 | `make demo-dev` | The same as `make demo`, with the programs from `out/ui/`. |
+
+## Unit tests
+
+`make test-ui` runs the unit tests of the Swift package in the builder container (`swift test`). They test the layout of the toolkit, the text, and the shell panel. A test makes a display list from a view and looks at the items in it, so it needs no screen. See [toolkit.md](toolkit.md#tests).
 
 ## The tests
 
@@ -81,18 +86,31 @@ The programs print these markers:
 `tests/screen.py` gets a screenshot through the QEMU monitor (`screendump`) and checks pixel colours:
 
 ```sh
-tests/screen.py out/vm/monitor.sock out/vm/screen.ppm X,Y=RRGGBB...
+tests/screen.py out/vm/monitor.sock out/vm/screen.ppm X,Y=RRGGBB X0,Y0-X1,Y1!RRGGBB...
 ```
+
+There are two kinds of check:
+
+| Check | Result |
+|---|---|
+| `X,Y=RRGGBB` | This pixel has this colour. |
+| `X0,Y0-X1,Y1!RRGGBB` | This area has at least one pixel of another colour. |
+
+The second kind tests drawing that is correct but not exact, for example text. The test knows where the glyphs are. It does not know which pixels they cover.
 
 X and Y are pixels. If a value contains a dot, it is a fraction of the screen size (`0.5,0.5` is the centre). The screenshot is in `out/vm/screen.ppm`.
 
-The compositor test checks these pixels on the 1280×800 screen:
+The compositor test checks these places on the 1280×800 screen:
 
-| Pixel | Colour | What it is |
+| Place | Expected | What it is |
 |---|---|---|
-| (128, 80) | `2B2340` | The background |
+| (128, 80) | `2B2340` | The desktop background |
+| (2, 14) | `1B1626` | The background of the shell panel |
+| (12, 4) to (100, 24) | Not `1B1626` | The name "mydistro" on the panel |
+| (150, 4) to (500, 24) | Not `1B1626` | The window title on the panel |
 | (576, 360) | `3070F0` | The inside of the window |
-| (444, 254) | `FFFFFF` | The border of the window |
+| (444, 268) | `FFFFFF` | The border of the window |
+| (444, 254) | `2B2340` | Over the window: the panel moved the window down |
 | (640, 400) | `000000` | The outline of the pointer |
 | (641, 402) | `FFFFFF` | The inside of the pointer |
 

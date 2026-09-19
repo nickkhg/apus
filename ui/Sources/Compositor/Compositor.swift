@@ -1,5 +1,8 @@
 import DRMKit
 import Glibc
+import Render
+import Shell
+import Toolkit
 import Wayland
 
 /// The compositor: owns the screen, input and the Wayland server, keeps the
@@ -29,6 +32,8 @@ public final class Compositor {
     private var windows: [Window] = []   // back to front
     private var pointer: (x: Double, y: Double)
     private var running = true
+    /// What the shell panel shows. The clock updates it every minute.
+    private var panel = PanelState()
 
     public var socketName: String { server.socketName }
     public var screenSize: (width: Int, height: Int) { (screen.width, screen.height) }
@@ -59,6 +64,10 @@ public final class Compositor {
             for window in windows { window.surface.sendFrameDone(time: now) }
         }
         input.handler = { [unowned self] event in handle(event) }
+        panel.clock = Compositor.clockText()
+        // The clock changes once a minute. A one-second timer keeps it right
+        // without a frame between minutes.
+        try loop.onTimer(milliseconds: 1000) { [unowned self] in updateClock() }
         server.surfaceCommitted = { [unowned self] surface in surfaceCommitted(surface) }
         server.surfaceDestroyed = { [unowned self] surface in
             windows.removeAll { $0.surface === surface }
@@ -99,8 +108,41 @@ public final class Compositor {
                 list.append(.bitmap(content, x: window.x, y: window.y))
             }
         }
+        // The shell panel goes over the windows, and the pointer over both.
+        var state = panel
+        state.windowTitles = windows.map { $0.surface.toplevel?.title ?? "" }
+        ViewRenderer.render(Panel(state: state), in: panelRect, into: &list)
         list.append(.bitmap(Cursor.bitmap, x: Int(pointer.x), y: Int(pointer.y)))
         return list
+    }
+
+    /// The bar at the top of the screen.
+    private var panelRect: Rect {
+        Rect(x: 0, y: 0, width: screen.width, height: Int(Panel.height))
+    }
+
+    /// The part of the screen that windows use.
+    private var windowArea: Rect {
+        Rect(x: 0, y: Int(Panel.height),
+             width: screen.width, height: screen.height - Int(Panel.height))
+    }
+
+    /// "14:05" from the system clock, in local time.
+    private static func clockText() -> String {
+        var now = time_t(time(nil))
+        var parts = tm()
+        localtime_r(&now, &parts)
+        func twoDigits(_ value: Int32) -> String {
+            value < 10 ? "0\(value)" : "\(value)"
+        }
+        return "\(twoDigits(parts.tm_hour)):\(twoDigits(parts.tm_min))"
+    }
+
+    private func updateClock() {
+        let text = Compositor.clockText()
+        guard text != panel.clock else { return }
+        panel.clock = text
+        screen.setNeedsFrame()
     }
 
     // MARK: - Windows
@@ -108,10 +150,12 @@ public final class Compositor {
     private func surfaceCommitted(_ surface: Surface) {
         if surface.isMapped, !windows.contains(where: { $0.surface === surface }),
            let content = surface.content {
-            // New windows open centred, each further one offset a little.
+            // New windows open centred in the space under the panel, each
+            // further one offset a little.
+            let area = windowArea
             let offset = 32 * windows.count
-            let x = (screen.width - content.width) / 2 + offset
-            let y = (screen.height - content.height) / 2 + offset
+            let x = area.x + (area.width - content.width) / 2 + offset
+            let y = area.y + (area.height - content.height) / 2 + offset
             windows.append(Window(surface: surface, x: x, y: y))
             let title = surface.toplevel?.title ?? ""
             log("WINDOW-MAPPED \"\(title)\" \(content.width)x\(content.height) at \(x),\(y)")

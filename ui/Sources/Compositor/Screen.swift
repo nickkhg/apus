@@ -1,5 +1,6 @@
 import DRMKit
 import Glibc
+import Render
 
 /// One output (monitor), double-buffered: we draw into the back buffer and
 /// flip it to the front at the next vertical blank. Frames are drawn only

@@ -56,7 +56,17 @@ Also, on Linux:
 
 The OpenSwiftUI documentation gives Linux 2 of 5 stars.
 
-Decision: build the compositor in Swift now. The compositor makes a display list for each frame. A UI layer can add items to the display list later. Test OpenSwiftUI again with each new release.
+Decision: build the compositor in Swift now. The compositor makes a display list for each frame. A UI layer can add items to the display list later.
+
+## A toolkit of our own, not OpenSwiftUI (20 September)
+
+A second test of OpenSwiftUI, at commit `5af2b2b` (newer than release 0.21.0), gave the same segmentation fault in `GraphHost.Data.updateSeed`. This time we found the cause. In OpenAttributeGraph, all 29 attribute operations in `OAGAttribute.cpp` are `// TODO`. `OAGGraphCreateAttribute` gives a null attribute, and `OAGGraphGetValue` gives a null pointer. The functions that add inputs, update values and invalidate values do nothing. The C++ that is complete is the type and metadata layer around the engine, not the engine.
+
+Thus OpenSwiftUI on Linux does not need a correction. It needs a new attribute graph: a demand-driven dependency engine with attribute bodies of any type, subgraphs and invalidation. After that work, OpenSwiftUI on Linux still has no text layout and no event loop.
+
+mydistro needs a panel, window title bars and a settings UI. It does not need all of SwiftUI. Decision: write the toolkit in this repository. It keeps the API shape of SwiftUI (`View`, `body`, `VStack`, `Text`, `.padding`). It lowers the views to the display list for each frame. The first version is approximately 1300 lines, and 40 unit tests cover it. See [toolkit.md](toolkit.md).
+
+An incremental dependency graph saves work in a large app. A shell is small: a complete layout of the panel takes microseconds. If a later UI needs incremental updates, the view API does not change.
 
 ## Software rendering in the VM (19 September)
 

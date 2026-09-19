@@ -112,6 +112,28 @@ public final class EventLoop {
         }
     }
 
+    /// Calls `action` every `milliseconds` from the loop, for a clock or
+    /// another repeating job. The timer runs until the loop goes away.
+    @discardableResult
+    public func onTimer(milliseconds: Int, _ action: @escaping () -> Void) throws(Failure) -> Watch {
+        let fd = timerfd_create(CLOCK_MONOTONIC, Int32(TFD_CLOEXEC | TFD_NONBLOCK))
+        guard fd >= 0 else { throw .signal(errno) }
+        let interval = timespec(tv_sec: milliseconds / 1000,
+                                tv_nsec: (milliseconds % 1000) * 1_000_000)
+        var timer = itimerspec(it_interval: interval, it_value: interval)
+        guard timerfd_settime(fd, 0, &timer, nil) == 0 else {
+            let error = errno
+            close(fd)
+            throw .signal(error)
+        }
+        return watch(fd: fd) {
+            // Reading clears the count of ticks that went by.
+            var ticks: UInt64 = 0
+            _ = read(fd, &ticks, MemoryLayout<UInt64>.size)
+            action()
+        }
+    }
+
     /// Waits up to `timeout` milliseconds (-1: no limit) for events, and runs
     /// their callbacks.
     public func dispatch(timeout: Int32 = -1) {

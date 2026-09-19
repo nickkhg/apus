@@ -43,3 +43,8 @@ CMD ["bash"]
 
 # SwiftPM fetches package dependencies with git.
 RUN pacman -Sy --noconfirm --needed git && pacman -Scc --noconfirm
+
+# A font for the toolkit's text: the same package that the image installs
+# (see packages/mydistro-ui/PKGBUILD), so the unit tests measure the glyphs
+# that the target draws.
+RUN pacman -Sy --noconfirm --needed ttf-dejavu && pacman -Scc --noconfirm

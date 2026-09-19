@@ -1,3 +1,5 @@
+import Render
+
 /// The pointer: a classic arrow, drawn at the pointer position.
 enum Cursor {
     /// Hotspot is the top-left pixel. X = outline, o = fill, space = clear.

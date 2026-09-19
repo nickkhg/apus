@@ -1,3 +1,4 @@
+import Render
 import Wayland
 
 // The Wayland side of the compositor: the objects apps talk to.

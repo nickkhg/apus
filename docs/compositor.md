@@ -28,10 +28,12 @@ mydistro-hello-client &
 | `Screen.swift` | `Screen` | One output. It has two framebuffers and changes them at vertical blank. It draws a frame only when something changes. |
 | `Input.swift` | `Input` | libinput and xkbcommon. It gives pointer motion, pointer position, buttons, and keys. |
 | `WaylandServer.swift` | `WaylandServer`, `Surface`, `Toplevel` | The Wayland globals and objects that apps use: `wl_compositor`, `wl_surface`, and `xdg_wm_base`. |
-| `Scene.swift` | `DisplayList`, `SoftwareRenderer` | The display list and the CPU renderer. |
+
 | `Cursor.swift` | `Cursor` | The pointer image. |
-| `Compositor.swift` | `Compositor` | Connects the parts. It keeps the window list and makes the display list for each frame. |
+| `Compositor.swift` | `Compositor` | Connects the parts. It keeps the window list, draws the shell panel, and makes the display list for each frame. |
 | `Support.swift` | | Logging, the monotonic clock, and `permanent(_:)` for C handler tables. |
+
+The display list and the CPU renderer are in the `Render` library (`ui/Sources/Render/`). The views and the layout are in the `Toolkit` library, and the panel is in the `Shell` library. See [toolkit.md](toolkit.md).
 
 The `DRMKit` library (`ui/Sources/DRMKit/`) finds outputs, makes framebuffers, puts them on the screen, and does page flips.
 
@@ -42,7 +44,7 @@ The `Wayland` library (`ui/Sources/Wayland/`) is the Wayland server and the main
 1. Something changes: an app commits a buffer, the pointer moves, or a window closes.
 2. The compositor calls `Screen.setNeedsFrame()`.
 3. If no page flip is pending, `Screen` draws a frame in the back buffer and asks DRM for a page flip at the next vertical blank. If a page flip is pending, `Screen` draws the frame after the flip.
-4. To draw, the compositor makes a display list: the background, each window, and the pointer. `SoftwareRenderer` draws the list.
+4. To draw, the compositor makes a display list: the background, each window, the shell panel, and the pointer. `SoftwareRenderer` draws the list.
 5. After the page flip, the compositor sends `wl_callback.done` to each window. The apps can then draw their next frame.
 
 If the driver cannot do page flips, `Screen` uses a mode set for each frame.
@@ -56,7 +58,15 @@ A display list is an array of items from back to front:
 | `.fill(Rect, color:)` | A solid colour |
 | `.bitmap(Bitmap, x:, y:)` | An image with premultiplied alpha, or an opaque image |
 
-The display list is the interface for a future UI layer, for example OpenSwiftUI. A UI layer can add items to the list. Only the renderer writes pixels. Thus, a GPU renderer can replace `SoftwareRenderer` and the UI layer does not change.
+The display list is the interface between the UI layer and the pixels. The toolkit makes items from views, and only the renderer writes pixels. Thus, a GPU renderer can replace `SoftwareRenderer` and the toolkit does not change.
+
+## The shell panel
+
+The top 28 pixels of the screen are the shell panel. The compositor draws it with the toolkit, over the windows and under the pointer. It has the name of the system, the title of the front window, and the time in it.
+
+The compositor gives the panel a `PanelState` for each frame: the window titles from the Wayland toplevels, and the time from `localtime_r`. A timer in the event loop reads the clock every second and asks for a frame when the minute changes.
+
+The panel is a view, so its tests need no screen. See [toolkit.md](toolkit.md).
 
 ## Wayland support
 
@@ -72,7 +82,7 @@ The display list is the interface for a future UI layer, for example OpenSwiftUI
 
 When an app commits a buffer, the compositor copies the pixels and releases the buffer immediately. The first commit of a toplevel gets a configure event with the size 0×0. The app then selects its own size.
 
-The compositor puts a new window at the centre of the screen. Each further window is 32 pixels lower and to the right.
+The compositor puts a new window at the centre of the free space under the panel. Each further window is 32 pixels lower and to the right.
 
 ## The Wayland server
 

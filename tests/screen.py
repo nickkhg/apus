@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """Screenshot the VM through the QEMU monitor and check pixel colours.
 
-    tests/screen.py MONITOR_SOCKET OUTPUT.ppm X,Y=RRGGBB...
+    tests/screen.py MONITOR_SOCKET OUTPUT.ppm X,Y=RRGGBB X0,Y0-X1,Y1!RRGGBB...
 
 X and Y are pixels, or fractions of the screen size when they contain a
-dot (0.5,0.5 is the centre). Exits non-zero if any pixel differs.
+dot (0.5,0.5 is the centre).
+
+    X,Y=RRGGBB            this pixel has this colour
+    X0,Y0-X1,Y1!RRGGBB    this area has at least one pixel of another colour
+                          (for example text drawn over a background)
+
+Exits non-zero if any check fails.
 """
 import os
 import socket
@@ -51,13 +57,34 @@ def pixel(pixels, width, x, y):
     return tuple(pixels[i:i + 3])
 
 
+def coordinate(text, size):
+    return int(float(text) * size) if "." in text else int(text)
+
+
 def parse(spec, width, height):
     position, colour = spec.split("=")
     x, y = position.split(",")
-    x = int(float(x) * width) if "." in x else int(x)
-    y = int(float(y) * height) if "." in y else int(y)
     value = int(colour, 16)
-    return x, y, ((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF)
+    return (coordinate(x, width), coordinate(y, height),
+            ((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF))
+
+
+def parse_area(spec, width, height):
+    area, colour = spec.split("!")
+    start, end = area.split("-")
+    x0, y0 = start.split(",")
+    x1, y1 = end.split(",")
+    value = int(colour, 16)
+    return ((coordinate(x0, width), coordinate(y0, height),
+             coordinate(x1, width), coordinate(y1, height)),
+            ((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF))
+
+
+def differing(pixels, width, area, colour):
+    """The number of pixels in the area that do not have this colour."""
+    x0, y0, x1, y1 = area
+    return sum(1 for y in range(y0, y1) for x in range(x0, x1)
+               if pixel(pixels, width, x, y) != colour)
 
 
 def main():
@@ -67,6 +94,14 @@ def main():
     print(f"screenshot {width}x{height}")
     failed = False
     for spec in specs:
+        if "!" in spec:
+            area, colour = parse_area(spec, width, height)
+            count = differing(pixels, width, area, colour)
+            ok = count > 0
+            failed |= not ok
+            print(f"  {area} {'ok' if ok else 'WRONG'}: {count} pixels are not "
+                  f"{'%02X%02X%02X' % colour}{'' if ok else ' (expected some)'}")
+            continue
         x, y, expected = parse(spec, width, height)
         actual = pixel(pixels, width, x, y)
         ok = actual == expected

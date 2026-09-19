@@ -32,9 +32,21 @@ expect {
 }
 after 1000
 
-# 1280x800 screen; the 400x300 window is centred; the pointer starts at the centre.
+# 1280x800 screen. The shell panel is the top 28 pixels. The 400x300 window is
+# centred in the space under it, at 440,264. The pointer starts at the centre.
+#
+#   128,80        the desktop background
+#   2,14          the panel background, left of the padding
+#   12,4-100,24   the name "mydistro" is drawn on the panel
+#   150,4-500,24  the window title is drawn on the panel
+#   576,360       inside the window
+#   444,268       the window's white border, 4 pixels in
+#   444,254       above the window: the background, because the panel moved it
+#   640,400       the pointer's outline, and 641,402 its white fill
 if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/screen.ppm \
-        128,80=2B2340 576,360=3070F0 444,254=FFFFFF 640,400=000000 641,402=FFFFFF} result]} {
+        128,80=2B2340 2,14=1B1626 12,4-100,24!1B1626 150,4-500,24!1B1626 \
+        576,360=3070F0 444,268=FFFFFF 444,254=2B2340 \
+        640,400=000000 641,402=FFFFFF} result]} {
     fail "screenshot check: $result"
 }
 send_user "\n$result\n"

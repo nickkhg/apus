@@ -12,15 +12,51 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		6D79646F0000000000000103 /* ui */ = {isa = PBXFileSystemSynchronizedRootGroup; path = ui; sourceTree = "<group>"; };
-		6D79646F0000000000000104 /* docs */ = {isa = PBXFileSystemSynchronizedRootGroup; path = docs; sourceTree = "<group>"; };
-		6D79646F0000000000000105 /* build */ = {isa = PBXFileSystemSynchronizedRootGroup; path = build; sourceTree = "<group>"; };
-		6D79646F0000000000000106 /* image */ = {isa = PBXFileSystemSynchronizedRootGroup; path = image; sourceTree = "<group>"; };
-		6D79646F0000000000000107 /* packages */ = {isa = PBXFileSystemSynchronizedRootGroup; path = packages; sourceTree = "<group>"; };
-		6D79646F0000000000000108 /* rootfs */ = {isa = PBXFileSystemSynchronizedRootGroup; path = rootfs; sourceTree = "<group>"; };
-		6D79646F0000000000000109 /* tests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = tests; sourceTree = "<group>"; };
-		6D79646F000000000000010A /* vm */ = {isa = PBXFileSystemSynchronizedRootGroup; path = vm; sourceTree = "<group>"; };
-		6D79646F000000000000010B /* xcode */ = {isa = PBXFileSystemSynchronizedRootGroup; path = xcode; sourceTree = "<group>"; };
+		6D79646F0000000000000103 /* ui */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ui;
+			sourceTree = "<group>";
+		};
+		6D79646F0000000000000104 /* docs */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = docs;
+			sourceTree = "<group>";
+		};
+		6D79646F0000000000000105 /* build */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = build;
+			sourceTree = "<group>";
+		};
+		6D79646F0000000000000106 /* image */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = image;
+			sourceTree = "<group>";
+		};
+		6D79646F0000000000000107 /* packages */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = packages;
+			sourceTree = "<group>";
+		};
+		6D79646F0000000000000108 /* rootfs */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = rootfs;
+			sourceTree = "<group>";
+		};
+		6D79646F0000000000000109 /* tests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = tests;
+			sourceTree = "<group>";
+		};
+		6D79646F000000000000010A /* vm */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = vm;
+			sourceTree = "<group>";
+		};
+		6D79646F000000000000010B /* xcode */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = xcode;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXGroup section */

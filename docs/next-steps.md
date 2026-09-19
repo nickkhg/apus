@@ -15,15 +15,22 @@ In this sequence:
 9. Test with real Wayland apps, for example `foot` or `weston-terminal`. The only client that tests the Swift Wayland server now is `mydistro-hello-client`.
 10. `wl_registry.global_remove`, for globals that go away (for example a disconnected output).
 
-## The UI layer
+## The toolkit and the shell
 
-- Make the first shell UI (for example a panel and window title bars) as display list items.
-- Test OpenSwiftUI on Linux again with each new release. See [decisions.md](decisions.md).
-- If OpenSwiftUI is not ready, examine other options: a small declarative layer of our own, or swift-cross-ui with a mydistro backend.
-- Text rendering with FreeType and HarfBuzz. The modules exist. No code uses them yet.
+The toolkit draws the panel. See [toolkit.md](toolkit.md). Next, in this sequence:
+
+1. `@State` and automatic updates. Now the compositor makes the view again for each frame, and it asks for a frame when it knows that something changed. A view cannot ask for a frame.
+2. Input for views: hit testing and a `.onTap` modifier. Then the panel can have buttons.
+3. Window title bars, with a close button.
+4. Text that is too long for its space. Cut it, and add "…".
+5. More display items: rounded corners, a border, and an image. The renderer has fills and bitmaps only.
+6. A scale for a high-resolution screen. Now one point is one pixel.
+7. An app launcher and a settings UI.
+8. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
 
 ## The system
 
+- The clock in the image is UTC, because the image has no `/etc/localtime`. The panel has the UTC time in it. Add a time zone, or a setting for it.
 - Root has no password. Add a user account and a password for use outside a VM.
 - Start the compositor at login, or with a display manager, as a normal user through logind.
 - `make gui` gives a text login on tty1. The compositor does not start on tty1 automatically.
