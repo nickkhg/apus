@@ -1,0 +1,5 @@
+# mkinitcpio preset for linux-aarch64. mydistro builds one generic image,
+# so there is no separate "fallback" image.
+ALL_kver="/boot/Image"
+PRESETS=('default')
+default_image="/boot/initramfs-linux.img"

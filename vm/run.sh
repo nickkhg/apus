@@ -11,7 +11,7 @@ cd "$(dirname "$0")/.."
 mode="${1:-live}"
 LIVE=out/live.img
 TARGET=out/vm/target.qcow2
-TARGET_SIZE=${TARGET_SIZE:-4G}
+TARGET_SIZE=${TARGET_SIZE:-8G}
 
 fw_dir="$(brew --prefix qemu)/share/qemu"
 mkdir -p out/vm

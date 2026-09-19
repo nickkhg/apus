@@ -1,58 +1,60 @@
 # mydistro - host-side entry point. The build runs inside an Apple `container`;
 # testing runs in QEMU on the host.
 
-IMAGE    := mydistro-builder
-VOL_OUT  := mydistro-output
-VOL_DL   := mydistro-dl
-CPUS     ?= 8
-MEM      ?= 8g
-VERSION  := $(shell git describe --always --dirty 2>/dev/null || echo dev)
+IMAGE     := mydistro-builder
+VOL_WORK  := mydistro-work
+VOL_PKG   := mydistro-pkgcache
+CPUS      ?= 8
+MEM       ?= 8g
 
-# Build output lives in container volumes (ext4, case-sensitive). macOS
-# filesystems are case-insensitive and break the kernel build.
-RUN = container run --rm -c $(CPUS) -m $(MEM) \
+# Base of the builder image. "latest" moves upstream: when the hash stops
+# matching, check the new tarball and update the pin deliberately.
+ALARM_URL     := http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz
+ALARM_SHA256  := 42a4eeaa038994ffd31fa173256ef2f0ef511358eeb41b9ea1f8626391b9b319
+ALARM_TARBALL := build/cache/ArchLinuxARM-aarch64-latest.tar.gz
+BUILDER_STAMP := build/cache/builder.stamp
+
+# Work files live in container volumes (ext4): macOS file systems are
+# case-insensitive and don't keep Linux ownership. The package cache volume
+# means packages are downloaded once.
+RUN = container run --rm --cap-add ALL -c $(CPUS) -m $(MEM) \
 	-v $(CURDIR):/src \
-	-v $(VOL_OUT):/work/output \
-	-v $(VOL_DL):/work/dl \
-	-e MYDISTRO_VERSION=$(VERSION) \
-	-w /src $(IMAGE)
+	-v $(VOL_WORK):/work \
+	-v $(VOL_PKG):/var/cache/pacman/pkg \
+	-w /src
 
-.PHONY: help builder volumes build menuconfig linux-menuconfig savedefconfig \
-        shell live installed test clean distclean
+.PHONY: help builder volumes build shell live installed test clean distclean
 
 help:
-	@echo "make build             build out/live.img (first run: ~15-30 min)"
-	@echo "make live              boot live image + blank disk in QEMU (Ctrl-A X quits)"
-	@echo "make installed         boot the disk the installer wrote"
-	@echo "make test              automated install + reboot test"
-	@echo "make menuconfig        edit Buildroot config, then 'make savedefconfig'"
-	@echo "make linux-menuconfig  edit kernel config"
-	@echo "make shell             shell in the build container"
-	@echo "make br-<target>       any Buildroot target, e.g. br-util-linux-reconfigure"
-	@echo "make clean             wipe build output (keeps downloads)"
-	@echo "make distclean         also remove downloads and builder image"
+	@echo "make build      build out/live.img"
+	@echo "make live       boot live image + blank disk in QEMU (Ctrl-A X quits)"
+	@echo "make installed  boot the disk the installer wrote"
+	@echo "make test       automated install + reboot test"
+	@echo "make shell      root shell in the build container"
+	@echo "make clean      remove build output (keeps package cache)"
+	@echo "make distclean  also remove package cache, builder image, base tarball"
 
-builder:
+$(ALARM_TARBALL):
+	mkdir -p $(dir $@)
+	curl -fL --no-progress-meter -o $@.part $(ALARM_URL)
+	echo "$(ALARM_SHA256)  $@.part" | shasum -a 256 -c -
+	mv $@.part $@
+
+$(BUILDER_STAMP): build/Containerfile $(ALARM_TARBALL)
 	container build -t $(IMAGE) -f build/Containerfile build
+	touch $@
+
+builder: $(BUILDER_STAMP)
 
 volumes:
-	@container volume inspect $(VOL_OUT) >/dev/null 2>&1 || container volume create -s 64G $(VOL_OUT)
-	@container volume inspect $(VOL_DL)  >/dev/null 2>&1 || container volume create -s 16G $(VOL_DL)
+	@container volume inspect $(VOL_WORK) >/dev/null 2>&1 || container volume create -s 32G $(VOL_WORK)
+	@container volume inspect $(VOL_PKG)  >/dev/null 2>&1 || container volume create -s 16G $(VOL_PKG)
 
 build: builder volumes
-	$(RUN) build/br.sh build
-
-# Pass-through to Buildroot: `make br-busybox-rebuild`, `make br-linux-reconfigure`, ...
-br-%: builder volumes
-	$(RUN) build/br.sh $*
-
-menuconfig linux-menuconfig savedefconfig: builder volumes
-	container run --rm -it -v $(CURDIR):/src -v $(VOL_OUT):/work/output \
-		-v $(VOL_DL):/work/dl -w /src $(IMAGE) build/br.sh $@
+	$(RUN) $(IMAGE) build/build.sh
 
 shell: builder volumes
-	container run --rm -it -c $(CPUS) -m $(MEM) -v $(CURDIR):/src \
-		-v $(VOL_OUT):/work/output -v $(VOL_DL):/work/dl -w /src $(IMAGE) bash
+	$(RUN) -it $(IMAGE) bash
 
 live:
 	vm/run.sh live
@@ -64,9 +66,10 @@ test:
 	tests/install.exp
 
 clean:
-	-container volume rm $(VOL_OUT)
+	-container volume rm $(VOL_WORK)
 	rm -rf out
 
 distclean: clean
-	-container volume rm $(VOL_DL)
+	-container volume rm $(VOL_PKG)
 	-container image rm $(IMAGE)
+	rm -rf build/cache

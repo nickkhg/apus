@@ -1,0 +1,18 @@
+#!/bin/bash
+# Adds systemd-volatile-root to the initramfs, so `systemd.volatile=overlay`
+# on the kernel command line works: the root partition stays read-only and a
+# tmpfs overlay takes the writes. The live system boots this way.
+#
+# Only add the unit, never enable it: systemd-fstab-generator pulls it in
+# (with the right mode) when systemd.volatile= is on the command line.
+# Enabled unconditionally, it runs in its default mode on every boot and
+# puts / on a tmpfs.
+
+build() {
+    add_module overlay
+    add_systemd_unit systemd-volatile-root.service
+}
+
+help() {
+    echo "Support systemd.volatile= in the initramfs (systemd-volatile-root)."
+}

@@ -1,6 +1,6 @@
 # mydistro
 
-mydistro is a small Linux distribution for aarch64. Buildroot builds it from source. A live image boots in a VM and installs the system to a disk.
+mydistro is a Linux distribution for aarch64, based on Arch Linux ARM. It uses systemd and pacman. A live image boots in a VM and installs the system to a disk.
 
 ## Requirements
 
@@ -10,7 +10,7 @@ mydistro is a small Linux distribution for aarch64. Buildroot builds it from sou
 
 ## Quick start
 
-1. Build the live image. The first build takes approximately 15 to 30 minutes. Later builds are incremental.
+1. Build the live image. The first build downloads approximately 1 GB. Later builds take approximately 1 minute.
 
    ```sh
    make build
@@ -36,73 +36,80 @@ mydistro is a small Linux distribution for aarch64. Buildroot builds it from sou
 
 To stop QEMU, push `Ctrl-A`, then push `X`.
 
+To install software on a running system, use pacman. For example: `pacman -S htop`.
+
 ## How it works
 
 The project has three layers:
 
 | Layer | What it does | Where |
 |---|---|---|
-| Build | Buildroot compiles the kernel, BusyBox, and packages into a root filesystem. | `external/` |
-| Image | `genimage` writes a GPT disk image with an EFI partition and the root filesystem. | `external/board/mydistro/genimage.cfg` |
-| Installer | A shell script copies the live system to a target disk. | `mydistro-install` |
+| Build | `pacstrap` installs Arch Linux ARM packages into a root file system. | `rootfs/`, `build/build.sh` |
+| Image | `systemd-repart` writes a GPT disk image with an EFI partition and the root file system. | `image/` |
+| Installer | A shell script and `systemd-repart` copy the live system to a target disk. | `mydistro-install` |
 
 ### Build environment
 
-The build runs in an Apple `container`. The image definition is `build/Containerfile`. It pins the Debian base image by digest and pins the Buildroot release by tag.
+The build runs in an Apple `container` as root. The container needs all capabilities (`--cap-add ALL`) because `pacstrap` mounts file systems.
 
-The build output goes into two container volumes:
+The builder image is the official Arch Linux ARM root file system. The Makefile downloads the tarball to `build/cache/` and checks its SHA-256 hash. Arch Linux ARM replaces "latest" from time to time. When the hash does not match, the download stops. Examine the new tarball, then update `ALARM_SHA256` in the Makefile.
 
-- `mydistro-output` holds the Buildroot output directory.
-- `mydistro-dl` holds the downloaded source archives.
+The build uses two container volumes:
 
-The build uses volumes because macOS file systems do not usually make a difference between upper case and lower case in file names. The Linux kernel source contains files whose names differ only in case.
+- `mydistro-work` holds the staged root file system and the disk image.
+- `mydistro-pkgcache` holds the downloaded packages. Later builds do not download them again.
 
-At the end of a build, `build/br.sh` copies `live.img` to `out/` on the Mac.
+At the end of a build, `build/build.sh` copies `live.img` and `packages.lock` to `out/` on the Mac. `packages.lock` lists each package and its version.
+
+Arch Linux is a rolling release. Two builds on different days can get different package versions. Use `packages.lock` to compare two builds.
 
 ### Live image
 
 The live image has two partitions:
 
-1. An EFI system partition. It contains GRUB, `grub.cfg`, and the kernel.
-2. The root file system (ext4). The live system mounts it read-only.
+1. An EFI system partition (512 MB). It contains systemd-boot, the kernel, and the initramfs.
+2. The root file system (ext4).
 
-The kernel command line contains `mydistro.live`. The installer and the login message use this flag to find a live system.
+The live system boots with `systemd.volatile=overlay`. The root partition stays read-only, and a RAM overlay receives all changes. When you power off, the changes are lost.
+
+The kernel command line also contains `mydistro.live`. The installer and the login message use this flag to find a live system.
 
 ### Installer
 
-The installer is `external/board/mydistro/rootfs-overlay/usr/sbin/mydistro-install`. It does these steps:
+The installer is `rootfs/overlay/usr/bin/mydistro-install`. It does these steps:
 
-1. It finds the disk that the live system booted from.
-2. It writes a new GPT partition table to the target disk.
-3. It copies the live root partition to the target block by block. Then it makes the file system as large as the partition and gives it a new UUID.
-4. It creates a FAT32 EFI partition and copies GRUB and the kernel to it.
-5. It writes a `grub.cfg` that points to the new root partition by PARTUUID.
-6. It adds the EFI partition to `/etc/fstab` on the new system.
+1. It mounts the live partitions read-only. It finds them by their fixed partition UUIDs.
+2. It runs `systemd-repart` with the definitions in `/usr/lib/mydistro/repart.d`. This creates the partitions on the target disk and copies the files.
+3. It writes `/etc/fstab`. The system mounts the EFI partition at `/boot`, so pacman installs kernel updates where systemd-boot finds them.
+4. It writes a systemd-boot entry that points to the new root partition by PARTUUID.
 
-A block copy is possible because the live root file system is read-only.
+### First boot
+
+On first boot, each installed system does these steps:
+
+- It creates a new machine ID.
+- It creates its own pacman keyring (`mydistro-pacman-init.service`).
+
+The build masks `systemd-firstboot` and `systemd-homed-firstboot`. Thus, first boot does not stop to ask questions.
 
 ## Make targets
 
 | Target | Result |
 |---|---|
 | `make build` | Builds `out/live.img`. |
-| `make live` | Boots the live image and a blank 4 GB target disk. |
+| `make live` | Boots the live image and a blank 8 GB target disk. |
 | `make installed` | Boots only the target disk. |
 | `make test` | Runs the full test: install, then boot the installed disk. |
-| `make menuconfig` | Opens the Buildroot configuration menu. |
-| `make savedefconfig` | Writes the configuration back to `external/configs/`. |
-| `make linux-menuconfig` | Opens the kernel configuration menu. |
-| `make shell` | Opens a shell in the build container. |
-| `make br-<target>` | Runs a Buildroot target. For example, `make br-busybox-rebuild`. |
-| `make clean` | Removes the build output. The downloads stay. |
-| `make distclean` | Removes the build output, the downloads, and the builder image. |
+| `make shell` | Opens a root shell in the build container. |
+| `make clean` | Removes the build output. The package cache stays. |
+| `make distclean` | Removes the build output, the package cache, the builder image, and the base tarball. |
 
 ## Change the system
 
-- To add a package, run `make menuconfig`, select the package, and run `make savedefconfig`. Then run `make build`.
-- If you enable an option of a package that Buildroot already built, Buildroot does not build that package again. Run `make br-<package>-reconfigure`, then run `make build`.
-- To add or replace files in the root file system, put them in `external/board/mydistro/rootfs-overlay/`.
-- To change the kernel configuration, edit `external/board/mydistro/linux.config` or `linux-efi.fragment`.
-- To add your own software, put a Buildroot package in `external/package/`.
+- To add a package to the image, add a line to `rootfs/packages`. Then run `make build`.
+- To add or replace files in the root file system, put them in `rootfs/overlay/`.
+- To change the partition layout of the live image, edit `image/repart.d/`.
+- To change the partition layout of installed systems, edit `rootfs/overlay/usr/lib/mydistro/repart.d/`.
+- To start a new target disk, remove `out/vm/target.qcow2`.
 
 Run `make test` after each change.

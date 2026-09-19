@@ -1,8 +1,0 @@
-# On top of linux.config (Buildroot's QEMU virt config): boot via UEFI and
-# read the FAT EFI system partition.
-CONFIG_EFI=y
-CONFIG_EFI_STUB=y
-CONFIG_RTC_DRV_EFI=y
-CONFIG_VFAT_FS=y
-CONFIG_NLS_CODEPAGE_437=y
-CONFIG_NLS_ISO8859_1=y

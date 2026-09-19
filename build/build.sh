@@ -1,0 +1,74 @@
+#!/bin/bash
+# Runs inside the build container (as root, with --cap-add ALL).
+# Assembles the mydistro root file system with pacstrap and packs it into a
+# bootable GPT disk image with systemd-repart.
+#
+#   /src    this repository (bind mount)
+#   /work   scratch space (container volume, case-sensitive ext4)
+set -euo pipefail
+
+SRC=/src
+STAGE=/work/stage
+ROOT=$STAGE/rootfs
+ESP=$STAGE/esp
+IMG=/work/live.img
+
+step() { echo; echo "==> $*"; }
+
+step "Cleaning previous stage"
+umount -R "$ROOT" 2>/dev/null || true
+rm -rf "$STAGE" "$IMG"
+mkdir -p "$ROOT" "$ESP"
+mount --bind "$ROOT" "$ROOT"     # pacstrap wants the root to be a mount point
+
+step "Installing packages"
+mapfile -t packages < <(sed -e 's/#.*//' -e '/^\s*$/d' "$SRC/rootfs/packages")
+# -c: use the builder's package cache (a volume, so downloads are kept)
+# -G: don't copy the builder's keyring (each system makes its own, see
+#     mydistro-pacman-init.service)
+# -M: don't copy the builder's mirrorlist (use the package default)
+pacstrap -c -G -M "$ROOT" "${packages[@]}"
+
+step "Applying rootfs overlay"
+cp -r --no-preserve=ownership "$SRC/rootfs/overlay/." "$ROOT/"
+
+step "Configuring the system"
+arch-chroot "$ROOT" /bin/bash -euo pipefail <<'EOF'
+mkinitcpio -P
+rm -f /boot/initramfs-linux-fallback.img
+# Apply the distribution's presets now, so first boot enables nothing new.
+systemctl preset-all
+systemctl enable systemd-networkd systemd-resolved mydistro-pacman-init
+# First boot must not stop at an interactive wizard. Locale, time zone and
+# hostname are preset, and root has no password.
+systemctl mask systemd-firstboot.service systemd-homed-firstboot.service
+passwd -d root
+EOF
+ln -sf ../usr/share/zoneinfo/UTC "$ROOT/etc/localtime"
+ln -sf ../run/systemd/resolve/stub-resolv.conf "$ROOT/etc/resolv.conf"
+# Every machine gets its own ID on first boot.
+echo uninitialized > "$ROOT/etc/machine-id"
+pacman --root "$ROOT" -Q > "$STAGE/packages.lock"
+umount "$ROOT"
+
+step "Assembling the EFI system partition"
+# /boot (kernel, initramfs) moves to the ESP. Installed systems mount the ESP
+# at /boot, so kernel updates from pacman land where systemd-boot finds them.
+# The live root keeps an empty /boot as the mount point.
+find "$ROOT/boot" -mindepth 1 -maxdepth 1 -exec mv -t "$ESP/" {} +
+mkdir -p "$ESP/EFI/BOOT" "$ESP/EFI/systemd"
+cp "$ROOT/usr/lib/systemd/boot/efi/systemd-bootaa64.efi" "$ESP/EFI/BOOT/BOOTAA64.EFI"
+cp "$ROOT/usr/lib/systemd/boot/efi/systemd-bootaa64.efi" "$ESP/EFI/systemd/"
+cp -r "$SRC/image/esp/." "$ESP/"
+
+step "Writing disk image"
+# --offline: build file systems with mkfs.* -d / mcopy, no loop devices.
+# Fixed seed: same inputs give the same disk and partition UUIDs.
+systemd-repart --empty=create --size=auto --offline=yes --dry-run=no \
+    --seed=6d79646f-0000-4000-8000-000000000000 \
+    --root="$STAGE" --definitions="$SRC/image/repart.d" "$IMG"
+
+mkdir -p "$SRC/out"
+cp --sparse=always "$IMG" "$SRC/out/live.img"
+cp "$STAGE/packages.lock" "$SRC/out/packages.lock"
+step "Done: out/live.img ($(du -h --apparent-size "$IMG" | cut -f1)), $(wc -l < "$STAGE/packages.lock") packages"

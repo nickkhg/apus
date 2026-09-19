@@ -1,28 +1,20 @@
-# Build environment for mydistro. Everything that produces the OS runs in here,
-# so the host (macOS) only needs Apple's `container` CLI and QEMU.
+# Build environment for mydistro: an Arch Linux ARM system with the tools to
+# assemble another one (pacstrap, systemd-repart, mkfs.*).
 #
-# Pinned by digest so the environment doesn't drift under us.
-FROM docker.io/library/debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+# The base is the official Arch Linux ARM rootfs tarball. `make builder`
+# downloads it to build/cache/ and checks its SHA-256 first.
+FROM scratch
+ADD cache/ArchLinuxARM-aarch64-latest.tar.gz /
 
-ARG BUILDROOT_VERSION=2026.02.3
+# Builder-only pacman tweaks (the image we build keeps the defaults):
+#  - CheckSpace fails without a real mount table for /
+#  - the download sandbox (DownloadUser) can't switch users in the build VM
+RUN sed -i -e 's/^CheckSpace/#CheckSpace/' -e 's/^DownloadUser/#DownloadUser/' \
+        -e 's/^\[options\]/[options]\nDisableSandbox/' /etc/pacman.conf \
+    && pacman-key --init \
+    && pacman-key --populate archlinuxarm \
+    && pacman -Syu --noconfirm --needed \
+        arch-install-scripts dosfstools e2fsprogs mtools \
+    && pacman -Scc --noconfirm
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    LANG=C.UTF-8
-
-# Host dependencies from the Buildroot manual ("System requirements").
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        bc build-essential bzip2 ca-certificates cpio file git gzip \
-        libncurses-dev patch perl python3 rsync unzip wget xz-utils \
-    && rm -rf /var/lib/apt/lists/*
-
-# Buildroot itself, at a fixed release. Builds are out-of-tree (O=...), so
-# this directory is never written to.
-RUN git clone --depth 1 --branch ${BUILDROOT_VERSION} \
-        https://gitlab.com/buildroot.org/buildroot.git /opt/buildroot
-
-# Buildroot refuses parts of the build as root, so builds run as `builder`.
-# The entrypoint fixes volume ownership then drops privileges.
-RUN useradd --create-home --uid 1000 builder
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["bash"]

@@ -1,0 +1,14 @@
+# Each installed system gets its own pacman keyring, created on first boot.
+# (The image ships without one, so no two machines share a local signing key.)
+[Unit]
+Description=Initialize pacman keyring
+ConditionPathExists=!/etc/pacman.d/gnupg/trustdb.gpg
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/pacman-key --init
+ExecStart=/usr/bin/pacman-key --populate archlinuxarm
+
+[Install]
+WantedBy=multi-user.target

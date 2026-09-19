@@ -46,11 +46,15 @@ wait
 send_user "\n=== Stage 2: boot installed disk ===\n"
 spawn vm/run.sh installed
 login
-send "cat /etc/mydistro-installed >/dev/null && mountpoint -q /boot/efi && test -f /boot/efi/Image && ! grep -qw mydistro.live /proc/cmdline && touch /rw-check && echo INSTALLED-OK\r"
+send "cat /etc/mydistro-installed >/dev/null && mountpoint -q /boot && test -f /boot/Image && ! grep -qw mydistro.live /proc/cmdline && touch /rw-check && pacman -Q linux-aarch64 >/dev/null && echo INSTALLED-\$((1+1))\r"
 expect {
-    "\nINSTALLED-OK" {}
+    # The command line reads INSTALLED-$((1+1)), so only real output matches.
+    "INSTALLED-2" {}
     timeout          { fail "installed system checks failed" }
 }
+expect -re "# $"
+# Informational: any failed units show up in the log.
+send "systemctl is-system-running --wait; systemctl --failed --no-legend\r"
 expect -re "# $"
 send "poweroff\r"
 expect eof

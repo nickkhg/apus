@@ -1,0 +1,8 @@
+# Packages installed into the mydistro root filesystem (one per line).
+base
+archlinuxarm-keyring
+linux-aarch64
+mkinitcpio
+dosfstools
+less
+nano
