@@ -37,6 +37,15 @@
       launchStyle = "0"
       debugDocumentVersioning = "NO"
       allowLocationSimulation = "NO">
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "6D79646F0000000000000110"
+            BuildableName = "UI"
+            BlueprintName = "UI"
+            ReferencedContainer = "container:mydistro.xcodeproj">
+         </BuildableReference>
+      </MacroExpansion>
       <PathRunnable
          runnableDebuggingMode = "0"
          FilePath = "/usr/bin/make">
