@@ -1,4 +1,4 @@
-import DRM
+import DRMKit
 import Glibc
 
 /// The compositor: owns the screen, input and the Wayland server, keeps the

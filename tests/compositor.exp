@@ -2,23 +2,29 @@
 # Compositor test: boot the installed disk with a (headless) GPU, start
 # mydistro-compositor, open a window with mydistro-hello-client, screenshot
 # the VM and check the pixels. Run after tests/install.exp.
+#
+# With MYDISTRO_UI_DIR set (for example /mnt/host/ui, `make test-dev`), the
+# VM runs the programs from that directory, not the installed ones.
 
 set timeout 120
 log_user 1
 source [file dirname [info script]]/lib.exp
 
+set bin ""
+if {[info exists env(MYDISTRO_UI_DIR)]} { set bin "$env(MYDISTRO_UI_DIR)/" }
+
 spawn env VM_GPU=headless vm/run.sh installed
 login
 
 # Root on the serial console has no seat session: libseat opens devices directly.
-send "LIBSEAT_BACKEND=noop mydistro-compositor &\r"
+send "LIBSEAT_BACKEND=noop ${bin}mydistro-compositor &\r"
 expect {
     "COMPOSITOR-READY"     {}
     "mydistro-compositor:" { fail "compositor reported an error" }
     timeout                { fail "compositor didn't start" }
 }
 
-send "mydistro-hello-client --seconds 120 &\r"
+send "${bin}mydistro-hello-client --seconds 120 &\r"
 expect {
     "WINDOW-MAPPED"          {}
     "mydistro-hello-client:" { fail "client reported an error" }

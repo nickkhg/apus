@@ -1,0 +1,182 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXFileReference section */
+		6D79646F0000000000000101 /* Makefile */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.make; path = Makefile; sourceTree = "<group>"; };
+		6D79646F0000000000000102 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		6D79646F0000000000000103 /* ui */ = {isa = PBXFileSystemSynchronizedRootGroup; path = ui; sourceTree = "<group>"; };
+		6D79646F0000000000000104 /* docs */ = {isa = PBXFileSystemSynchronizedRootGroup; path = docs; sourceTree = "<group>"; };
+		6D79646F0000000000000105 /* build */ = {isa = PBXFileSystemSynchronizedRootGroup; path = build; sourceTree = "<group>"; };
+		6D79646F0000000000000106 /* image */ = {isa = PBXFileSystemSynchronizedRootGroup; path = image; sourceTree = "<group>"; };
+		6D79646F0000000000000107 /* packages */ = {isa = PBXFileSystemSynchronizedRootGroup; path = packages; sourceTree = "<group>"; };
+		6D79646F0000000000000108 /* rootfs */ = {isa = PBXFileSystemSynchronizedRootGroup; path = rootfs; sourceTree = "<group>"; };
+		6D79646F0000000000000109 /* tests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = tests; sourceTree = "<group>"; };
+		6D79646F000000000000010A /* vm */ = {isa = PBXFileSystemSynchronizedRootGroup; path = vm; sourceTree = "<group>"; };
+		6D79646F000000000000010B /* xcode */ = {isa = PBXFileSystemSynchronizedRootGroup; path = xcode; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXGroup section */
+		6D79646F000000000000010C = {
+			isa = PBXGroup;
+			children = (
+				6D79646F0000000000000101 /* Makefile */,
+				6D79646F0000000000000102 /* README.md */,
+				6D79646F0000000000000103 /* ui */,
+				6D79646F0000000000000104 /* docs */,
+				6D79646F0000000000000105 /* build */,
+				6D79646F0000000000000106 /* image */,
+				6D79646F0000000000000107 /* packages */,
+				6D79646F0000000000000108 /* rootfs */,
+				6D79646F0000000000000109 /* tests */,
+				6D79646F000000000000010A /* vm */,
+				6D79646F000000000000010B /* xcode */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXLegacyTarget section */
+		6D79646F0000000000000110 /* UI */ = {
+			isa = PBXLegacyTarget;
+			buildArgumentsString = "xcode/make.sh ui $(ACTION)";
+			buildConfigurationList = 6D79646F0000000000000111 /* Build configuration list for PBXLegacyTarget "UI" */;
+			buildPhases = (
+			);
+			buildToolPath = /bin/bash;
+			buildWorkingDirectory = "";
+			dependencies = (
+			);
+			name = UI;
+			passBuildSettingsInEnvironment = 0;
+			productName = UI;
+		};
+		6D79646F0000000000000113 /* Image */ = {
+			isa = PBXLegacyTarget;
+			buildArgumentsString = "xcode/make.sh build $(ACTION)";
+			buildConfigurationList = 6D79646F0000000000000114 /* Build configuration list for PBXLegacyTarget "Image" */;
+			buildPhases = (
+			);
+			buildToolPath = /bin/bash;
+			buildWorkingDirectory = "";
+			dependencies = (
+			);
+			name = Image;
+			passBuildSettingsInEnvironment = 0;
+			productName = Image;
+		};
+		6D79646F0000000000000116 /* Tests */ = {
+			isa = PBXLegacyTarget;
+			buildArgumentsString = "xcode/make.sh test $(ACTION)";
+			buildConfigurationList = 6D79646F0000000000000117 /* Build configuration list for PBXLegacyTarget "Tests" */;
+			buildPhases = (
+			);
+			buildToolPath = /bin/bash;
+			buildWorkingDirectory = "";
+			dependencies = (
+			);
+			name = Tests;
+			passBuildSettingsInEnvironment = 0;
+			productName = Tests;
+		};
+/* End PBXLegacyTarget section */
+
+/* Begin PBXProject section */
+		6D79646F000000000000010D /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 2700;
+			};
+			buildConfigurationList = 6D79646F000000000000010E /* Build configuration list for PBXProject "mydistro" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 6D79646F000000000000010C;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				6D79646F0000000000000110 /* UI */,
+				6D79646F0000000000000113 /* Image */,
+				6D79646F0000000000000116 /* Tests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin XCBuildConfiguration section */
+		6D79646F000000000000010F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		6D79646F0000000000000112 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		6D79646F0000000000000115 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		6D79646F0000000000000118 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		6D79646F000000000000010E /* Build configuration list for PBXProject "mydistro" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6D79646F000000000000010F /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6D79646F0000000000000111 /* Build configuration list for PBXLegacyTarget "UI" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6D79646F0000000000000112 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6D79646F0000000000000114 /* Build configuration list for PBXLegacyTarget "Image" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6D79646F0000000000000115 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6D79646F0000000000000117 /* Build configuration list for PBXLegacyTarget "Tests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6D79646F0000000000000118 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 6D79646F000000000000010D /* Project object */;
+}

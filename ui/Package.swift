@@ -9,17 +9,25 @@
 
 import PackageDescription
 
-// A C library found with pkg-config, wrapped as a Swift module
-// (Sources/<name>/module.modulemap + shim.h). `package` is the Arch Linux
-// package that provides it (a dependency of the mydistro-ui package).
+// A C library, wrapped as a Swift module (Sources/<name>/module.modulemap +
+// shim.h; the module map names the library to link). `package` is the Arch
+// Linux package that provides it (a dependency of the mydistro-ui package).
+//
+// On Linux, pkg-config gives the compiler flags. On a Mac, the build uses the
+// mydistro Swift SDK (`make sdk`), which has the include directories. There,
+// pkg-config would find Homebrew's macOS libraries, so it is not used.
 func system(_ name: String, pkgConfig: String, package: String) -> Target {
+    #if os(Linux)
     .systemLibrary(name: name, pkgConfig: pkgConfig)
+    #else
+    .systemLibrary(name: name)
+    #endif
 }
 
 let package = Package(
     name: "mydistro-ui",
     products: [
-        .library(name: "DRM", targets: ["DRM"]),
+        .library(name: "DRMKit", targets: ["DRMKit"]),
         .library(name: "Compositor", targets: ["Compositor"]),
         .executable(name: "mydistro-compositor", targets: ["CompositorMain"]),
         .executable(name: "mydistro-hello-client", targets: ["HelloClient"]),
@@ -50,12 +58,14 @@ let package = Package(
         .target(name: "CXDGShellClient", dependencies: ["CWaylandClient"]),
 
         // Swift layer over DRM/KMS: find outputs, allocate buffers, show them.
-        .target(name: "DRM", dependencies: ["CDRM"]),
+        // (Not named "DRM": on a case-insensitive Mac file system, its
+        // libDRM.a would hide libdrm.so from the linker.)
+        .target(name: "DRMKit", dependencies: ["CDRM"]),
 
         // The compositor: screen, input, seat, Wayland server, window list,
         // display list and software renderer.
         .target(name: "Compositor", dependencies: [
-            "DRM", "CDRM", "CInput", "CUdev", "CXKBCommon", "CSeat", "CWaylandServer", "CXDGShellServer",
+            "DRMKit", "CDRM", "CInput", "CUdev", "CXKBCommon", "CSeat", "CWaylandServer", "CXDGShellServer",
         ]),
         .executableTarget(name: "CompositorMain", dependencies: ["Compositor"]),
 
@@ -63,7 +73,7 @@ let package = Package(
         .executableTarget(name: "HelloClient", dependencies: ["CWaylandClient", "CXDGShellClient"]),
 
         // Takes over the screen and draws a test pattern (used by tests/display.exp).
-        .executableTarget(name: "DisplayProbe", dependencies: ["DRM"]),
+        .executableTarget(name: "DisplayProbe", dependencies: ["DRMKit"]),
 
         // Links against every C library above and exercises each one briefly:
         // proves the toolchain, the module maps and the target's runtime libraries.

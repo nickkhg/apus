@@ -18,16 +18,34 @@ SWIFT_URL     := https://download.swift.org/swift-$(SWIFT_VERSION)-release/fedor
 SWIFT_SHA256  := ca1088186e3a3b278854b4f5b3d6975e5846d06748b1109ab259a959a5431f86
 BUILDER_STAMP := build/cache/builder.stamp
 
+# The swift.org toolchain for macOS (the same compiler version as the Linux
+# toolchain in the builder), and the Swift SDK that `make sdk` makes from the
+# builder. Together they compile ui/ for mydistro on the Mac.
+SWIFT_MAC_PKG    := build/cache/swift-$(SWIFT_VERSION)-RELEASE-osx.pkg
+SWIFT_MAC_URL    := https://download.swift.org/swift-$(SWIFT_VERSION)-release/xcode/swift-$(SWIFT_VERSION)-RELEASE/$(notdir $(SWIFT_MAC_PKG))
+SWIFT_MAC_SHA256 := 8fd03185b98fe27f54a54631c2449decf75d5b466ce8e34abbd414141063c6aa
+SWIFT_MAC        := build/cache/swift-$(SWIFT_VERSION)-macos
+SWIFT_SDKS       := build/cache/swift-sdks
+SWIFT_SDK        := mydistro-aarch64
+SDK_STAMP        := $(SWIFT_SDKS)/$(SWIFT_SDK).artifactbundle/info.json
+SWIFT_BUILD       = $(SWIFT_MAC)/usr/bin/swift build --package-path ui \
+	--swift-sdks-path $(SWIFT_SDKS) --swift-sdk $(SWIFT_SDK) --static-swift-stdlib
+
+# Xcode and other GUI apps start make with a minimal PATH.
+export PATH := /usr/local/bin:/opt/homebrew/bin:$(PATH)
+
 # Work files live in container volumes (ext4): macOS file systems are
 # case-insensitive and don't keep Linux ownership. The package cache volume
-# means packages are downloaded once.
+# means packages are downloaded once. The repository has the same path in the
+# container as on the Mac, so compiler messages point to files that Xcode and
+# other editors can open.
 RUN = container run --rm --cap-add ALL -c $(CPUS) -m $(MEM) \
-	-v $(CURDIR):/src \
+	-v $(CURDIR):$(CURDIR) \
 	-v $(VOL_WORK):/work \
 	-v $(VOL_PKG):/var/cache/pacman/pkg \
-	-w /src
+	-w $(CURDIR)
 
-.PHONY: help builder volumes build ui protocols shell live installed gui demo test clean distclean
+.PHONY: help builder volumes build sdk ui ui-container protocols shell live installed gui demo demo-dev test test-dev clean distclean
 
 help:
 	@echo "make build      build out/live.img"
@@ -35,8 +53,12 @@ help:
 	@echo "make installed  boot the disk the installer wrote"
 	@echo "make gui        boot the installed disk in a window (display + input)"
 	@echo "make demo       same, and start the compositor with a test window"
-	@echo "make ui         quick Swift build of ui/ into out/ui (shared at /mnt/host/ui in the VM)"
+	@echo "make demo-dev   same, with the programs from 'make ui' (out/ui)"
+	@echo "make ui         quick Swift build of ui/ on the Mac into out/ui (shared at /mnt/host/ui in the VM)"
+	@echo "make ui-container  the same build in the build container"
+	@echo "make sdk        the macOS Swift toolchain and the mydistro Swift SDK (make ui does this)"
 	@echo "make test       install, display and compositor tests"
+	@echo "make test-dev   the compositor test, with the programs from 'make ui'"
 	@echo "make shell      root shell in the build container"
 	@echo "make clean      remove build output (keeps package cache)"
 	@echo "make distclean  also remove package cache, builder image, base tarball"
@@ -59,6 +81,31 @@ $(BUILDER_STAMP): build/Containerfile $(ALARM_TARBALL) $(SWIFT_TARBALL)
 
 builder: $(BUILDER_STAMP)
 
+$(SWIFT_MAC_PKG):
+	mkdir -p $(dir $@)
+	curl -fL --no-progress-meter -o $@.part $(SWIFT_MAC_URL)
+	echo "$(SWIFT_MAC_SHA256)  $@.part" | shasum -a 256 -c -
+	pkgutil --check-signature $@.part
+	mv $@.part $@
+
+# The toolchain stays in build/cache. It is not installed on the Mac.
+$(SWIFT_MAC)/usr/bin/swift: $(SWIFT_MAC_PKG)
+	rm -rf $(SWIFT_MAC) $(SWIFT_MAC).part
+	pkgutil --expand-full $< $(SWIFT_MAC).part
+	mv $(SWIFT_MAC).part/*/Payload $(SWIFT_MAC)
+	rm -rf $(SWIFT_MAC).part
+	touch $@
+
+$(SDK_STAMP): $(BUILDER_STAMP) build/make-sdk.sh
+	$(RUN) $(IMAGE) build/make-sdk.sh
+	rm -rf $(SWIFT_SDKS)
+	mkdir -p $(SWIFT_SDKS)
+	tar -C $(SWIFT_SDKS) -xf build/cache/swift-sdk.tar
+	rm build/cache/swift-sdk.tar
+	touch $@
+
+sdk: $(SWIFT_MAC)/usr/bin/swift volumes $(SDK_STAMP)
+
 volumes:
 	@container volume inspect $(VOL_WORK) >/dev/null 2>&1 || container volume create -s 32G $(VOL_WORK)
 	@container volume inspect $(VOL_PKG)  >/dev/null 2>&1 || container volume create -s 16G $(VOL_PKG)
@@ -67,7 +114,13 @@ build: builder volumes
 	$(RUN) $(IMAGE) build/build.sh
 
 # Fast Swift loop: no image rebuild. Debug build, Swift runtime linked in.
-ui: builder volumes
+ui: sdk
+	$(SWIFT_BUILD)
+	mkdir -p out/ui
+	find "$$($(SWIFT_BUILD) --show-bin-path)" -maxdepth 1 -type f -perm -u+x -exec cp {} out/ui/ \;
+	ls out/ui
+
+ui-container: builder volumes
 	$(RUN) $(IMAGE) sh -c 'swift build --package-path ui --scratch-path /work/swiftpm/dev \
 		--static-swift-stdlib && mkdir -p out/ui && \
 		find "$$(swift build --package-path ui --scratch-path /work/swiftpm/dev --show-bin-path)" \
@@ -93,10 +146,19 @@ gui:
 demo:
 	vm/demo.exp
 
+# The same, but the VM runs the programs from `make ui` through /mnt/host.
+demo-dev:
+	MYDISTRO_UI_DIR=/mnt/host/ui vm/demo.exp
+
 test:
 	tests/install.exp
 	tests/display.exp
 	tests/compositor.exp
+
+# The compositor test with the programs from `make ui`. Needs the installed
+# disk from `make test`.
+test-dev: ui
+	MYDISTRO_UI_DIR=/mnt/host/ui tests/compositor.exp
 
 clean:
 	-container volume rm $(VOL_WORK)

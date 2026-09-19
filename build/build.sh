@@ -3,11 +3,11 @@
 # Assembles the mydistro root file system with pacstrap and packs it into a
 # bootable GPT disk image with systemd-repart.
 #
-#   /src    this repository (bind mount)
+#   $PWD    this repository (bind mount, same path as on the host)
 #   /work   scratch space (container volume, case-sensitive ext4)
 set -euo pipefail
 
-SRC=/src
+SRC=$PWD
 REPO=/work/repo
 STAGE=/work/stage
 ROOT=$STAGE/rootfs

@@ -5,7 +5,7 @@
 // the owner of the seat, with no other program using the display.
 // tests/display.exp checks the pattern from a QEMU screenshot.
 
-import DRM
+import DRMKit
 import Glibc
 
 let background: UInt32 = 0x965ADC   // matches ANSI_COLOR in os-release

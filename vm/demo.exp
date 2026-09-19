@@ -2,19 +2,25 @@
 # `make demo`: boots the installed disk in a window, logs in on the serial
 # console, and starts mydistro-compositor with a test window. The VM keeps
 # running until you close its window.
+#
+# With MYDISTRO_UI_DIR set (for example /mnt/host/ui), the VM runs the
+# programs from that directory, not the installed ones.
 
 set timeout 120
 log_user 1
 source [file dirname [info script]]/../tests/lib.exp
 
+set bin ""
+if {[info exists env(MYDISTRO_UI_DIR)]} { set bin "$env(MYDISTRO_UI_DIR)/" }
+
 spawn env VM_GPU=window vm/run.sh installed
 login
-send "LIBSEAT_BACKEND=noop mydistro-compositor &\r"
+send "LIBSEAT_BACKEND=noop ${bin}mydistro-compositor &\r"
 expect {
     "COMPOSITOR-READY"     {}
     "mydistro-compositor:" { fail "compositor reported an error" }
 }
-send "mydistro-hello-client &\r"
+send "${bin}mydistro-hello-client &\r"
 expect "WINDOW-MAPPED"
 send_user "\n\n>>> mydistro compositor is running in the QEMU window.\n"
 send_user ">>> Move the mouse over it. Ctrl+Alt+Backspace stops the compositor.\n"
