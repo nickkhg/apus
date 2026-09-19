@@ -27,15 +27,16 @@ RUN = container run --rm --cap-add ALL -c $(CPUS) -m $(MEM) \
 	-v $(VOL_PKG):/var/cache/pacman/pkg \
 	-w /src
 
-.PHONY: help builder volumes build ui shell live installed gui test clean distclean
+.PHONY: help builder volumes build ui protocols shell live installed gui demo test clean distclean
 
 help:
 	@echo "make build      build out/live.img"
 	@echo "make live       boot live image + blank disk in QEMU (Ctrl-A X quits)"
 	@echo "make installed  boot the disk the installer wrote"
 	@echo "make gui        boot the installed disk in a window (display + input)"
+	@echo "make demo       same, and start the compositor with a test window"
 	@echo "make ui         quick Swift build of ui/ into out/ui (shared at /mnt/host/ui in the VM)"
-	@echo "make test       automated install + reboot test, then display test"
+	@echo "make test       install, display and compositor tests"
 	@echo "make shell      root shell in the build container"
 	@echo "make clean      remove build output (keeps package cache)"
 	@echo "make distclean  also remove package cache, builder image, base tarball"
@@ -72,6 +73,10 @@ ui: builder volumes
 		find "$$(swift build --package-path ui --scratch-path /work/swiftpm/dev --show-bin-path)" \
 			-maxdepth 1 -type f -perm -u+x -exec cp {} out/ui/ \; && ls out/ui'
 
+# Regenerate Wayland protocol C code in ui/ (commit the result).
+protocols: builder
+	$(RUN) $(IMAGE) ui/Scripts/generate-protocols.sh
+
 shell: builder volumes
 	$(RUN) -it $(IMAGE) bash
 
@@ -84,9 +89,14 @@ installed:
 gui:
 	VM_GPU=window vm/run.sh installed
 
+# The installed system in a window, with the compositor and a test window running.
+demo:
+	vm/demo.exp
+
 test:
 	tests/install.exp
 	tests/display.exp
+	tests/compositor.exp
 
 clean:
 	-container volume rm $(VOL_WORK)

@@ -66,6 +66,12 @@ public final class DumbFramebuffer {
         drmModeDestroyDumbBuffer(fd, handle)
     }
 
+    /// Direct access to the pixels: a pointer to the first one, and the
+    /// distance between rows in pixels (pitch / 4).
+    public func withPixels<R>(_ body: (UnsafeMutablePointer<UInt32>, _ stride: Int) throws -> R) rethrows -> R {
+        try body(pixels.assumingMemoryBound(to: UInt32.self), pitch / 4)
+    }
+
     /// Fills a rectangle (clipped to the buffer) with a 0xRRGGBB colour.
     public func fill(x: Int = 0, y: Int = 0, width: Int? = nil, height: Int? = nil, color: UInt32) {
         let x0 = max(0, x), y0 = max(0, y)

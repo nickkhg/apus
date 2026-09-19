@@ -29,6 +29,10 @@ package() {
     cd "$startdir/ui"
     local bin
     bin=$(swift build -c release --scratch-path "${SWIFT_SCRATCH:-$srcdir/.build}" --show-bin-path)
-    install -Dm755 "$bin/mydistro-display-probe" "$pkgdir/usr/bin/mydistro-display-probe"
-    install -Dm755 "$bin/mydistro-ui-check" "$pkgdir/usr/bin/mydistro-ui-check"
+    local program
+    for program in "$bin"/mydistro-*; do
+        if [[ -f $program && -x $program ]]; then
+            install -Dm755 "$program" "$pkgdir/usr/bin/${program##*/}"
+        fi
+    done
 }

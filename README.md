@@ -40,6 +40,12 @@ mydistro is a Linux distribution for aarch64, based on Arch Linux ARM. It uses s
    make gui
    ```
 
+6. Boot the installed disk in a window and start the compositor with a test window.
+
+   ```sh
+   make demo
+   ```
+
 To stop QEMU, push `Ctrl-A` in the terminal, then push `X`.
 
 To install software on a running system, use pacman. For example: `pacman -S htop`.
@@ -117,6 +123,35 @@ The `mydistro-ui` package contains the Swift programs. The build links the Swift
 
 QEMU from Homebrew has no GPU acceleration. In the VM, Mesa renders with the CPU.
 
+### Compositor
+
+`mydistro-compositor` is the display server. It is a Swift program in `ui/Sources/Compositor` and `ui/Sources/CompositorMain`. It does these tasks:
+
+1. It gets access to the screen and the input devices through libseat.
+2. It puts frames on the screen with DRM/KMS. It uses two framebuffers and changes them at vertical blank. It draws a frame only when something changes.
+3. It reads the keyboard and the mouse with libinput and xkbcommon, and it moves a pointer.
+4. It is a Wayland server. Apps can make windows with `wl_compositor`, `wl_shm`, and `xdg_wm_base` (toplevel windows only).
+5. For each frame, it makes a display list: the background, the windows, and the pointer. `SoftwareRenderer` draws the display list with the CPU.
+
+The display list is the interface for a future UI layer, for example OpenSwiftUI. A UI layer can add items to the display list. Only the renderer writes pixels, so a GPU renderer can replace it later.
+
+OpenSwiftUI 0.21.0 does not run on Linux yet. Its view graph stops with a segmentation fault at start, and it has no Linux renderer.
+
+To stop the compositor, push Ctrl+Alt+Backspace, or send SIGINT or SIGTERM.
+
+To start the compositor yourself in the VM, log in as `root` on the serial console and run this command:
+
+```sh
+LIBSEAT_BACKEND=noop mydistro-compositor &
+mydistro-hello-client &
+```
+
+`LIBSEAT_BACKEND=noop` lets root open the devices directly. The serial console has no seat session. Set `MYDISTRO_DEBUG=1` to see each start step.
+
+`mydistro-hello-client` is a small Wayland app in Swift. It opens one window with a blue colour and a white border.
+
+The Wayland protocol extensions (now only `xdg-shell`) are C code that `wayland-scanner` makes. `make protocols` makes them again. The result is in `ui/Sources/CXDGShellServer` and `ui/Sources/CXDGShellClient`.
+
 ### Swift development loop
 
 1. Edit the Swift code in `ui/`.
@@ -165,7 +200,9 @@ The build masks `systemd-firstboot` and `systemd-homed-firstboot`. Thus, first b
 | `make live` | Boots the live image and a blank 8 GB target disk. |
 | `make installed` | Boots only the target disk. |
 | `make gui` | Boots the target disk in a window, with a display, a keyboard, and a mouse. |
+| `make demo` | Boots the target disk in a window and starts the compositor with a test window. |
 | `make ui` | Compiles `ui/` and copies the programs to `out/ui/`. |
+| `make protocols` | Makes the C code for the Wayland protocol extensions again. |
 | `make test` | Runs the install test and the display test. |
 | `make shell` | Opens a root shell in the build container. |
 | `make clean` | Removes the build output. The package cache stays. |
@@ -186,7 +223,8 @@ Run `make test` after each change.
 
 ## Tests
 
-`make test` runs two tests. Both use the serial console of the VM.
+`make test` runs three tests. All of them use the serial console of the VM.
 
 1. `tests/install.exp` boots the live image and installs to a blank disk. Then it boots the installed disk and checks it.
 2. `tests/display.exp` boots the installed disk with a GPU but no window. It runs `mydistro-ui-check` and `mydistro-display-probe`. While the probe draws its pattern on the screen, the test gets a screenshot from QEMU. `tests/screen.py` checks the colours of two pixels.
+3. `tests/compositor.exp` boots the installed disk with a GPU but no window. It starts `mydistro-compositor` and `mydistro-hello-client`. Then it gets a screenshot and checks the background, the window, the window border, and the pointer.

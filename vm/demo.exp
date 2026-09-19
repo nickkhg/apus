@@ -1,0 +1,23 @@
+#!/usr/bin/expect -f
+# `make demo`: boots the installed disk in a window, logs in on the serial
+# console, and starts mydistro-compositor with a test window. The VM keeps
+# running until you close its window.
+
+set timeout 120
+log_user 1
+source [file dirname [info script]]/../tests/lib.exp
+
+spawn env VM_GPU=window vm/run.sh installed
+login
+send "LIBSEAT_BACKEND=noop mydistro-compositor &\r"
+expect {
+    "COMPOSITOR-READY"     {}
+    "mydistro-compositor:" { fail "compositor reported an error" }
+}
+send "mydistro-hello-client &\r"
+expect "WINDOW-MAPPED"
+send_user "\n\n>>> mydistro compositor is running in the QEMU window.\n"
+send_user ">>> Move the mouse over it. Ctrl+Alt+Backspace stops the compositor.\n"
+send_user ">>> Close the QEMU window to stop the VM.\n\n"
+set timeout -1
+expect eof

@@ -41,15 +41,24 @@ public struct Output: Sendable, CustomStringConvertible {
 public final class DRMDevice {
     public let path: String
     public let fd: Int32
+    private let ownsFD: Bool
 
     public init(path: String) throws(DRMError) {
         let fd = Glibc.open(path, O_RDWR | O_CLOEXEC)
         guard fd >= 0 else { throw .open(path: path, errno: errno) }
         self.path = path
         self.fd = fd
+        self.ownsFD = true
     }
 
-    deinit { close(fd) }
+    /// Wraps a device opened elsewhere (e.g. by libseat, which also closes it).
+    public init(fd: Int32, path: String) {
+        self.path = path
+        self.fd = fd
+        self.ownsFD = false
+    }
+
+    deinit { if ownsFD { close(fd) } }
 
     /// The first /dev/dri/card* that has at least one connected output.
     public static func firstWithOutput() throws(DRMError) -> DRMDevice {

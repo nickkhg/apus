@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
-"""Screenshot the VM through the QEMU monitor and check the probe's pattern.
+"""Screenshot the VM through the QEMU monitor and check pixel colours.
 
-    tests/screen.py MONITOR_SOCKET OUTPUT.ppm
+    tests/screen.py MONITOR_SOCKET OUTPUT.ppm X,Y=RRGGBB...
 
-mydistro-display-probe fills the screen with mydistro purple (0x965ADC) and
-draws a white rectangle over the middle half. We check one pixel of each.
+X and Y are pixels, or fractions of the screen size when they contain a
+dot (0.5,0.5 is the centre). Exits non-zero if any pixel differs.
 """
 import os
 import socket
 import sys
 import time
-
-PURPLE = (0x96, 0x5A, 0xDC)
-WHITE = (0xFF, 0xFF, 0xFF)
-
 
 def screendump(sock_path, out_path):
     if os.path.exists(out_path):
@@ -55,15 +51,30 @@ def pixel(pixels, width, x, y):
     return tuple(pixels[i:i + 3])
 
 
+def parse(spec, width, height):
+    position, colour = spec.split("=")
+    x, y = position.split(",")
+    x = int(float(x) * width) if "." in x else int(x)
+    y = int(float(y) * height) if "." in y else int(y)
+    value = int(colour, 16)
+    return x, y, ((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF)
+
+
 def main():
-    sock_path, out_path = sys.argv[1], sys.argv[2]
+    sock_path, out_path, specs = sys.argv[1], sys.argv[2], sys.argv[3:]
     screendump(sock_path, out_path)
     width, height, pixels = read_ppm(out_path)
-    corner = pixel(pixels, width, width // 8, height // 8)
-    centre = pixel(pixels, width, width // 2, height // 2)
-    print(f"screenshot {width}x{height}: background {corner}, centre {centre}")
-    if corner != PURPLE or centre != WHITE:
-        sys.exit(f"screenshot: expected background {PURPLE} and centre {WHITE}")
+    print(f"screenshot {width}x{height}")
+    failed = False
+    for spec in specs:
+        x, y, expected = parse(spec, width, height)
+        actual = pixel(pixels, width, x, y)
+        ok = actual == expected
+        failed |= not ok
+        print(f"  ({x},{y}) {'ok' if ok else 'WRONG'}: {'%02X%02X%02X' % actual}"
+              f"{'' if ok else ' (expected %02X%02X%02X)' % expected}")
+    if failed:
+        sys.exit("screenshot: pixels differ")
     print("SCREEN-OK")
 
 

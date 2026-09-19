@@ -1,0 +1,47 @@
+#!/usr/bin/expect -f
+# Compositor test: boot the installed disk with a (headless) GPU, start
+# mydistro-compositor, open a window with mydistro-hello-client, screenshot
+# the VM and check the pixels. Run after tests/install.exp.
+
+set timeout 120
+log_user 1
+source [file dirname [info script]]/lib.exp
+
+spawn env VM_GPU=headless vm/run.sh installed
+login
+
+# Root on the serial console has no seat session: libseat opens devices directly.
+send "LIBSEAT_BACKEND=noop mydistro-compositor &\r"
+expect {
+    "COMPOSITOR-READY"     {}
+    "mydistro-compositor:" { fail "compositor reported an error" }
+    timeout                { fail "compositor didn't start" }
+}
+
+send "mydistro-hello-client --seconds 120 &\r"
+expect {
+    "WINDOW-MAPPED"          {}
+    "mydistro-hello-client:" { fail "client reported an error" }
+    timeout                  { fail "window never mapped" }
+}
+after 1000
+
+# 1280x800 screen; the 400x300 window is centred; the pointer starts at the centre.
+if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/screen.ppm \
+        128,80=2B2340 576,360=3070F0 444,254=FFFFFF 640,400=000000 641,402=FFFFFF} result]} {
+    fail "screenshot check: $result"
+}
+send_user "\n$result\n"
+
+send "kill %1\r"
+expect {
+    "COMPOSITOR-EXIT" {}
+    timeout           { fail "compositor didn't exit on SIGTERM" }
+}
+send "\r"
+expect -re "# $"
+send "poweroff\r"
+expect eof
+wait
+
+send_user "\n\nCOMPOSITOR TEST PASSED\n"

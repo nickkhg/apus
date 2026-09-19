@@ -40,3 +40,6 @@ ENV PATH=/opt/swift/usr/bin:$PATH
 RUN swift --version
 
 CMD ["bash"]
+
+# SwiftPM fetches package dependencies with git.
+RUN pacman -Sy --noconfirm --needed git && pacman -Scc --noconfirm
