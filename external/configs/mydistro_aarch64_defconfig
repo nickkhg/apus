@@ -1,0 +1,51 @@
+# --- Target & toolchain ------------------------------------------------------
+BR2_aarch64=y
+# Prebuilt Arm GNU toolchain (runs on aarch64 hosts): skips ~20 min of gcc.
+BR2_TOOLCHAIN_EXTERNAL=y
+BR2_TOOLCHAIN_EXTERNAL_ARM_AARCH64=y
+BR2_GLOBAL_PATCH_DIR="$(BR2_EXTERNAL_MYDISTRO_PATH)/patches"
+BR2_DOWNLOAD_FORCE_CHECK_HASHES=y
+BR2_CCACHE=y
+BR2_CCACHE_DIR="/work/output/.ccache"
+
+# --- System ------------------------------------------------------------------
+BR2_TARGET_GENERIC_HOSTNAME="mydistro"
+BR2_TARGET_GENERIC_ISSUE="Welcome to mydistro"
+BR2_TARGET_GENERIC_GETTY_PORT="ttyAMA0"
+# The live system runs with a read-only root (so the installer can copy it
+# block-for-block); installed systems get `rw` on the kernel command line.
+# BR2_TARGET_GENERIC_REMOUNT_ROOTFS_RW is not set
+BR2_SYSTEM_DHCP="eth0"
+BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_MYDISTRO_PATH)/board/mydistro/rootfs-overlay"
+BR2_ROOTFS_POST_BUILD_SCRIPT="$(BR2_EXTERNAL_MYDISTRO_PATH)/board/mydistro/post-build.sh"
+BR2_ROOTFS_POST_IMAGE_SCRIPT="$(BR2_EXTERNAL_MYDISTRO_PATH)/board/mydistro/post-image.sh"
+
+# --- Kernel ------------------------------------------------------------------
+BR2_LINUX_KERNEL=y
+BR2_LINUX_KERNEL_CUSTOM_VERSION=y
+BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="6.18.7"
+BR2_LINUX_KERNEL_USE_CUSTOM_CONFIG=y
+BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE="$(BR2_EXTERNAL_MYDISTRO_PATH)/board/mydistro/linux.config"
+BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_MYDISTRO_PATH)/board/mydistro/linux-efi.fragment"
+BR2_LINUX_KERNEL_NEEDS_HOST_OPENSSL=y
+
+# --- Packages (what the installer needs) --------------------------------------
+BR2_PACKAGE_DOSFSTOOLS=y
+BR2_PACKAGE_DOSFSTOOLS_MKFS_FAT=y
+BR2_PACKAGE_E2FSPROGS=y
+BR2_PACKAGE_E2FSPROGS_RESIZE2FS=y
+BR2_PACKAGE_UTIL_LINUX=y
+BR2_PACKAGE_UTIL_LINUX_BINARIES=y
+# util-linux mount: BusyBox mount does not understand PARTUUID= in fstab.
+BR2_PACKAGE_UTIL_LINUX_MOUNT=y
+
+# --- Images ------------------------------------------------------------------
+BR2_TARGET_ROOTFS_EXT2=y
+BR2_TARGET_ROOTFS_EXT2_4=y
+BR2_TARGET_ROOTFS_EXT2_SIZE="256M"
+# BR2_TARGET_ROOTFS_TAR is not set
+BR2_TARGET_GRUB2=y
+BR2_TARGET_GRUB2_ARM64_EFI=y
+BR2_PACKAGE_HOST_DOSFSTOOLS=y
+BR2_PACKAGE_HOST_GENIMAGE=y
+BR2_PACKAGE_HOST_MTOOLS=y

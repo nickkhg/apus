@@ -1,0 +1,2 @@
+# Custom packages go in package/<name>/Config.in and are sourced here, e.g.:
+# source "$BR2_EXTERNAL_MYDISTRO_PATH/package/foo/Config.in"

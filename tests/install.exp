@@ -1,0 +1,59 @@
+#!/usr/bin/expect -f
+# End-to-end test: boot live image -> run installer -> power off ->
+# boot the installed disk alone -> check it's the installed system.
+#
+# Drives the VM's serial console. Run via `make test`.
+
+set timeout 180
+log_user 1
+
+proc fail {msg} {
+    send_user "\n\nTEST FAILED: $msg\n"
+    exit 1
+}
+
+proc login {} {
+    expect {
+        "login:" { send "root\r" }
+        timeout  { fail "no login prompt" }
+        eof      { fail "VM exited before login" }
+    }
+    expect {
+        -re "# $" {}
+        timeout   { fail "no shell prompt" }
+    }
+}
+
+exec rm -f out/vm/target.qcow2
+
+send_user "\n=== Stage 1: install from live image ===\n"
+spawn vm/run.sh live
+login
+send "mydistro-install -y /dev/vdb\r"
+expect {
+    "Installation complete" {}
+    "mydistro-install:"     { fail "installer reported an error" }
+    timeout                 { fail "installer timed out" }
+}
+expect -re "# $"
+send "poweroff\r"
+expect {
+    eof     {}
+    timeout { fail "live VM didn't power off" }
+}
+wait
+
+send_user "\n=== Stage 2: boot installed disk ===\n"
+spawn vm/run.sh installed
+login
+send "cat /etc/mydistro-installed >/dev/null && mountpoint -q /boot/efi && test -f /boot/efi/Image && ! grep -qw mydistro.live /proc/cmdline && touch /rw-check && echo INSTALLED-OK\r"
+expect {
+    "\nINSTALLED-OK" {}
+    timeout          { fail "installed system checks failed" }
+}
+expect -re "# $"
+send "poweroff\r"
+expect eof
+wait
+
+send_user "\n\nTEST PASSED\n"
