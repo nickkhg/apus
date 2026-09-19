@@ -35,6 +35,8 @@ If `out/vm/target.qcow2` does not exist, `vm/run.sh` makes an 8 GB disk. To star
 | `make gui` | Boots the target disk in a window. |
 | `make demo` | Boots the target disk in a window and starts the compositor with a test window. |
 | `make test` | Runs the three tests. |
+| `make test-dev` | Runs `make ui`, then the compositor test with the programs from `out/ui/` (through `/mnt/host/ui`). Needs the disk from `make test`. |
+| `make demo-dev` | The same as `make demo`, with the programs from `out/ui/`. |
 
 ## The tests
 
@@ -96,4 +98,6 @@ The compositor test checks these pixels on the 1280×800 screen:
 
 ## After a change
 
-Run `make build` and `make test` after each change. For Swift changes, you can use `make ui` first. See [ui.md](ui.md).
+Run `make build` and `make test` after each change. For Swift changes, you can use `make ui` and `make test-dev` first. See [ui.md](ui.md).
+
+`make test` tests the programs in the image, which the Linux toolchain compiled. `make test-dev` tests the programs that the macOS toolchain compiled.

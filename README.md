@@ -7,7 +7,8 @@ mydistro is a Linux distribution for aarch64, based on Arch Linux ARM. It uses s
 - A Mac with Apple silicon.
 - Apple `container` 1.0 or later. Start the service with `container system start`.
 - QEMU from Homebrew: `brew install qemu`.
-- Approximately 20 GB of free disk space.
+- Approximately 28 GB of free disk space. The Swift toolchain for macOS and the Swift SDK use approximately 7.5 GB of this.
+- Optional: Xcode, to edit and build from Xcode.
 
 ## Quick start
 
@@ -36,11 +37,15 @@ Other commands:
 | `make live` | Boots the live image. Log in as `root` with no password, then run `mydistro-install`. |
 | `make installed` | Boots the installed disk, with the serial console only. |
 | `make gui` | Boots the installed disk in a window. |
-| `make ui` | Compiles the Swift code in a few seconds, for use in the VM at `/mnt/host/ui/`. |
+| `make ui` | Compiles the Swift code on the Mac in a few seconds, for use in the VM at `/mnt/host/ui/`. |
+| `make demo-dev` | The same as `make demo`, with the programs from `make ui`. |
+| `make test-dev` | The compositor test, with the programs from `make ui`. |
 | `make shell` | Opens a root shell in the builder container. |
 | `make help` | Lists all commands. |
 
 To stop QEMU, push Ctrl-A in the terminal, then push X.
+
+To use Xcode, open `mydistro.xcodeproj`. Cmd-B runs `make ui`, and Cmd-R starts the new build in a VM. See [User interface](docs/ui.md#xcode).
 
 To install software on a running system, use pacman. For example: `pacman -S htop`.
 
@@ -52,8 +57,8 @@ To install software on a running system, use pacman. For example: `pacman -S hto
 | [Building](docs/building.md) | The builder image, the pinned inputs, the build steps, and reproducibility |
 | [The system](docs/system.md) | The live image, the installer, first boot, and the system settings |
 | [Packages](docs/packages.md) | The `[mydistro]` repository, the branding package, and how to add packages |
-| [User interface](docs/ui.md) | The Swift toolchain, the Swift package, the C library modules, and the development loop |
-| [Compositor](docs/compositor.md) | The design of `mydistro-compositor` and its Wayland support |
+| [User interface](docs/ui.md) | The Swift toolchains, the Swift SDK, Xcode, the Swift package, and the development loop |
+| [Compositor](docs/compositor.md) | The design of `mydistro-compositor` and of its Wayland server in Swift |
 | [Testing](docs/testing.md) | The VM, the tests, and the screenshot checks |
 | [Decisions](docs/decisions.md) | The main decisions, with the reasons and the evidence |
 | [Troubleshooting](docs/troubleshooting.md) | Problems that occurred, and their solutions |

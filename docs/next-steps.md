@@ -12,7 +12,8 @@ In this sequence:
 6. A GPU renderer. Use GBM, EGL, and OpenGL ES to draw the display list. Keep `SoftwareRenderer` as a fallback.
 7. `linux-dmabuf`, so that apps can give GPU buffers.
 8. Popups (`xdg_popup` and `xdg_positioner`).
-9. Test with real Wayland apps, for example `foot` or `weston-terminal`.
+9. Test with real Wayland apps, for example `foot` or `weston-terminal`. The only client that tests the Swift Wayland server now is `mydistro-hello-client`.
+10. `wl_registry.global_remove`, for globals that go away (for example a disconnected output).
 
 ## The UI layer
 
@@ -43,6 +44,10 @@ In this sequence:
 ## Development environment
 
 - `lldb` does not work in the builder, because it needs Python 3.13. Arch Linux has Python 3.14.
+- A debugger for the programs in the VM. `lldb-server` is in the Linux toolchain. The macOS toolchain has `lldb`, which can connect to it.
+- Xcode gives no code completion for the Linux modules (see [ui.md](ui.md#limits-of-xcode)). An editor with SourceKit-LSP gives it.
+- The Run action of the Xcode schemes (`make demo-dev`, `make demo`) was not tested in the Xcode window. A test with `xcodebuild` built the UI scheme.
+- Unit tests for the `Wayland` library (wire format and object rules), with `swift test` in the builder container. Now only the VM tests test it.
 - A GPU in the VM needs a QEMU with `virtio-gpu-gl`, for example from UTM.
 - `make gui` and `make demo` open a window. The automated tests do not test them. `tests/display.exp` and `tests/compositor.exp` test the same display with no window.
 - The tests use one VM disk in sequence. `tests/display.exp` and `tests/compositor.exp` need the disk from `tests/install.exp`.

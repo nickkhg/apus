@@ -99,8 +99,38 @@ Cause: the compiler does not show the real error. Two causes occurred:
 
 Solution: correct the types. The compositor uses `typealias Resource = UnsafeMutablePointer<wl_resource>`.
 
-## Editor: "No such module 'CDRM'"
+## Editor: "No such module 'CDRM'" or "No such module 'Glibc'"
 
-Cause: SourceKit on macOS cannot find the Linux C libraries.
+Cause: the editor compiles for macOS. The Linux modules are only in the mydistro Swift SDK.
 
-Solution: none is necessary. The builder container compiles the code.
+Solution: in Xcode, none is possible. Xcode cannot use a Swift SDK. The build (`make ui`) is correct. In an editor that uses SourceKit-LSP, use the toolchain in `build/cache/swift-6.4.0-macos/`. See [ui.md](ui.md#code-completion-in-other-editors).
+
+## ld.lld: "undefined symbol: drmAvailable"
+
+Symptom: `make ui` fails to link, but `make ui-container` links.
+
+Cause: macOS file systems ignore the case of letters in file names. The Swift library target `DRM` made `libDRM.a`. The linker looked for `libdrm.so` and found `libDRM.a` first.
+
+Solution: the target has the name `DRMKit`. Do not give a Swift target the name of a C library. After a rename, remove `ui/.build`, because the old file stays there.
+
+## make ui: headers or libraries from Homebrew
+
+Symptom: without the pkg-config settings, the build used `/opt/homebrew/include/freetype2` and linked to `/opt/homebrew/opt/freetype/lib`.
+
+Cause: SwiftPM runs pkg-config on the Mac. pkg-config finds the macOS libraries of Homebrew.
+
+Solution: `Package.swift` uses pkg-config only on Linux. On the Mac, the SDK gives the include directories, and each module map gives its library.
+
+## Xcode: "Internal inconsistency error: never received target ended message"
+
+Symptom: this message comes after each failed build in Xcode 27.
+
+Cause: Xcode 27 shows it when an external build target fails. An external build target that only runs `exit 1` gives the same message.
+
+Solution: none is necessary. Look at the other errors.
+
+## Xcode: compiler errors do not go to the source line
+
+Cause: the Swift build prints colour codes. Xcode finds `file:line:column: error:` only in plain text.
+
+Solution: `xcode/make.sh` removes the colour codes.

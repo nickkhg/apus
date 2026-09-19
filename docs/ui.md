@@ -2,9 +2,20 @@
 
 The plan is to write the complete user interface in Swift 6.4: the compositor, the window management, the shell, and the toolkit. The code is a Swift package in `ui/`. It uses no wlroots and no other compositor or toolkit.
 
-## The Swift toolchain
+## Two Swift toolchains
 
-The builder image has the official Swift 6.4.0 toolchain for Fedora 41 (aarch64) in `/opt/swift`. Swift has no official build for Arch Linux. The Fedora build works on Arch Linux with these changes in the builder image:
+There are two toolchains of the same version, Swift 6.4.0:
+
+| Toolchain | Where | Use |
+|---|---|---|
+| Linux (Fedora 41 build) | `/opt/swift` in the builder container | The image build (`makepkg`) and `make ui-container` |
+| macOS (swift.org build) | `build/cache/swift-6.4.0-macos/` | `make ui`, `make protocols`, and editors |
+
+The macOS toolchain is not the Swift in Xcode. It is the swift.org build, because it includes the linker for Linux (`ld.lld`) and it has the same version as the Linux toolchain. The Makefile downloads the `.pkg` file, checks its SHA-256 value and its signature, and extracts it in `build/cache/`. It does not install the toolchain on the Mac.
+
+### The Linux toolchain in the builder
+
+Swift has no official build for Arch Linux. The Fedora build works on Arch Linux with these changes in the builder image:
 
 | Library that Swift needs | Arch Linux has | Change |
 |---|---|---|
@@ -14,20 +25,72 @@ The builder image has the official Swift 6.4.0 toolchain for Fedora 41 (aarch64)
 
 The target system does not need these changes. The build links the Swift runtime statically (`--static-swift-stdlib`), so the programs need only glibc, libstdc++, and the C libraries below.
 
-Your Mac can edit the code, but Xcode and SourceKit on macOS cannot find the Linux C libraries. Errors such as `No such module 'CDRM'` in the editor are normal. The builder container compiles the code.
+## The Swift SDK: compile on the Mac
+
+`make sdk` makes the Swift SDK `mydistro-aarch64` in `build/cache/swift-sdks/`. A Swift SDK is a sysroot for a different system. With it, the macOS toolchain compiles `ui/` for mydistro on the Mac, without the container:
+
+```sh
+build/cache/swift-6.4.0-macos/usr/bin/swift build --package-path ui \
+    --swift-sdks-path build/cache/swift-sdks --swift-sdk mydistro-aarch64
+```
+
+`make ui` runs this command (with `--static-swift-stdlib`). A full build takes approximately 5 seconds on the Mac.
+
+`build/make-sdk.sh` makes the SDK in the builder container. The SDK contains:
+
+- The C headers and the libraries of the builder (`/usr/include`, and the `.so`, `.a`, and `.o` files in `/usr/lib`). These are the same packages that the image gets.
+- The Swift runtime and modules of the Linux toolchain.
+- The include directories that pkg-config gives for the C libraries of `ui/`.
+
+The SDK has approximately 1.1 GB. Run `make sdk` again after a change to the builder image. `make ui` does this automatically.
+
+Two problems apply to a sysroot on macOS:
+
+- macOS file systems ignore the case of letters in file names. The script removes 8 netfilter headers that have the same name as another header in a different case. `ui/` does not use them.
+- For the same reason, a Swift library target must not have the name of a C library. The linker found `libDRM.a` (the Swift target `DRM`) when it looked for `libdrm.so`. Thus, the target is `DRMKit`.
+
+## Xcode
+
+Open `mydistro.xcodeproj`. The project has three schemes:
+
+| Scheme | Build (Cmd-B) | Run (Cmd-R) |
+|---|---|---|
+| UI | `make ui` | `make demo-dev`: boots the installed disk in a window and starts the new build of the compositor and the test client |
+| Image | `make build` | `make demo` |
+| Tests | `make test` | Nothing |
+
+The targets are "external build system" targets: Xcode runs `xcode/make.sh`, which runs make. Compiler errors appear in the Xcode issue navigator. They go to the correct file and line, because the paths in the messages are paths on the Mac:
+
+- `make ui` compiles on the Mac.
+- The builder container mounts the repository at the same path as on the Mac, not at a different path such as `/src`.
+
+Product > Clean does nothing. Use `make clean` in a terminal.
+
+### Limits of Xcode
+
+- Xcode cannot compile for Linux, and it cannot use a Swift SDK. Thus, code completion and jump to definition do not work for the Linux modules in Xcode. Errors such as `No such module 'Glibc'` in the Xcode editor are normal. The build is correct.
+- The Xcode debugger cannot attach to a program in the VM.
+
+### Code completion in other editors
+
+`ui/.sourcekit-lsp/config.json` tells SourceKit-LSP to use the mydistro SDK. An editor that uses SourceKit-LSP from `build/cache/swift-6.4.0-macos/usr/bin/sourcekit-lsp` gets code completion, errors, and documentation for all modules, also for the C libraries. For example, use Visual Studio Code with the Swift extension, and set the toolchain path to `build/cache/swift-6.4.0-macos/usr/bin`.
+
+A test with SourceKit-LSP gave the documentation of the C function `libinput_dispatch` and no errors in `Input.swift`.
 
 ## The package
 
 | Target | Kind | Content |
 |---|---|---|
-| `CDRM`, `CGBM`, `CEGL`, `CGLES`, `CInput`, `CUdev`, `CXKBCommon`, `CSeat`, `CWaylandServer`, `CWaylandClient`, `CFreeType`, `CHarfBuzz` | System library | The C libraries, found with pkg-config |
-| `CXDGShellServer`, `CXDGShellClient` | C | The `xdg-shell` protocol code that `wayland-scanner` makes |
-| `DRM` | Swift library | A Swift layer over libdrm |
+| `CDRM`, `CGBM`, `CEGL`, `CGLES`, `CInput`, `CUdev`, `CXKBCommon`, `CSeat`, `CWaylandClient`, `CFreeType`, `CHarfBuzz` | System library | The C libraries |
+| `CLinux` | System library | The glibc headers for epoll and signalfd. No library and no C code. |
+| `CXDGShellClient` | C | The `xdg-shell` client code that `wayland-scanner` makes, for the test client |
+| `DRMKit` | Swift library | A Swift layer over libdrm |
+| `Wayland` | Swift library | The Wayland server. See [compositor.md](compositor.md). |
 | `Compositor` | Swift library | The compositor. See [compositor.md](compositor.md). |
 | `mydistro-compositor` | Program | Runs the compositor |
-| `mydistro-hello-client` | Program | A small Wayland app with one window |
+| `mydistro-hello-client` | Program | A small Wayland app with one window. It uses libwayland-client, as most apps do. |
 | `mydistro-display-probe` | Program | Draws a test pattern on the screen, then restores the screen |
-| `mydistro-ui-check` | Program | Calls each C library once. It needs no display. |
+| `mydistro-ui-check` | Program | Calls each C library once. It needs no screen. |
 
 ### The C library modules
 
@@ -38,30 +101,40 @@ Your Mac can edit the code, but Xcode and SourceKit on macOS cannot find the Lin
 | Input devices and hotplug | libinput, libudev | `CInput`, `CUdev` |
 | Keymaps | xkbcommon | `CXKBCommon` |
 | Device access for a session | libseat | `CSeat` |
-| Protocol between the compositor and apps | Wayland | `CWaylandServer`, `CWaylandClient` |
+| Wayland for apps (the test client only) | libwayland-client | `CWaylandClient` |
 | Glyphs and text shaping | FreeType, HarfBuzz | `CFreeType`, `CHarfBuzz` |
 
-Each module is a directory in `ui/Sources/` with a `module.modulemap` and a `shim.h`. The `shim.h` file includes the C headers. Some shims also add small C helpers, because Swift cannot use some C constructs directly:
+The compositor does not use libwayland. Its Wayland server is Swift.
+
+Each module is a directory in `ui/Sources/` with a `module.modulemap` and a `shim.h`. The `shim.h` file includes the C headers. The module map gives the library to link. On Linux, pkg-config gives the compiler flags. On the Mac, `Package.swift` does not use pkg-config, because pkg-config finds the macOS libraries from Homebrew. There, the SDK gives the include directories.
+
+Some shims also add small C helpers, because Swift cannot use some C constructs directly:
 
 | C construct | Problem in Swift | Helper |
 |---|---|---|
 | Macros such as `DRM_FORMAT_XRGB8888` | Swift does not import function-like macros | Constants such as `CDRM_FORMAT_XRGB8888` |
-| `struct wl_surface_interface` and the variable `wl_surface_interface` | C uses one name for two things | `wl_surface_interface_ptr()` for the variable, `wl_surface_requests` for the struct |
 | `wl_registry_bind(..., &wl_compositor_interface, ...)` | Swift cannot get the address of a C constant | `wl_compositor_interface_ptr()` |
-| `wl_resource_post_error(...)` | Swift cannot call variadic C functions | `wl_resource_post_error_message()` |
-| `container_of()` with `wl_listener` | Swift has no `container_of` | `struct swift_wl_listener` with a context pointer |
 
 ### Wayland protocol code
 
-`wayland-scanner` makes C code from the protocol XML files. The script `ui/Scripts/generate-protocols.sh` runs it. `make protocols` runs the script in the builder container.
+There are two generators:
 
-The generated files are in git. For each protocol, there are two targets: `<Name>Server` for the compositor and `<Name>Client` for apps. Both contain the interface definitions, because no program links both. `ui/Sources/GENERATED_PROTOCOLS` records the wayland-protocols version.
+| Generator | Output | For |
+|---|---|---|
+| `ui/Tools/WaylandScanner` (Swift, runs on the Mac) | `ui/Sources/Wayland/Protocols/*.swift` | The compositor |
+| `wayland-scanner` (C, runs in the builder) | `ui/Sources/CXDGShellClient/` | The test client |
 
-To add a protocol, add a `gen` line to the script, run `make protocols`, and add the two targets to `Package.swift`.
+`make protocols` runs both. It also copies the protocol XML files from the builder to `ui/Protocols/`. The generated files and the XML files are in git. `ui/Sources/GENERATED_PROTOCOLS` records the versions of wayland and wayland-protocols.
+
+To add a protocol to the compositor:
+
+1. Copy its XML file into `ui/Protocols/`. For a file from wayland-protocols, add it to the `cp` line in `ui/Scripts/generate-protocols.sh`.
+2. Add a `$(WAYLAND_SCANNER)` line for it to the `protocols` target in the Makefile.
+3. Run `make protocols`.
 
 ## The tools
 
-`mydistro-ui-check` calls each C library once. It prints one line for each library, then `UI-CHECK-OK`. It makes a Wayland display, a libinput context, and a keymap, and it gets the FreeType and HarfBuzz versions.
+`mydistro-ui-check` calls each C library once. It prints one line for each library, then `UI-CHECK-OK`. It makes a libinput context and a keymap, and it gets the FreeType and HarfBuzz versions.
 
 `mydistro-display-probe [--hold SECONDS]` does these steps:
 
@@ -74,13 +147,14 @@ It must run as root, when no other program uses the display.
 ## Development loop
 
 1. Edit the Swift code in `ui/`.
-2. Run `make ui`. It compiles in the builder container in a few seconds and copies the programs to `out/ui/`.
-3. Run `make gui` or `make installed`, and log in as `root`.
-4. Run the new build from the shared directory, for example `/mnt/host/ui/mydistro-compositor`.
+2. Run `make ui`, or build the UI scheme in Xcode. The programs go to `out/ui/`.
+3. Run `make demo-dev`, or run the UI scheme in Xcode. The VM starts the new programs from `/mnt/host/ui/`.
 
-`make ui` makes a debug build. It does not change the image. To put the UI in the image, run `make build`. The build keeps the Swift build cache in the `mydistro-work` volume, so it compiles only the changed files.
+To test the new programs automatically, run `make test-dev`. It runs the compositor test with the programs from `out/ui/`.
 
-`make ui` uses the build cache `/work/swiftpm/dev`. The image build uses `/work/swiftpm/mydistro-ui`.
+`make ui` makes a debug build. It does not change the image. To put the UI in the image, run `make build`. The image build compiles `ui/` again with the Linux toolchain in the container. It keeps the Swift build cache in the `mydistro-work` volume, so it compiles only the changed files.
+
+`make ui-container` does the same as `make ui` in the builder container, with the cache `/work/swiftpm/dev`.
 
 ## Graphics in the VM
 

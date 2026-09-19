@@ -1,6 +1,6 @@
 # Compositor
 
-`mydistro-compositor` is the display server of mydistro. It is a Swift program. The code is in `ui/Sources/Compositor/` and `ui/Sources/CompositorMain/`.
+`mydistro-compositor` is the display server of mydistro. It is a Swift program. The code is in `ui/Sources/Compositor/`, `ui/Sources/CompositorMain/`, and the Wayland server library `ui/Sources/Wayland/`.
 
 ## Run it
 
@@ -24,16 +24,18 @@ mydistro-hello-client &
 
 | File | Part | Purpose |
 |---|---|---|
-| `EventLoop.swift` | `EventLoop` | The main loop. It uses the libwayland event loop, and watches file descriptors and signals. All code runs on one thread. |
 | `Seat.swift` | `Seat` | Device access through libseat. It opens and closes the DRM device and the input devices. |
 | `Screen.swift` | `Screen` | One output. It has two framebuffers and changes them at vertical blank. It draws a frame only when something changes. |
 | `Input.swift` | `Input` | libinput and xkbcommon. It gives pointer motion, pointer position, buttons, and keys. |
-| `WaylandServer.swift` | `WaylandServer`, `Surface`, `Toplevel` | The Wayland objects that apps use. |
+| `WaylandServer.swift` | `WaylandServer`, `Surface`, `Toplevel` | The Wayland globals and objects that apps use: `wl_compositor`, `wl_surface`, and `xdg_wm_base`. |
 | `Scene.swift` | `DisplayList`, `SoftwareRenderer` | The display list and the CPU renderer. |
 | `Cursor.swift` | `Cursor` | The pointer image. |
 | `Compositor.swift` | `Compositor` | Connects the parts. It keeps the window list and makes the display list for each frame. |
+| `Support.swift` | | Logging, the monotonic clock, and `permanent(_:)` for C handler tables. |
 
-The `DRM` library (`ui/Sources/DRM/`) finds outputs, makes framebuffers, puts them on the screen, and does page flips.
+The `DRMKit` library (`ui/Sources/DRMKit/`) finds outputs, makes framebuffers, puts them on the screen, and does page flips.
+
+The `Wayland` library (`ui/Sources/Wayland/`) is the Wayland server and the main loop. See [The Wayland server](#the-wayland-server).
 
 ## One frame
 
@@ -60,9 +62,10 @@ The display list is the interface for a future UI layer, for example OpenSwiftUI
 
 | Interface | Version | Support |
 |---|---|---|
+| `wl_display`, `wl_registry`, `wl_callback` | 1 | Complete. The `Wayland` library implements them. |
+| `wl_shm`, `wl_shm_pool`, `wl_buffer` | 2 | ARGB8888 and XRGB8888. The `Wayland` library implements them. |
 | `wl_compositor` | 6 | Surfaces and regions. Regions have no effect. |
 | `wl_surface` | 6 | `attach`, `commit`, `frame`. The other requests have no effect. |
-| `wl_shm` | From libwayland | libwayland implements it. The compositor reads ARGB8888 and XRGB8888 buffers. |
 | `xdg_wm_base` | 6 | `get_xdg_surface`, `create_positioner`, `pong` |
 | `xdg_surface` | 6 | `get_toplevel`, `ack_configure`. `get_popup` gives a protocol error. |
 | `xdg_toplevel` | 6 | `set_title`, `set_app_id`. The other requests have no effect. |
@@ -71,14 +74,56 @@ When an app commits a buffer, the compositor copies the pixels and releases the 
 
 The compositor puts a new window at the centre of the screen. Each further window is 32 pixels lower and to the right.
 
-### How Swift implements Wayland requests
+## The Wayland server
 
-libwayland calls a C function for each request. For each interface, the compositor makes a table of Swift closures (for example `wl_surface_requests`). A closure that has no captures can be a C function pointer.
+The `Wayland` library is a Wayland server in Swift. It does not use libwayland-server. It uses only glibc: sockets, `epoll`, `signalfd`, and `mmap`. The `CLinux` module imports the glibc headers for `epoll` and `signalfd`, which the Swift `Glibc` module does not include.
 
-- `permanent(_:)` allocates each table one time and never releases it, because libwayland keeps pointers to the tables.
-- The user data of each resource is the `WaylandServer`. The Swift objects are in dictionaries, with the resource as the key.
-- The destroy function of each resource removes its Swift object. This occurs when the app destroys the object or disconnects.
-- `ResourceDestroyListener` uses `swift_wl_listener` to know when an app destroys a buffer.
+| File | Type | Purpose |
+|---|---|---|
+| `EventLoop.swift` | `EventLoop` | The main loop on `epoll`. It watches file descriptors, and it gets signals through a `signalfd`. All callbacks run on one thread. |
+| `Display.swift` | `Display` | The socket `$XDG_RUNTIME_DIR/wayland-N` with its lock file, the clients, the globals, `wl_display`, and `wl_registry`. |
+| `Client.swift` | `Client` | One connection: its objects, and the bytes and file descriptors in each direction. It sends protocol errors and disconnects. |
+| `Wire.swift` | `MessageReader`, `MessageWriter` | The wire format: 32-bit words, strings, arrays, fixed-point numbers, and file descriptors (`SCM_RIGHTS`). |
+| `Resource.swift` | `Interface`, `AnyResource`, `Resource<I>` | A protocol object of one client. |
+| `Shm.swift` | `Shm`, `ShmPool`, `ShmBuffer` | `wl_shm`. |
+| `Protocols/*.swift` | One enum for each interface | Generated from `ui/Protocols/*.xml`. See [ui.md](ui.md). |
+
+### Protocol objects
+
+For each interface, the generated code has an enum, for example `WlSurface`, with these parts:
+
+- `WlSurface.Request`: one case for each request, with typed arguments. For example, `.attach(buffer: Resource<WlBuffer>?, x: Int32, y: Int32)`.
+- The decoder for requests. It checks the opcode, the version of the object (`since`), the argument types, the object types, and new object IDs. An error in a request is a protocol error.
+- The protocol enums, for example `WlShm.Format`. A bitfield is an `OptionSet`.
+- One method for each event on `Resource<WlSurface>`, for example `sendEnter(output:)`. The method sends nothing after the resource's destruction, or if the version of the resource is older than the event.
+
+The compositor handles requests with a closure:
+
+```swift
+display.addGlobal(WlCompositor.self, version: 6) { compositor in
+    compositor.onRequest = { request in
+        switch request {
+        case .createSurface(let id):
+            let surface = compositor.create(id)
+            ...
+        }
+    }
+}
+```
+
+These rules apply:
+
+- A request that makes an object (an argument of type `NewID`) must make it with `create(_:)`, also if the compositor ignores the object.
+- A request with a file descriptor gives it to the handler. The handler must close it.
+- After a destructor request, the library destroys the resource. It sends `wl_display.delete_id` for IDs that the client allocated.
+- The `data` property of a resource keeps the Swift object for it, for example a `Surface`. Other references to resources are weak.
+- `onDestroy` handlers run when the client destroys the object or disconnects. On a disconnect, the library destroys the newest objects first.
+
+### Protection against bad clients
+
+- An error in a request sends `wl_display.error` to the client, then disconnects it. The compositor continues.
+- If a client does not read its events, the library disconnects it when 4 MB of events wait.
+- A client can make its shared-memory file smaller after it gave it to the compositor. A read of the missing memory then raises SIGBUS. During a buffer copy, a SIGBUS handler maps empty memory over the pool. The copy gets zeros, and the client gets a protocol error. libwayland-server does the same.
 
 ## Current limits
 

@@ -5,7 +5,7 @@
 - A Mac with Apple silicon.
 - Apple `container` 1.0 or later. Start the service with `container system start`.
 - QEMU from Homebrew: `brew install qemu`.
-- Approximately 20 GB of free disk space.
+- Approximately 28 GB of free disk space. The Swift toolchain for macOS and the Swift SDK use approximately 7.5 GB of this.
 
 ## Commands
 
@@ -13,8 +13,10 @@
 |---|---|
 | `make build` | Builds `out/live.img`. |
 | `make builder` | Builds only the builder image. `make build` does this step when necessary. |
-| `make ui` | Compiles `ui/` into `out/ui/`. It does not change the image. See [ui.md](ui.md). |
-| `make protocols` | Makes the Wayland protocol C code again. See [ui.md](ui.md). |
+| `make ui` | Compiles `ui/` on the Mac into `out/ui/`. It does not change the image. See [ui.md](ui.md). |
+| `make ui-container` | The same as `make ui`, in the builder container. |
+| `make sdk` | Gets the Swift toolchain for macOS, and makes the Swift SDK. `make ui` does this step when necessary. |
+| `make protocols` | Makes the Wayland protocol code again. See [ui.md](ui.md). |
 | `make shell` | Opens a root shell in the builder container. |
 | `make clean` | Removes the build output. The package cache stays. |
 | `make distclean` | Removes the build output, the package cache, the builder image, and the base tarballs. |
@@ -35,16 +37,19 @@ The first build downloads approximately 3 GB. Later builds take approximately 1 
 
 The builder runs with `--cap-add ALL`, because `pacstrap` and `arch-chroot` mount file systems.
 
+The builder mounts the repository at the same path as on the Mac, for example `/Users/you/Developer/mydistro`. It does not use a short path such as `/src`. Thus, paths in compiler messages are correct on the Mac, and Xcode can open the file of an error.
+
 ## Pinned inputs
 
-The Makefile downloads two tarballs and checks their SHA-256 hashes:
+The Makefile downloads these files and checks their SHA-256 hashes:
 
-| Variable | Tarball |
+| Variable | File |
 |---|---|
 | `ALARM_SHA256` | `ArchLinuxARM-aarch64-latest.tar.gz` from `os.archlinuxarm.org` |
 | `SWIFT_SHA256` | `swift-6.4.0-RELEASE-fedora41-aarch64.tar.gz` from `download.swift.org` |
+| `SWIFT_MAC_SHA256` | `swift-6.4.0-RELEASE-osx.pkg` from `download.swift.org`, for `make ui` |
 
-If a hash does not match, the download stops.
+If a hash does not match, the download stops. For the macOS toolchain, the Makefile also checks the package signature with `pkgutil --check-signature`. The signer is "Developer ID Installer: Swift Open Source (V9AUD2URP3)", and Apple notarized the package.
 
 To update the Arch Linux ARM base:
 
@@ -58,7 +63,8 @@ To update Swift:
 1. Change `SWIFT_VERSION` in the Makefile, and the tarball name in `build/Containerfile`.
 2. Download the tarball and its `.sig` file. Check the signature with the Swift keys from swift.org.
 3. Put the SHA-256 value in `SWIFT_SHA256`.
-4. Run `make build` and `make test`.
+4. Download the `.pkg` file for macOS. Check it with `pkgutil --check-signature`. Put its SHA-256 value in `SWIFT_MAC_SHA256`. The two toolchains must have the same version, because the SDK contains the Swift modules of the Linux toolchain.
+5. Run `make build`, `make test`, and `make test-dev`.
 
 ## Container volumes
 

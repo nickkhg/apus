@@ -62,6 +62,37 @@ Decision: build the compositor in Swift now. The compositor makes a display list
 
 QEMU from Homebrew has no `virtio-gpu-gl`. The compositor renders with the CPU, and Mesa uses llvmpipe. Screenshots are the same each time, and this makes the tests reliable. UTM has a QEMU with GPU acceleration, if it becomes necessary.
 
+## Compile the UI on the Mac with a Swift SDK (19 September)
+
+`make ui` compiles `ui/` on the Mac with the swift.org toolchain for macOS and a Swift SDK that `make sdk` exports from the builder. Before, `make ui` compiled in the builder container.
+
+- A full build of `ui/` takes approximately 5 seconds on the Mac.
+- SourceKit-LSP can use the SDK. Thus, an editor gets code completion for the Linux modules.
+- The image build still uses the Linux toolchain in the container. `make test` tests those programs, and `make test-dev` tests the programs from the Mac. Both pass.
+
+The SDK comes from the builder image, not from the image of mydistro. The image does not have the files for the linker (for example `crtbegin.o` and the `libstdc++.so` link). The builder has the same packages from the same repositories.
+
+## Xcode as a front end, not as the build system (19 September)
+
+Xcode builds only for Apple platforms, and it cannot use a Swift SDK. Thus, `mydistro.xcodeproj` has external build targets that run make. Cmd-B runs the build, and Xcode puts the compiler errors in the source. Xcode cannot give code completion for the Linux modules. An `.xcworkspace` gives nothing more than the project, so there is none.
+
+## A Wayland server in Swift, not libwayland-server (19 September)
+
+The `Wayland` library replaces libwayland-server. The reasons:
+
+- The C shims for libwayland-server are gone. They had helpers for names that C uses two times, a helper for a variadic function, and a `container_of` structure. The generated C code for xdg-shell in the compositor is also gone.
+- `ui/` now has approximately 20 lines of C headers for the compositor.
+- A request is a Swift enum case with typed arguments, and an event is a method with typed arguments. Before, the handlers were C function tables with `Unmanaged` pointers.
+- The code generator is Swift (`ui/Tools/WaylandScanner`). It runs on the Mac.
+
+The compositor test uses `mydistro-hello-client`, which uses libwayland-client. Thus, the test checks the Swift server against the C implementation of the protocol.
+
+libwayland-client stays for the test client, because most apps use it.
+
+## Embedded Swift: no (19 September)
+
+Embedded Swift is a subset of Swift for microcontrollers and kernels. It does not remove the need for C libraries such as libinput or Mesa. It removes runtime metadata, reflection, and most existential types. The programs already link the Swift runtime statically. The only gain is smaller programs. A fully static program (with the Swift Static Linux SDK and musl) needs static builds of libinput, libudev, and Mesa. Arch Linux does not supply these, and Mesa loads its GPU drivers at run time.
+
 ## Documentation style
 
 The documentation uses ASD-STE100 Simplified Technical English, in the STE-flavored mode.

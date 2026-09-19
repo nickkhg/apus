@@ -16,6 +16,9 @@ The user interface is a fifth part. It is a set of Swift programs in the `mydist
 ```
 Mac (host)
 ├── make, curl, shasum            downloads and checks the pinned inputs
+├── Swift 6.4 for macOS           compiles ui/ for mydistro (make ui), with
+│                                 the Swift SDK that make sdk exports
+├── Xcode (optional)              runs the make targets
 ├── Apple container (builder)     Arch Linux ARM + Swift 6.4
 │   ├── makepkg                   builds packages/ into [mydistro]
 │   ├── pacstrap                  installs packages into the root file system
@@ -24,7 +27,9 @@ Mac (host)
 └── QEMU (aarch64, HVF, UEFI)     boots the images, runs the tests
 ```
 
-The Mac needs only three tools: Apple `container`, QEMU, and `expect` (macOS includes `expect`). All Linux tools run in the builder container.
+The Mac needs only three tools: Apple `container`, QEMU, and `expect` (macOS includes `expect`). The Makefile downloads the Swift toolchain for macOS into `build/cache/`. All Linux tools run in the builder container.
+
+The builder container mounts the repository at the same path as on the Mac. Thus, paths in compiler messages are correct on the Mac.
 
 ## Repository layout
 
@@ -33,13 +38,17 @@ The Mac needs only three tools: Apple `container`, QEMU, and `expect` (macOS inc
 | `Makefile` | All commands. Run `make help`. |
 | `build/Containerfile` | The builder image. |
 | `build/build.sh` | The build. It runs in the builder container. |
-| `build/cache/` | Downloaded base tarballs and a stamp file. Git ignores this directory. |
+| `build/make-sdk.sh` | Makes the Swift SDK for `make ui`. It runs in the builder container. |
+| `build/cache/` | Downloaded tarballs, the Swift toolchain for macOS, the Swift SDK, and a stamp file. Git ignores this directory. |
 | `rootfs/packages` | The packages in the image, one on each line. |
 | `rootfs/overlay/` | Files that the build copies into the root file system. |
 | `image/repart.d/` | The partition layout of the live image. |
 | `image/esp/` | systemd-boot configuration of the live image. |
 | `packages/` | Source of the mydistro packages (one `PKGBUILD` in each directory). |
-| `ui/` | The Swift package: the compositor, the tools, and the C library modules. |
+| `ui/` | The Swift package: the compositor, the Wayland server, the tools, and the C library modules. |
+| `ui/Protocols/` | The Wayland protocol XML files. |
+| `ui/Tools/WaylandScanner/` | The generator of the Swift protocol code. |
+| `mydistro.xcodeproj`, `xcode/` | The Xcode project, and the script that its targets run. |
 | `vm/run.sh` | Starts QEMU. |
 | `vm/demo.exp` | Starts the compositor in a QEMU window (`make demo`). |
 | `tests/` | The automated tests. |
