@@ -6,3 +6,6 @@ mkinitcpio
 dosfstools
 less
 nano
+
+# mydistro branding (packages/mydistro-release)
+mydistro-release

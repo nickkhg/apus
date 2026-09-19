@@ -40,11 +40,12 @@ To install software on a running system, use pacman. For example: `pacman -S hto
 
 ## How it works
 
-The project has three layers:
+The project has four layers:
 
 | Layer | What it does | Where |
 |---|---|---|
-| Build | `pacstrap` installs Arch Linux ARM packages into a root file system. | `rootfs/`, `build/build.sh` |
+| Packages | `makepkg` builds the mydistro packages into a local pacman repository. | `packages/` |
+| Build | `pacstrap` installs Arch Linux ARM packages and mydistro packages into a root file system. | `rootfs/`, `build/build.sh` |
 | Image | `systemd-repart` writes a GPT disk image with an EFI partition and the root file system. | `image/` |
 | Installer | A shell script and `systemd-repart` copy the live system to a target disk. | `mydistro-install` |
 
@@ -62,6 +63,25 @@ The build uses two container volumes:
 At the end of a build, `build/build.sh` copies `live.img` and `packages.lock` to `out/` on the Mac. `packages.lock` lists each package and its version.
 
 Arch Linux is a rolling release. Two builds on different days can get different package versions. Use `packages.lock` to compare two builds.
+
+### mydistro packages
+
+Each directory in `packages/` contains a `PKGBUILD`. The build runs `makepkg` for each one as the user `builder`, because `makepkg` does not run as root. Then `repo-add` puts the packages in a local repository named `mydistro`.
+
+`pacstrap` uses the builder's pacman configuration plus the `[mydistro]` repository. The `[mydistro]` repository comes first, so its packages take precedence over Arch Linux ARM packages with the same name. The build copies the repository to `out/repo/`.
+
+The packages are not signed yet. Installed systems do not have the `[mydistro]` repository in `/etc/pacman.conf` yet, because no server publishes it. pacman shows mydistro packages as foreign packages (`pacman -Qm`).
+
+#### mydistro-release
+
+`mydistro-release` contains the mydistro branding. The Arch `filesystem` package owns `/usr/lib/os-release`, so `mydistro-release` cannot contain that file. Instead, it does these steps:
+
+1. It puts the mydistro `os-release` in `/usr/share/mydistro/`.
+2. It adds a pacman hook. After each install or upgrade of `filesystem` or `mydistro-release`, the hook copies the mydistro `os-release` to `/usr/lib/os-release`.
+
+`/etc/os-release` is a symlink to `/usr/lib/os-release`. The login banner (`/etc/issue`) reads the name from `os-release`. Thus, one file changes the name everywhere.
+
+`pacman -Qkk filesystem` reports `/usr/lib/os-release` as modified. This report is normal for mydistro.
 
 ### Live image
 
@@ -106,7 +126,10 @@ The build masks `systemd-firstboot` and `systemd-homed-firstboot`. Thus, first b
 
 ## Change the system
 
-- To add a package to the image, add a line to `rootfs/packages`. Then run `make build`.
+- To add an Arch Linux ARM package to the image, add a line to `rootfs/packages`. Then run `make build`.
+- To add your own package, make a directory `packages/<name>/` with a `PKGBUILD`. Add `<name>` to `rootfs/packages`. Then run `make build`.
+- When you change a mydistro package, increase `pkgrel` in its `PKGBUILD`. Installed systems use `pkgrel` to find updates.
+- To change the distribution name or colors, edit `packages/mydistro-release/os-release`.
 - To add or replace files in the root file system, put them in `rootfs/overlay/`.
 - To change the partition layout of the live image, edit `image/repart.d/`.
 - To change the partition layout of installed systems, edit `rootfs/overlay/usr/lib/mydistro/repart.d/`.

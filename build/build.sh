@@ -8,6 +8,7 @@
 set -euo pipefail
 
 SRC=/src
+REPO=/work/repo
 STAGE=/work/stage
 ROOT=$STAGE/rootfs
 ESP=$STAGE/esp
@@ -21,13 +22,30 @@ rm -rf "$STAGE" "$IMG"
 mkdir -p "$ROOT" "$ESP"
 mount --bind "$ROOT" "$ROOT"     # pacstrap wants the root to be a mount point
 
+step "Building mydistro packages"
+# Every packages/<name>/PKGBUILD becomes a package in the local [mydistro]
+# repository. makepkg won't run as root, so it runs as `builder`.
+rm -rf /work/pkgbuild "$REPO"
+mkdir -p /work/pkgbuild "$REPO"
+cp -r "$SRC/packages/." /work/pkgbuild/
+chown -R builder: /work/pkgbuild "$REPO"
+for dir in /work/pkgbuild/*/; do
+    (cd "$dir" && runuser -u builder -- env PKGDEST="$REPO" makepkg --clean --cleanbuild --force)
+done
+repo-add --quiet "$REPO/mydistro.db.tar.gz" "$REPO"/*.pkg.tar.*
+
+# pacman config for pacstrap: the builder's, plus [mydistro] listed first so
+# our packages take precedence. Packages are not signed yet.
+awk '/^\[core\]/ { print "[mydistro]\nSigLevel = Optional TrustAll\nServer = file://'"$REPO"'\n" } { print }' \
+    /etc/pacman.conf > /work/pacman.conf
+
 step "Installing packages"
 mapfile -t packages < <(sed -e 's/#.*//' -e '/^\s*$/d' "$SRC/rootfs/packages")
 # -c: use the builder's package cache (a volume, so downloads are kept)
 # -G: don't copy the builder's keyring (each system makes its own, see
 #     mydistro-pacman-init.service)
 # -M: don't copy the builder's mirrorlist (use the package default)
-pacstrap -c -G -M "$ROOT" "${packages[@]}"
+pacstrap -C /work/pacman.conf -c -G -M "$ROOT" "${packages[@]}"
 
 step "Applying rootfs overlay"
 cp -r --no-preserve=ownership "$SRC/rootfs/overlay/." "$ROOT/"
@@ -71,4 +89,6 @@ systemd-repart --empty=create --size=auto --offline=yes --dry-run=no \
 mkdir -p "$SRC/out"
 cp --sparse=always "$IMG" "$SRC/out/live.img"
 cp "$STAGE/packages.lock" "$SRC/out/packages.lock"
+rm -rf "$SRC/out/repo"
+cp -r "$REPO" "$SRC/out/repo"
 step "Done: out/live.img ($(du -h --apparent-size "$IMG" | cut -f1)), $(wc -l < "$STAGE/packages.lock") packages"

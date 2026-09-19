@@ -1,0 +1,4 @@
+#!/bin/sh
+# Replace the os-release that `filesystem` ships with mydistro's.
+# /etc/os-release is a symlink to it; /etc/issue reads PRETTY_NAME from it.
+install -m644 /usr/share/mydistro/os-release /usr/lib/os-release

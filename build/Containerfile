@@ -14,7 +14,10 @@ RUN sed -i -e 's/^CheckSpace/#CheckSpace/' -e 's/^DownloadUser/#DownloadUser/' \
     && pacman-key --init \
     && pacman-key --populate archlinuxarm \
     && pacman -Syu --noconfirm --needed \
-        arch-install-scripts dosfstools e2fsprogs mtools \
+        arch-install-scripts base-devel dosfstools e2fsprogs mtools \
     && pacman -Scc --noconfirm
+
+# makepkg refuses to run as root; mydistro packages build as this user.
+RUN useradd --create-home builder
 
 CMD ["bash"]

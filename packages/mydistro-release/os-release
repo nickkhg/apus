@@ -1,0 +1,6 @@
+NAME="mydistro"
+PRETTY_NAME="mydistro"
+ID=mydistro
+ID_LIKE="archarm arch"
+BUILD_ID=rolling
+ANSI_COLOR="38;2;150;90;220"
