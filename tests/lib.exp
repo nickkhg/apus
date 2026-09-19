@@ -1,0 +1,18 @@
+# Shared by the expect tests. Drives the VM's serial console.
+
+proc fail {msg} {
+    send_user "\n\nTEST FAILED: $msg\n"
+    exit 1
+}
+
+proc login {} {
+    expect {
+        "login:" { send "root\r" }
+        timeout  { fail "no login prompt" }
+        eof      { fail "VM exited before login" }
+    }
+    expect {
+        -re "# $" {}
+        timeout   { fail "no shell prompt" }
+    }
+}

@@ -1,0 +1,49 @@
+#!/usr/bin/expect -f
+# Display test: boot the installed disk with a (headless) GPU, run the Swift
+# UI checks, let mydistro-display-probe draw, screenshot the VM through the
+# QEMU monitor, and check the pixels. Run after tests/install.exp.
+
+set timeout 120
+log_user 1
+source [file dirname [info script]]/lib.exp
+
+spawn env VM_GPU=headless vm/run.sh installed
+login
+
+# out/ on the Mac is shared at /mnt/host (the `make ui` dev loop uses it).
+send "test -f /mnt/host/live.img && echo SHARE-\$((1+1))\r"
+expect {
+    "SHARE-2" {}
+    timeout   { fail "host share /mnt/host not available" }
+}
+expect -re "# $"
+
+send "mydistro-ui-check\r"
+expect {
+    "UI-CHECK-OK"     {}
+    "UI-CHECK-FAILED" { fail "mydistro-ui-check reported failures" }
+    timeout           { fail "mydistro-ui-check timed out" }
+}
+expect -re "# $"
+
+send "mydistro-display-probe --hold 15\r"
+expect {
+    -re {PROBE-READY [0-9]+x[0-9]+} {}
+    "mydistro-display-probe:"       { fail "display probe reported an error" }
+    timeout                         { fail "display probe timed out" }
+}
+after 1000
+if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/screen.ppm} result]} {
+    fail "screenshot check: $result"
+}
+send_user "\n$result\n"
+expect {
+    "PROBE-DONE" {}
+    timeout      { fail "display probe didn't finish" }
+}
+expect -re "# $"
+send "poweroff\r"
+expect eof
+wait
+
+send_user "\n\nDISPLAY TEST PASSED\n"

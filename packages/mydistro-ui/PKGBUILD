@@ -1,0 +1,34 @@
+# The Swift UI (ui/ in the source tree). build.sh copies ui/ next to this
+# file before makepkg runs. The Swift runtime is linked statically, so the
+# target needs only the C libraries below.
+pkgname=mydistro-ui
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='mydistro user interface (Swift)'
+arch=('aarch64')
+license=('custom')
+depends=(
+    gcc-libs glibc
+    libdrm mesa            # display, GPU rendering
+    libinput systemd-libs libxkbcommon seatd   # input, keymaps, seat
+    wayland                # app protocol
+    freetype2 harfbuzz fontconfig ttf-dejavu   # text
+)
+# GNU strip can't parse Swift's LLVM-built binaries; the linker strips instead.
+options=('!debug' '!strip')
+
+build() {
+    cd "$startdir/ui"
+    # SWIFT_SCRATCH (set by build.sh) keeps the build cache between image
+    # builds, so only changed Swift files recompile.
+    swift build -c release --static-swift-stdlib -Xlinker --strip-all \
+        --scratch-path "${SWIFT_SCRATCH:-$srcdir/.build}"
+}
+
+package() {
+    cd "$startdir/ui"
+    local bin
+    bin=$(swift build -c release --scratch-path "${SWIFT_SCRATCH:-$srcdir/.build}" --show-bin-path)
+    install -Dm755 "$bin/mydistro-display-probe" "$pkgdir/usr/bin/mydistro-display-probe"
+    install -Dm755 "$bin/mydistro-ui-check" "$pkgdir/usr/bin/mydistro-ui-check"
+}

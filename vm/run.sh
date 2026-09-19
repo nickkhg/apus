@@ -4,7 +4,14 @@
 #   vm/run.sh live        live image + blank target disk (to test the installer)
 #   vm/run.sh installed   target disk only (boot what the installer wrote)
 #
-# Serial console is on stdio. Quit QEMU with Ctrl-A X.
+# VM_GPU selects the display:
+#   (unset)    no display device; serial console only
+#   window     virtio-gpu in a macOS window, plus keyboard and tablet (mouse)
+#   headless   virtio-gpu with no window; `screendump` on out/vm/monitor.sock
+#              saves the screen (used by tests/display.exp)
+#
+# The serial console is always on stdio. Quit QEMU with Ctrl-A X.
+# out/ on the Mac is shared read-only with the VM at /mnt/host.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -22,10 +29,24 @@ mkdir -p out/vm
 cp "$fw_dir/edk2-arm-vars.fd" out/vm/vars.fd
 
 set -- \
-    -M virt -accel hvf -cpu host -smp 4 -m 2G -nographic \
+    -M virt -accel hvf -cpu host -smp 4 -m 2G \
     -drive if=pflash,format=raw,readonly=on,file="$fw_dir/edk2-aarch64-code.fd" \
     -drive if=pflash,format=raw,file=out/vm/vars.fd \
-    -netdev user,id=net0 -device virtio-net-pci,netdev=net0
+    -netdev user,id=net0 -device virtio-net-pci,netdev=net0 \
+    -virtfs local,path="$PWD/out",mount_tag=host,security_model=none,readonly=on
+
+case "${VM_GPU:-}" in
+    "")
+        set -- "$@" -nographic ;;
+    window)
+        set -- "$@" -serial mon:stdio -display cocoa \
+            -device virtio-gpu-pci -device virtio-keyboard-pci -device virtio-tablet-pci ;;
+    headless)
+        rm -f out/vm/monitor.sock
+        set -- "$@" -serial mon:stdio -display none -device virtio-gpu-pci \
+            -monitor unix:out/vm/monitor.sock,server,nowait ;;
+    *) echo "VM_GPU must be empty, 'window' or 'headless'" >&2; exit 2 ;;
+esac
 
 case "$mode" in
     live)

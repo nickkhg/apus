@@ -1,0 +1,11 @@
+# out/ of the mydistro source tree, shared by QEMU (vm/run.sh) over 9p.
+# Mounted on first access by mnt-host.automount; only in QEMU VMs.
+[Unit]
+Description=Files shared by the VM host
+ConditionVirtualization=qemu
+
+[Mount]
+What=host
+Where=/mnt/host
+Type=9p
+Options=trans=virtio,version=9p2000.L,msize=524288,ro

@@ -1,0 +1,5 @@
+module CInput [system] {
+    header "shim.h"
+    link "input"
+    export *
+}

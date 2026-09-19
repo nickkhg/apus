@@ -1,0 +1,5 @@
+module CGLES [system] {
+    header "shim.h"
+    link "GLESv2"
+    export *
+}

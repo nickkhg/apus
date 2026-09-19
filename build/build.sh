@@ -28,9 +28,16 @@ step "Building mydistro packages"
 rm -rf /work/pkgbuild "$REPO"
 mkdir -p /work/pkgbuild "$REPO"
 cp -r "$SRC/packages/." /work/pkgbuild/
-chown -R builder: /work/pkgbuild "$REPO"
+# The Swift UI package builds from ui/ (without any local .build directory).
+# makepkg runs with --nodeps: build requirements (e.g. Swift) come from the
+# builder image, and `depends` are for the target, not the builder.
+tar -C "$SRC" --exclude=.build -cf - ui | tar -C /work/pkgbuild/mydistro-ui -xf -
+mkdir -p /work/swiftpm
+chown -R builder: /work/pkgbuild "$REPO" /work/swiftpm
 for dir in /work/pkgbuild/*/; do
-    (cd "$dir" && runuser -u builder -- env PKGDEST="$REPO" makepkg --clean --cleanbuild --force)
+    name=$(basename "$dir")
+    (cd "$dir" && runuser -u builder -- env PKGDEST="$REPO" SWIFT_SCRATCH="/work/swiftpm/$name" \
+        makepkg --clean --cleanbuild --force --nodeps)
 done
 repo-add --quiet "$REPO/mydistro.db.tar.gz" "$REPO"/*.pkg.tar.*
 
@@ -56,7 +63,7 @@ mkinitcpio -P
 rm -f /boot/initramfs-linux-fallback.img
 # Apply the distribution's presets now, so first boot enables nothing new.
 systemctl preset-all
-systemctl enable systemd-networkd systemd-resolved mydistro-pacman-init
+systemctl enable systemd-networkd systemd-resolved mydistro-pacman-init mnt-host.automount
 # First boot must not stop at an interactive wizard. Locale, time zone and
 # hostname are preset, and root has no password.
 systemctl mask systemd-firstboot.service systemd-homed-firstboot.service

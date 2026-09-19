@@ -20,4 +20,23 @@ RUN sed -i -e 's/^CheckSpace/#CheckSpace/' -e 's/^DownloadUser/#DownloadUser/' \
 # makepkg refuses to run as root; mydistro packages build as this user.
 RUN useradd --create-home builder
 
+# Development files of the C libraries the Swift UI builds on (see ui/).
+RUN pacman -Sy --noconfirm --needed \
+        libdrm mesa libinput libxkbcommon seatd wayland wayland-protocols \
+        freetype2 harfbuzz fontconfig \
+    && pacman -Scc --noconfirm
+
+# Swift toolchain (`make builder` downloads it and checks its SHA-256).
+# The tarball is built for Fedora; Arch names a few libraries differently:
+#  - ncurses/form/panel exist only as the wide-char ...w.so.6 (same ABI)
+#  - libxml2.so.2 is in libxml2-legacy
+# (lldb also wants Python 3.13; the debugger isn't needed to build.)
+ADD cache/swift-6.4.0-RELEASE-fedora41-aarch64.tar.gz /opt/
+RUN ln -s swift-6.4.0-RELEASE-fedora41-aarch64 /opt/swift \
+    && for l in ncurses form panel; do ln -sf lib${l}w.so.6 /usr/lib/lib${l}.so.6; done \
+    && pacman -Sy --noconfirm --needed libxml2-legacy \
+    && pacman -Scc --noconfirm
+ENV PATH=/opt/swift/usr/bin:$PATH
+RUN swift --version
+
 CMD ["bash"]

@@ -1,0 +1,5 @@
+module CSeat [system] {
+    header "shim.h"
+    link "seat"
+    export *
+}

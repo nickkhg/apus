@@ -1,0 +1,9 @@
+[Unit]
+Description=Files shared by the VM host (automount)
+ConditionVirtualization=qemu
+
+[Automount]
+Where=/mnt/host
+
+[Install]
+WantedBy=multi-user.target

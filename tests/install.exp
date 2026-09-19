@@ -7,22 +7,7 @@
 set timeout 180
 log_user 1
 
-proc fail {msg} {
-    send_user "\n\nTEST FAILED: $msg\n"
-    exit 1
-}
-
-proc login {} {
-    expect {
-        "login:" { send "root\r" }
-        timeout  { fail "no login prompt" }
-        eof      { fail "VM exited before login" }
-    }
-    expect {
-        -re "# $" {}
-        timeout   { fail "no shell prompt" }
-    }
-}
+source [file dirname [info script]]/lib.exp
 
 exec rm -f out/vm/target.qcow2
 

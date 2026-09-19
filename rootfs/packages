@@ -9,3 +9,6 @@ nano
 
 # mydistro branding (packages/mydistro-release)
 mydistro-release
+
+# The Swift UI (packages/mydistro-ui, built from ui/)
+mydistro-ui

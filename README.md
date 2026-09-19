@@ -1,6 +1,6 @@
 # mydistro
 
-mydistro is a Linux distribution for aarch64, based on Arch Linux ARM. It uses systemd and pacman. A live image boots in a VM and installs the system to a disk.
+mydistro is a Linux distribution for aarch64, based on Arch Linux ARM. It uses systemd and pacman. A live image boots in a VM and installs the system to a disk. Its user interface uses Swift 6.4.
 
 ## Requirements
 
@@ -34,7 +34,13 @@ mydistro is a Linux distribution for aarch64, based on Arch Linux ARM. It uses s
    make installed
    ```
 
-To stop QEMU, push `Ctrl-A`, then push `X`.
+5. Boot the installed disk in a window, with a display, a keyboard, and a mouse.
+
+   ```sh
+   make gui
+   ```
+
+To stop QEMU, push `Ctrl-A` in the terminal, then push `X`.
 
 To install software on a running system, use pacman. For example: `pacman -S htop`.
 
@@ -70,7 +76,7 @@ Each directory in `packages/` contains a `PKGBUILD`. The build runs `makepkg` fo
 
 `pacstrap` uses the builder's pacman configuration plus the `[mydistro]` repository. The `[mydistro]` repository comes first, so its packages take precedence over Arch Linux ARM packages with the same name. The build copies the repository to `out/repo/`.
 
-The packages are not signed yet. Installed systems do not have the `[mydistro]` repository in `/etc/pacman.conf` yet, because no server publishes it. pacman shows mydistro packages as foreign packages (`pacman -Qm`).
+The packages are not signed yet. Installed systems do not have the `[mydistro]` repository in `/etc/pacman.conf` yet, because no server publishes it. pacman lists mydistro packages as foreign packages (`pacman -Qm`).
 
 #### mydistro-release
 
@@ -82,6 +88,45 @@ The packages are not signed yet. Installed systems do not have the `[mydistro]` 
 `/etc/os-release` is a symlink to `/usr/lib/os-release`. The login banner (`/etc/issue`) reads the name from `os-release`. Thus, one file changes the name everywhere.
 
 `pacman -Qkk filesystem` reports `/usr/lib/os-release` as modified. This report is normal for mydistro.
+
+### User interface (Swift)
+
+The user interface is a Swift package in `ui/`. The plan is to write all of it in Swift: the compositor, the window management, the shell, and the toolkit. Swift uses these C libraries through its C interoperability:
+
+| Purpose | C library | Swift module |
+|---|---|---|
+| Display modes and buffers (DRM/KMS) | libdrm, GBM | `CDRM`, `CGBM` |
+| GPU rendering | EGL, OpenGL ES (Mesa) | `CEGL`, `CGLES` |
+| Input devices | libinput, libudev | `CInput`, `CUdev` |
+| Keymaps | xkbcommon | `CXKBCommon` |
+| Device access for a user session | libseat | `CSeat` |
+| Protocol between the compositor and apps | Wayland | `CWaylandServer`, `CWaylandClient` |
+| Text | FreeType, HarfBuzz | `CFreeType`, `CHarfBuzz` |
+
+Each C module is a directory in `ui/Sources/` with a `module.modulemap` and a `shim.h`. SwiftPM finds the compiler and linker flags with pkg-config.
+
+The package also has these parts:
+
+- `DRM`: a Swift layer over libdrm. It finds outputs, makes framebuffers, and puts them on the screen.
+- `mydistro-display-probe`: it takes control of the screen, draws a test pattern, and then restores the screen.
+- `mydistro-ui-check`: it calls each C library once. It needs no display.
+
+The Swift toolchain is the official Swift 6.4.0 build for Fedora 41 (aarch64), in the builder image. Arch uses different names for some libraries, so the builder image adds compatibility links. The Makefile checks the SHA-256 hash of the toolchain tarball.
+
+The `mydistro-ui` package contains the Swift programs. The build links the Swift runtime statically, so the target does not need Swift. The dependencies of the package put the C libraries, Mesa, and the DejaVu fonts on the target.
+
+QEMU from Homebrew has no GPU acceleration. In the VM, Mesa renders with the CPU.
+
+### Swift development loop
+
+1. Edit the Swift code in `ui/`.
+2. Run `make ui`. It compiles in the container in a few seconds and copies the programs to `out/ui/`. It does not change the image.
+3. Run `make gui` (or `make installed`) and log in as `root`.
+4. Run the new build from the shared directory, for example `/mnt/host/ui/mydistro-display-probe`.
+
+The VM gets `out/` from the Mac at `/mnt/host` (read-only, 9p). systemd mounts it when a program first uses it.
+
+To put the UI into the image, run `make build`. The build compiles only the changed Swift files.
 
 ### Live image
 
@@ -119,7 +164,9 @@ The build masks `systemd-firstboot` and `systemd-homed-firstboot`. Thus, first b
 | `make build` | Builds `out/live.img`. |
 | `make live` | Boots the live image and a blank 8 GB target disk. |
 | `make installed` | Boots only the target disk. |
-| `make test` | Runs the full test: install, then boot the installed disk. |
+| `make gui` | Boots the target disk in a window, with a display, a keyboard, and a mouse. |
+| `make ui` | Compiles `ui/` and copies the programs to `out/ui/`. |
+| `make test` | Runs the install test and the display test. |
 | `make shell` | Opens a root shell in the build container. |
 | `make clean` | Removes the build output. The package cache stays. |
 | `make distclean` | Removes the build output, the package cache, the builder image, and the base tarball. |
@@ -136,3 +183,10 @@ The build masks `systemd-firstboot` and `systemd-homed-firstboot`. Thus, first b
 - To start a new target disk, remove `out/vm/target.qcow2`.
 
 Run `make test` after each change.
+
+## Tests
+
+`make test` runs two tests. Both use the serial console of the VM.
+
+1. `tests/install.exp` boots the live image and installs to a blank disk. Then it boots the installed disk and checks it.
+2. `tests/display.exp` boots the installed disk with a GPU but no window. It runs `mydistro-ui-check` and `mydistro-display-probe`. While the probe draws its pattern on the screen, the test gets a screenshot from QEMU. `tests/screen.py` checks the colours of two pixels.

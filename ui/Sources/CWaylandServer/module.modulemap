@@ -1,0 +1,5 @@
+module CWaylandServer [system] {
+    header "shim.h"
+    link "wayland-server"
+    export *
+}
