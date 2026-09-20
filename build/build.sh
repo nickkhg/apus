@@ -69,7 +69,9 @@ systemctl enable systemd-networkd systemd-resolved mydistro-pacman-init mnt-host
 systemctl mask systemd-firstboot.service systemd-homed-firstboot.service
 passwd -d root
 EOF
-ln -sf ../usr/share/zoneinfo/UTC "$ROOT/etc/localtime"
+# The time zone of the image. The Makefile passes TIMEZONE; `timedatectl
+# set-timezone` changes it on a running system.
+ln -sf "../usr/share/zoneinfo/${TIMEZONE:-UTC}" "$ROOT/etc/localtime"
 ln -sf ../run/systemd/resolve/stub-resolv.conf "$ROOT/etc/resolv.conf"
 # Every machine gets its own ID on first boot.
 echo uninitialized > "$ROOT/etc/machine-id"

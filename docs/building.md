@@ -89,6 +89,10 @@ The build uses two container volumes. macOS file systems do not usually make a d
 8. It writes the disk image with `systemd-repart`.
 9. It copies `live.img`, `packages.lock`, and the repository to `out/`.
 
+## The time zone
+
+The image gets its time zone from `TIMEZONE` in the Makefile (`Europe/London`). The compositor shows that time in the panel. For another zone, use `make build TIMEZONE=Europe/Berlin`. On a running system, `timedatectl set-timezone` changes it.
+
 ## Reproducibility
 
 These inputs do not change:
