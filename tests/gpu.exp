@@ -64,6 +64,18 @@ proc drawWith {renderer name} {
         timeout           { fail "$renderer: the compositor did not stop" }
     }
     expect -re {# $}
+
+    # COMPOSITOR-EXIT comes before the process goes: the message is printed,
+    # and then the screen, the GL context and the DRM device are given back.
+    # The next compositor cannot become DRM master while the last one still
+    # holds the device, and drmModeSetCrtc then says "Permission denied".
+    # `wait` waits for the job to really end.
+    send "wait; echo GONE-$renderer\r"
+    expect {
+        "GONE-$renderer" {}
+        timeout          { fail "$renderer: the compositor did not go away" }
+    }
+    expect -re {# $}
 }
 
 spawn env VM_GPU=headless $env(MYDISTRO_VM) installed
