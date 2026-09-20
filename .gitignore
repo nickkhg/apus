@@ -2,3 +2,4 @@ out/
 build/cache/
 .build/
 xcuserdata/
+mydistro.xcodeproj/project.xcworkspace/

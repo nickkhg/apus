@@ -72,6 +72,48 @@ public final class DumbFramebuffer {
         try body(pixels.assumingMemoryBound(to: UInt32.self), pitch / 4)
     }
 
+    /// Writes the pixels as a binary PPM (P6), for the tests.
+    ///
+    /// The bytes go to a second file which is then renamed, so a reader on
+    /// the host (the picture lands in a shared directory) never sees half a
+    /// picture.
+    public func writePPM(to path: String) throws(DRMError) {
+        let temporary = path + ".part"
+        guard let file = fopen(temporary, "wb") else {
+            throw .call("fopen", errno: errno)
+        }
+
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(width * height * 3)
+        withPixels { pixels, stride in
+            for y in 0..<height {
+                let row = pixels + y * stride
+                for x in 0..<width {
+                    let pixel = row[x]              // XRGB8888
+                    bytes.append(UInt8((pixel >> 16) & 0xFF))
+                    bytes.append(UInt8((pixel >> 8) & 0xFF))
+                    bytes.append(UInt8(pixel & 0xFF))
+                }
+            }
+        }
+
+        let header = "P6\n\(width) \(height)\n255\n"
+        var written = header.withCString { fwrite($0, 1, strlen($0), file) == strlen($0) }
+        written = written && bytes.withUnsafeBytes {
+            fwrite($0.baseAddress, 1, $0.count, file) == $0.count
+        }
+        fclose(file)
+        guard written else {
+            unlink(temporary)
+            throw .call("fwrite", errno: errno)
+        }
+        guard rename(temporary, path) == 0 else {
+            let err = errno
+            unlink(temporary)
+            throw .call("rename", errno: err)
+        }
+    }
+
     /// Fills a rectangle (clipped to the buffer) with a 0xRRGGBB colour.
     public func fill(x: Int = 0, y: Int = 0, width: Int? = nil, height: Int? = nil, color: UInt32) {
         let x0 = max(0, x), y0 = max(0, y)

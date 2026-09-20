@@ -88,4 +88,4 @@ Root has no password. Change this before you use mydistro outside a VM.
 
 ## Host directory in the VM
 
-`mnt-host.automount` mounts the `out/` directory of the Mac at `/mnt/host` (read-only, 9p). The mount works only in QEMU. systemd mounts it when a program first uses `/mnt/host`.
+`mnt-host.automount` mounts the `out/` directory of the Mac at `/mnt/host` (read-only, virtiofs). `mnt-screens.automount` mounts `out/vm/screens` at `/mnt/screens`, and the VM can write to it: the tests put pictures of the screen there. Both mounts work only in a VM on a Mac, because the units test `ConditionVirtualization=apple`. systemd mounts a directory when a program first uses it.

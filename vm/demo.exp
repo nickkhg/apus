@@ -13,7 +13,7 @@ source [file dirname [info script]]/../tests/lib.exp
 set bin ""
 if {[info exists env(MYDISTRO_UI_DIR)]} { set bin "$env(MYDISTRO_UI_DIR)/" }
 
-spawn env VM_GPU=window vm/run.sh installed
+spawn env VM_GPU=window $env(MYDISTRO_VM) installed
 login
 send "LIBSEAT_BACKEND=noop ${bin}mydistro-compositor &\r"
 expect {

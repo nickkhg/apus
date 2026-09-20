@@ -1,9 +1,9 @@
 [Unit]
-Description=Files shared by the VM host (automount)
+Description=Screenshots for the VM host (automount)
 ConditionVirtualization=apple
 
 [Automount]
-Where=/mnt/host
+Where=/mnt/screens
 
 [Install]
 WantedBy=multi-user.target

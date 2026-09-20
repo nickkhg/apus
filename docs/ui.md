@@ -175,4 +175,8 @@ To test the new programs automatically, run `make test-dev`. It runs the composi
 
 ## Graphics in the VM
 
-QEMU from Homebrew has no GPU acceleration (`virtio-gpu-gl`). The VM has a virtio-gpu display without 3D. Mesa renders with the CPU (llvmpipe), and the compositor renders with the CPU. UTM includes a QEMU with GPU acceleration.
+The VM has a virtio graphics device without 3D, so Mesa renders with the CPU (llvmpipe) and the compositor renders with the CPU.
+
+Apple's Virtualization framework gives a Linux guest no GPU. `VZVirtioGraphicsDeviceConfiguration` is a 2D scanout, and it never offers the 3D feature bit. The 3D graphics device of the framework, `VZMacGraphicsDeviceConfiguration`, accepts macOS guests only.
+
+The compositor also does not use a GPU yet. It draws into DRM dumb buffers with the CPU and shows them with a page flip. See [next-steps.md](next-steps.md) for the work that a GPU needs.

@@ -24,10 +24,10 @@ Mac (host)
 │   ├── pacstrap                  installs packages into the root file system
 │   ├── mkinitcpio                makes the initramfs
 │   └── systemd-repart            writes out/live.img
-└── QEMU (aarch64, HVF, UEFI)     boots the images, runs the tests
+└── mydistro-vm (Virtualization) boots the images, runs the tests
 ```
 
-The Mac needs only three tools: Apple `container`, QEMU, and `expect` (macOS includes `expect`). The Makefile downloads the Swift toolchain for macOS into `build/cache/`. All Linux tools run in the builder container.
+The Mac needs only two tools: Apple `container` and Xcode. macOS includes `expect`, which the tests use. The Makefile downloads the Swift toolchain for macOS into `build/cache/`. All Linux tools run in the builder container.
 
 The builder container mounts the repository at the same path as on the Mac. Thus, paths in compiler messages are correct on the Mac.
 
@@ -51,14 +51,14 @@ The builder container mounts the repository at the same path as on the Mac. Thus
 | `ui/Protocols/` | The Wayland protocol XML files. |
 | `ui/Tools/WaylandScanner/` | The generator of the Swift protocol code. |
 | `mydistro.xcodeproj`, `xcode/` | The Xcode project, and the script that its targets run. |
-| `vm/run.sh` | Starts QEMU. |
-| `vm/demo.exp` | Starts the compositor in a QEMU window (`make demo`). |
+| `vm/` | `mydistro-vm`: the VM on the Mac, with Apple's Virtualization framework. |
+| `vm/demo.exp` | Starts the compositor in a window (`make demo`). |
 | `tests/` | The automated tests. |
 | `out/` | Build results and VM disks. Git ignores this directory. |
 
 ## Boot sequence
 
-1. The UEFI firmware (EDK II) finds `EFI/BOOT/BOOTAA64.EFI` on the EFI system partition. This file is systemd-boot.
+1. The EFI firmware finds `EFI/BOOT/BOOTAA64.EFI` on the EFI system partition. This file is systemd-boot.
 2. systemd-boot reads `loader/loader.conf` and a boot entry. It starts the kernel (`/Image`) with the initramfs.
 3. The initramfs uses systemd. It mounts the root partition that `root=PARTUUID=...` identifies.
 4. systemd starts the system. On the live system, the root partition stays read-only under a RAM overlay.

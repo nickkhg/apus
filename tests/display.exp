@@ -1,13 +1,17 @@
 #!/usr/bin/expect -f
 # Display test: boot the installed disk with a (headless) GPU, run the Swift
-# UI checks, let mydistro-display-probe draw, screenshot the VM through the
-# QEMU monitor, and check the pixels. Run after tests/install.exp.
+# UI checks, let mydistro-display-probe draw, and check the pixels it drew.
+# Run after tests/install.exp.
+#
+# The probe writes the picture itself, into the `screens` share (out/vm/screens
+# on the Mac): no compositor runs in this test, and Apple's Virtualization
+# framework gives the host no way to photograph the screen of a guest.
 
 set timeout 120
 log_user 1
 source [file dirname [info script]]/lib.exp
 
-spawn env VM_GPU=headless vm/run.sh installed
+spawn env VM_GPU=headless $env(MYDISTRO_VM) installed
 login
 
 # out/ on the Mac is shared at /mnt/host (the `make ui` dev loop uses it).
@@ -26,14 +30,14 @@ expect {
 }
 expect -re "# $"
 
-send "mydistro-display-probe --hold 15\r"
+send "mydistro-display-probe --hold 15 --write /mnt/screens/screen.ppm\r"
 expect {
     -re {PROBE-READY [0-9]+x[0-9]+} {}
     "mydistro-display-probe:"       { fail "display probe reported an error" }
     timeout                         { fail "display probe timed out" }
 }
 after 1000
-if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/screen.ppm 0.125,0.125=965ADC 0.5,0.5=FFFFFF} result]} {
+if {[catch {exec python3 tests/screen.py out/vm/screens/screen.ppm 0.125,0.125=965ADC 0.5,0.5=FFFFFF} result]} {
     fail "screenshot check: $result"
 }
 send_user "\n$result\n"

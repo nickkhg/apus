@@ -43,6 +43,7 @@ let package = Package(
         .executable(name: "mydistro-terminal", targets: ["TerminalApp"]),
         .executable(name: "mydistro-display-probe", targets: ["DisplayProbe"]),
         .executable(name: "mydistro-ui-check", targets: ["UICheck"]),
+        .executable(name: "mydistro-screen", targets: ["ScreenTool"]),
     ],
     dependencies: [
         // The toolkit and the shell. The name of a dependency on a directory
@@ -105,6 +106,13 @@ let package = Package(
             .product(name: "Toolkit", package: "Toolkit"),
             .product(name: "Terminal", package: "Toolkit"),
         ]),
+
+        // What a test on the Mac uses to see and to touch the screen: it
+        // asks the compositor for the pixels, and makes a pointer and a
+        // keyboard with uinput. Virtualization, unlike QEMU, can do neither
+        // of these from the host.
+        .target(name: "CUinput"),
+        .executableTarget(name: "ScreenTool", dependencies: ["CUinput"]),
 
         // Takes over the screen and draws a test pattern (used by tests/display.exp).
         .executableTarget(name: "DisplayProbe", dependencies: ["DRMKit"]),

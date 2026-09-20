@@ -4,7 +4,6 @@
 
 - A Mac with Apple silicon.
 - Apple `container` 1.0 or later. Start the service with `container system start`.
-- QEMU from Homebrew: `brew install qemu`.
 - Approximately 28 GB of free disk space. The Swift toolchain for macOS and the Swift SDK use approximately 7.5 GB of this.
 
 ## Commands

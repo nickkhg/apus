@@ -9,6 +9,33 @@ The builder runs in Apple `container`, not Docker. The tests run in QEMU with HV
 - Each Apple container is a small Linux VM on Apple silicon. It runs aarch64 Linux at native speed.
 - QEMU with HVF runs aarch64 VMs at near native speed. An x86_64 VM on the Mac is 10 to 50 times slower, because QEMU must emulate the CPU.
 
+## Apple's Virtualization framework, not QEMU (20 September)
+
+The tests and the demos run in a VM that Apple's Virtualization framework makes. `vm/mydistro-vm` is a Swift program, and it replaces `vm/run.sh` and QEMU.
+
+Reasons:
+
+- The Mac needs no QEMU from Homebrew. The framework is part of macOS, and Xcode gives the Swift toolchain that compiles the program.
+- Xcode can start the program and debug it.
+- A boot to the login prompt takes approximately 10 seconds.
+- The host side of the project is now Swift, like the guest side.
+
+The framework gives a Linux guest no GPU, so this change is not a step towards GPU rendering. See [ui.md](ui.md#graphics-in-the-vm).
+
+The change cost the tests their eyes and their hands on the host. QEMU made pictures of the screen with `screendump`, and it sent input with QMP. The framework does neither. The guest does both now: the compositor writes the buffer that it gave to the display, and `mydistro-screen` makes a pointer and a keyboard with uinput. The pictures reach the Mac through a writable virtiofs share. Input still goes through evdev, libinput and xkbcommon, so the tests cover the same code as before. See [testing.md](testing.md#screenshots).
+
+Other differences:
+
+| QEMU | Virtualization |
+|---|---|
+| qcow2 disks | Raw disks only. The target disk is a sparse file. |
+| `snapshot=on` keeps the live image unchanged | A copy of the live image for each boot. On APFS the copy is a clone, and it is immediate. |
+| 9p for `/mnt/host` | virtiofs |
+| `ConditionVirtualization=qemu` | `ConditionVirtualization=apple` |
+| edk2 firmware from Homebrew | The EFI firmware of the framework |
+
+The program needs the entitlement `com.apple.security.virtualization`. Without it, the framework refuses to make a VM. A local (ad hoc) signature carries the entitlement, and `make vm` signs the program.
+
 ## aarch64 only, for now (19 September)
 
 mydistro supports only aarch64. The Mac runs aarch64 VMs fast. Support for x86_64 can come later.
@@ -70,7 +97,7 @@ An incremental dependency graph saves work in a large app. A shell is small: a c
 
 ## Software rendering in the VM (19 September)
 
-QEMU from Homebrew has no `virtio-gpu-gl`. The compositor renders with the CPU, and Mesa uses llvmpipe. Screenshots are the same each time, and this makes the tests reliable. UTM has a QEMU with GPU acceleration, if it becomes necessary.
+QEMU from Homebrew has no `virtio-gpu-gl`. The compositor renders with the CPU, and Mesa uses llvmpipe. Screenshots are the same each time, and this makes the tests reliable, so the tests must keep the CPU renderer. On 20 September we found that Apple's Virtualization framework gives a Linux guest no GPU either. See [ui.md](ui.md#graphics-in-the-vm) and [next-steps.md](next-steps.md).
 
 ## Compile the UI on the Mac with a Swift SDK (19 September)
 

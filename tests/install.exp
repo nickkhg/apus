@@ -9,10 +9,10 @@ log_user 1
 
 source [file dirname [info script]]/lib.exp
 
-exec rm -f out/vm/target.qcow2
+exec rm -f out/vm/target.img
 
 send_user "\n=== Stage 1: install from live image ===\n"
-spawn vm/run.sh live
+spawn $env(MYDISTRO_VM) live
 login
 send "mydistro-install -y /dev/vdb\r"
 expect {
@@ -29,7 +29,7 @@ expect {
 wait
 
 send_user "\n=== Stage 2: boot installed disk ===\n"
-spawn vm/run.sh installed
+spawn $env(MYDISTRO_VM) installed
 login
 send "cat /etc/mydistro-installed >/dev/null && grep -qx ID=mydistro /etc/os-release && pacman -Q mydistro-release >/dev/null && mountpoint -q /boot && test -f /boot/Image && ! grep -qw mydistro.live /proc/cmdline && touch /rw-check && pacman -Q linux-aarch64 >/dev/null && echo INSTALLED-\$((1+1))\r"
 expect {
