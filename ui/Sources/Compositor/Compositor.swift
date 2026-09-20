@@ -556,9 +556,15 @@ public final class Compositor {
         case .pointerPosition(let x, let y):
             movePointer(to: (x * Double(screen.width), y * Double(screen.height)))
         case .button(let code, let pressed):
-            // BTN_LEFT. The shell gets the click. An app gets nothing yet:
-            // there is no input focus and no wl_seat.
-            if code == 0x110 { host.pointerButton(pressed: pressed) }
+            // The button goes where the pointer is: to the window under it,
+            // or to the shell. A click on a window also brings it forward.
+            if let window = windowUnderPointer {
+                if pressed, window !== windows.last { raiseWindow(window.id) }
+                server.sendPointer(button: code, pressed: pressed,
+                                   time: monotonicMilliseconds())
+            } else if code == 0x110 {
+                host.pointerButton(pressed: pressed)
+            }
         case .key(let key):
             // Ctrl+Alt+Backspace (XKB_KEY_BackSpace = 0xff08) quits.
             if key.pressed, key.control, key.alt, key.keysym == 0xFF08 {
@@ -632,9 +638,38 @@ public final class Compositor {
     private func movePointer(to position: (x: Double, y: Double)) {
         pointer = (min(max(position.x, 0), Double(screen.width - 1)),
                    min(max(position.y, 0), Double(screen.height - 1)))
-        // The shell views that watch the pointer hear it here. A view that
-        // changes because of it asks for a frame itself.
-        host.pointerMoved(to: pointer.x / scale, y: pointer.y / scale)
+        routePointer()
         screen.setNeedsFrame()
+    }
+
+    /// The window under the pointer, or nil when the shell wants it.
+    ///
+    /// The shell keeps the pointer over its own chrome: the rail, the head
+    /// of a window, a card, a notice. Summon covers everything while it is
+    /// open, so the shell keeps the pointer then as well.
+    private var windowUnderPointer: Window? {
+        guard !shell.summonIsOpen else { return nil }
+        let point = (x: pointer.x / scale, y: pointer.y / scale)
+        return frontFirst.first { window in
+            guard let frame = window.frame else { return false }
+            return point.x >= Double(frame.x) && point.x < Double(frame.x + frame.width)
+                && point.y >= Double(frame.y) && point.y < Double(frame.y + frame.height)
+        }
+    }
+
+    /// Gives the pointer to the window under it, or to the shell.
+    private func routePointer() {
+        let point = (x: pointer.x / scale, y: pointer.y / scale)
+        guard let window = windowUnderPointer, let frame = window.frame else {
+            // The shell has it. An app that had it hears that it left.
+            server.setPointerFocus(nil, at: (0, 0))
+            host.pointerMoved(to: point.x, y: point.y)
+            return
+        }
+        // The app has it, so no view of the shell is under the pointer.
+        host.pointerLeft()
+        let inside = (x: point.x - Double(frame.x), y: point.y - Double(frame.y))
+        server.setPointerFocus(window.surface, at: inside)
+        server.sendPointer(motion: inside, time: monotonicMilliseconds())
     }
 }

@@ -84,6 +84,16 @@ The shell is a view, so its tests need no screen. See [toolkit.md](toolkit.md).
 
 ## The keyboard and the focus
 
+## The pointer
+
+The seat has a pointer as well as a keyboard. Where the pointer is decides who reads it.
+
+1. Summon covers the canvas while it is open, so the shell reads the pointer.
+2. A pointer inside the window of an app goes to that app, in the coordinates of its surface. The shell hears that the pointer left it.
+3. Everything else is the chrome of the shell: the rail, the head of a window, a card, a notice. The shell reads it.
+
+A press on a window that is not in front brings it forward first, and the app reads the same press.
+
 The window in front has the focus, and it gets the keys. Three things change which window is in front. An app opens a window. Summon or the rail brings a window forward. A window closes.
 
 1. `Input` reads the key from libinput. It gives the code of the kernel, the keysym from the keymap, and the modifiers.

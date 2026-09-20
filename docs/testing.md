@@ -92,6 +92,7 @@ The programs print these markers:
 | `LAYOUT` | `mydistro-compositor`, when a person picks another layout |
 | `APP-STARTED`, `APP-RAISED` | `mydistro-compositor`, when Summon starts an app or brings its window forward |
 | `CLIENT-DRAWN` | `mydistro-hello-client` |
+| `CLIENT-POINTER-ENTER`, `CLIENT-POINTER`, `CLIENT-POINTER-LEAVE`, `CLIENT-BUTTON` | `mydistro-hello-client`, when the compositor gives it the pointer |
 | `TERMINAL-READY` | `mydistro-terminal`, with the size of the grid |
 
 ### Screenshots

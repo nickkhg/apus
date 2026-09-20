@@ -185,6 +185,32 @@ after 1000
 screen open-hello 400,400=3070F0 84,44=FFFFFF \
     1100,200=14111E 1040,24-1250,44!14111E
 
+# The pointer reaches the app under it. Hello has the large cell, so its
+# window covers 920 x 744 at 80,40, and a point well inside it belongs to
+# the app and not to the shell.
+act_start --pointer 400,400
+expect {
+    -re {CLIENT-POINTER-ENTER} {}
+    timeout { fail "the pointer did not reach the window under it" }
+}
+act_done
+# A click goes to the same window. BTN_LEFT is 272, and 1 is "pressed".
+act_start --pointer 420,420 --click
+expect {
+    -re {CLIENT-BUTTON 272 1} {}
+    timeout { fail "the click did not reach the window under it" }
+}
+act_done
+# The pointer goes back over the rail, which is the shell, so the app hears
+# that the pointer left it.
+act_start --pointer 36,400
+expect {
+    -re {CLIENT-POINTER-LEAVE} {}
+    timeout { fail "the app was not told that the pointer left" }
+}
+act_done
+act --pointer 1200,740
+
 # The terminal comes back to the front. Hello named a smallest size of
 # 600 x 400, so it cannot use a tile of 256: the band holds a square cell
 # for it and the shell draws a stand-in card there, while the window itself
