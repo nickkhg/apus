@@ -40,6 +40,7 @@ let package = Package(
         .library(name: "Compositor", targets: ["Compositor"]),
         .executable(name: "mydistro-compositor", targets: ["CompositorMain"]),
         .executable(name: "mydistro-hello-client", targets: ["HelloClient"]),
+        .executable(name: "mydistro-terminal", targets: ["TerminalApp"]),
         .executable(name: "mydistro-display-probe", targets: ["DisplayProbe"]),
         .executable(name: "mydistro-ui-check", targets: ["UICheck"]),
     ],
@@ -91,6 +92,19 @@ let package = Package(
 
         // A minimal Wayland app (one coloured window), for testing the compositor.
         .executableTarget(name: "HelloClient", dependencies: ["CWaylandClient", "CXDGShellClient"]),
+
+        // The terminal: an app of the system. It opens a window, runs a
+        // shell on a pseudo terminal, and draws what the shell prints. The
+        // grid of characters and the escape sequences are the Terminal
+        // module of the toolkit package, which the Mac tests. The bundle in
+        // Apps/Terminal.app puts the program in /Applications.
+        .target(name: "CPTY"),
+        .executableTarget(name: "TerminalApp", dependencies: [
+            "CWaylandClient", "CXDGShellClient", "CXKBCommon", "CPTY",
+            .product(name: "Render", package: "Toolkit"),
+            .product(name: "Toolkit", package: "Toolkit"),
+            .product(name: "Terminal", package: "Toolkit"),
+        ]),
 
         // Takes over the screen and draws a test pattern (used by tests/display.exp).
         .executableTarget(name: "DisplayProbe", dependencies: ["DRMKit"]),

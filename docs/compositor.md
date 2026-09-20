@@ -8,10 +8,9 @@ In the VM, log in as `root` on the serial console and run these commands:
 
 ```sh
 LIBSEAT_BACKEND=noop mydistro-compositor &
-mydistro-hello-client &
 ```
 
-`make demo` does these steps for you in a QEMU window.
+Then click an icon in the dock to open an app. `make demo` does these steps for you in a QEMU window.
 
 | Item | Details |
 |---|---|
@@ -27,10 +26,11 @@ mydistro-hello-client &
 | `Seat.swift` | `Seat` | Device access through libseat. It opens and closes the DRM device and the input devices. |
 | `Screen.swift` | `Screen` | One output. It has two framebuffers and changes them at vertical blank. It draws a frame only when something changes. |
 | `Input.swift` | `Input` | libinput and xkbcommon. It gives pointer motion, pointer position, buttons, and keys. |
-| `WaylandServer.swift` | `WaylandServer`, `Surface`, `Toplevel` | The Wayland globals and objects that apps use: `wl_compositor`, `wl_surface`, and `xdg_wm_base`. |
+| `WaylandServer.swift` | `WaylandServer`, `Surface`, `Toplevel` | The Wayland globals and objects that apps use: `wl_compositor`, `wl_surface`, `xdg_wm_base`, and `wl_seat` with the keyboard. |
+| `AppCatalog.swift` | `AppCatalog`, `AppBundle` | The app bundles in `/Applications`, and how a bundle starts. See [applications.md](applications.md). |
 
 | `Cursor.swift` | `Cursor` | The pointer image. |
-| `Compositor.swift` | `Compositor` | Connects the parts. It keeps the window list, draws the shell panel, and makes the display list for each frame. |
+| `Compositor.swift` | `Compositor` | Connects the parts. It keeps the window list and the focus, starts the apps, draws the shell, and makes the display list for each frame. |
 | `Support.swift` | | Logging, the monotonic clock, and `permanent(_:)` for C handler tables. |
 
 The display list, the views and the shell UI are in the package `ui/Toolkit/`: the libraries `Render`, `Toolkit` and `Shell`. See [toolkit.md](toolkit.md).
@@ -63,11 +63,11 @@ The display list is the interface between the UI layer and the pixels. The toolk
 
 ## The shell
 
-The top 28 pixels of the screen are the shell panel. The compositor draws it with the toolkit, over the windows and under the pointer. It has the name of the system, the title of the front window, and the time in it.
+The top 28 pixels of the screen are the shell panel. The compositor draws it with the toolkit, over the windows and under the pointer. It has the name of the system, the title of the front window, a Close button, and the time in it.
 
-The compositor draws `RootView` from the `Shell` library over the whole screen. `RootView` puts the panel at the top, the dock at the bottom, and leaves the space between them free. `RootView.windowArea(screen:)` tells the compositor where the windows go, so the shell decides how much space it takes.
+The compositor draws `RootView` from the `Shell` library over the whole screen. `RootView` puts the panel at the top, the dock at the bottom, and the app area between them. `RootView.windowArea(screen:)` tells the compositor where the windows go, so the shell decides how much space it takes.
 
-The compositor gives the shell a `ShellState` for each frame: the window titles from the Wayland toplevels, and the time from `localtime_r`. A timer in the event loop reads the clock every second and asks for a frame when the minute changes.
+The compositor gives the shell a `ShellState` for each frame. In it are the apps of `/Applications` and the ids of the apps that have a window. In it are also the window titles from the Wayland toplevels, and the time from `localtime_r`. A timer in the event loop reads the clock every second and asks for a frame when the minute changes.
 
 A `ViewHost` keeps the shell between frames: the `@State` values of the shell views, and which view the pointer is over. When the pointer moves or a button goes down, the compositor gives it to the host. The host then calls the handler of the view: `onHover` for a view that the pointer entered or left, and `onPress` and `onTapGesture` for a click. A handler that changes a state value asks for a frame. This is how the dock icons become brighter under the pointer.
 
@@ -75,12 +75,24 @@ The shell asks the compositor for two things (`ShellActions`):
 
 | Action | What the compositor does |
 |---|---|
+| `openApp(id)` | Starts the app of that bundle, or brings its window to the front. See [applications.md](applications.md). |
 | `closeFrontWindow` | Sends `xdg_toplevel.close` to the window in front. The app decides what it does with that. |
-| `setDesktopColor` | Draws the desktop in that colour. A dock item does this when the pointer clicks it. |
 
-The compositor sends the first pointer button (`BTN_LEFT`) to the shell only. An app gets no pointer and no keyboard yet, because there is no `wl_seat`.
+The compositor sends the first pointer button (`BTN_LEFT`) to the shell only. An app gets the keyboard, but no pointer events.
 
 The shell is a view, so its tests need no screen. See [toolkit.md](toolkit.md).
+
+## The keyboard and the focus
+
+The window in front has the focus, and it gets the keys. Three things change which window is in front. An app opens a window. A dock icon brings a window forward. A window closes.
+
+1. `Input` reads the key from libinput. It gives the code of the kernel, the keysym from the keymap, and the modifiers.
+2. Ctrl+Alt+Backspace stops the compositor. Every other key goes to the app.
+3. `WaylandServer.send(key:)` sends `wl_keyboard.key` to the window with the focus, with `wl_keyboard.modifiers` before it when the modifiers changed.
+
+The seat says that it has a keyboard, and no pointer and no touch. A `wl_keyboard` object gets the keymap first: the compositor writes the xkb keymap of `Input` into shared memory and sends the file descriptor. The app compiles the same keymap, so the app reads the keys in the same way as the system.
+
+A window that gets the focus gets `wl_keyboard.enter`, and the window that loses it gets `wl_keyboard.leave`.
 
 ## Wayland support
 
@@ -93,10 +105,12 @@ The shell is a view, so its tests need no screen. See [toolkit.md](toolkit.md).
 | `xdg_wm_base` | 6 | `get_xdg_surface`, `create_positioner`, `pong` |
 | `xdg_surface` | 6 | `get_toplevel`, `ack_configure`. `get_popup` gives a protocol error. |
 | `xdg_toplevel` | 6 | `set_title`, `set_app_id`. The other requests have no effect. |
+| `wl_seat` | 7 | The keyboard. `get_pointer` and `get_touch` give an object that gets no events. |
+| `wl_keyboard` | 7 | `keymap`, `enter`, `leave`, `key`, `modifiers`, `repeat_info` |
 
-When an app commits a buffer, the compositor copies the pixels and releases the buffer immediately. The first commit of a toplevel gets a configure event with the size 0×0. The app then selects its own size.
+When an app commits a buffer, the compositor copies the pixels and releases the buffer immediately. The first commit of a toplevel gets a configure event with the size of the app area, and the states `maximized` and `activated`. An app that answers with that size fills the area.
 
-The compositor puts a new window at the centre of the free space under the panel. Each further window is 32 pixels lower and to the right.
+The compositor puts a window in the app area. A window of another size goes in the middle of the area. See [applications.md](applications.md).
 
 ## The Wayland server
 
@@ -151,8 +165,8 @@ These rules apply:
 
 ## Current limits
 
-- Apps get no keyboard or pointer input. There is no `wl_seat`.
-- There is no window management: no focus, no move, no stacking order, and no window close.
+- Apps get no pointer input. The seat has a keyboard only.
+- A window cannot move and cannot change its size. The window in front is the window that opened last, or the window that a dock icon brought to the front.
 - The compositor draws the full screen for each frame. It ignores damage.
 - Apps can use only `wl_shm` buffers, not GPU buffers (`linux-dmabuf`).
 - There is no `wl_output`, no popups, and no window decorations.

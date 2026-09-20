@@ -9,7 +9,7 @@ mydistro has four layers. Each layer uses the output of the layer before it.
 | Image | `systemd-repart` | `image/` | `out/live.img` | [system.md](system.md) |
 | Installer | `mydistro-install` | The running live system | An installed disk | [system.md](system.md) |
 
-The user interface is a fifth part. It is a set of Swift programs in the `mydistro-ui` package. See [ui.md](ui.md), [compositor.md](compositor.md), and [toolkit.md](toolkit.md).
+The user interface is a fifth part. It is a set of Swift programs in the `mydistro-ui` package. See [ui.md](ui.md), [compositor.md](compositor.md), [toolkit.md](toolkit.md), and [applications.md](applications.md).
 
 ## Where the work happens
 
@@ -45,8 +45,9 @@ The builder container mounts the repository at the same path as on the Mac. Thus
 | `image/repart.d/` | The partition layout of the live image. |
 | `image/esp/` | systemd-boot configuration of the live image. |
 | `packages/` | Source of the mydistro packages (one `PKGBUILD` in each directory). |
-| `ui/` | The display server: the compositor, the Wayland server, the tools, and the C library modules. |
-| `ui/Toolkit/` | A Swift package of its own: the toolkit (`Render`, `Toolkit`) and the shell UI (`Shell`), with their tests. It also builds for macOS. |
+| `ui/` | The display server: the compositor, the Wayland server, the apps, the tools, and the C library modules. |
+| `ui/Apps/` | The app bundles. The package copies them to `/Applications`, and each one becomes an icon in the dock. See [applications.md](applications.md). |
+| `ui/Toolkit/` | A Swift package of its own: the toolkit (`Render`, `Toolkit`), the shell UI (`Shell`), and the grid of the terminal (`Terminal`), with their tests. It also builds for macOS. |
 | `ui/Protocols/` | The Wayland protocol XML files. |
 | `ui/Tools/WaylandScanner/` | The generator of the Swift protocol code. |
 | `mydistro.xcodeproj`, `xcode/` | The Xcode project, and the script that its targets run. |

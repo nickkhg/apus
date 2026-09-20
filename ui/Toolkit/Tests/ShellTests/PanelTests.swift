@@ -11,6 +11,19 @@ private func items(_ state: ShellState, width: Int = 1280) -> DisplayList {
                              in: Rect(x: 0, y: 0, width: width, height: Int(Panel.height)))
 }
 
+/// Three apps, as the compositor reads them from /Applications.
+let sampleApps = [
+    AppEntry(id: "org.mydistro.files", name: "Files", color: Color(hex: 0x4C8DF6)),
+    AppEntry(id: "org.mydistro.terminal", name: "Terminal", color: Color(hex: 0x3BB273)),
+    AppEntry(id: "org.mydistro.settings", name: "Settings", color: Color(hex: 0xE0A458)),
+]
+
+/// The state of a shell with those apps.
+func state(running: Set<String> = [], windowTitles: [String] = []) -> ShellState {
+    ShellState(apps: sampleApps, runningApps: running,
+               windowTitles: windowTitles, clock: "14:05")
+}
+
 private func texts(_ list: DisplayList) -> [(Bitmap, Int, Int)] {
     list.compactMap { item in
         if case .bitmap(let bitmap, let x, let y) = item { (bitmap, x, y) } else { nil }
@@ -126,9 +139,9 @@ struct DockTests {
 
     @Test("The dock is as large as its icons, not as large as the screen")
     func dockKeepsItsSize() {
-        let shapes = paths(DockView())
-        // One background and three icons. The dots of the items that are not
-        // active are clear, and a clear shape draws nothing.
+        let shapes = paths(DockView(apps: sampleApps))
+        // One background and three icons. The dots of the apps that are not
+        // open are clear, and a clear shape draws nothing.
         #expect(shapes.count == 4)
         for icon in shapes.dropFirst() {
             #expect(icon == (width: 44, height: 44))
@@ -137,12 +150,17 @@ struct DockTests {
         #expect(background.width == 44 * 3 + 10 * 2 + 20)
         // The icon, the space under it, the dot, and the padding.
         #expect(background.height == 44 + 4 + 5 + 20)
+        #expect(background.height == DockView.height)
+    }
+
+    @Test("A dock with no app draws nothing")
+    func emptyDockDrawsNothing() {
+        #expect(paths(DockView(apps: [])).isEmpty)
     }
 
     @Test("The dock is at the bottom of the screen, under the panel")
     func dockIsAtTheBottom() {
-        let list = ViewRenderer.displayList(for: RootView(state: ShellState(clock: "14:05")),
-                                            in: screen)
+        let list = ViewRenderer.displayList(for: RootView(state: state()), in: screen)
         var lowest = 0.0
         for item in list {
             guard case .path(let path, _) = item else { continue }
@@ -154,6 +172,46 @@ struct DockTests {
     }
 }
 
+@Suite("The app area")
+struct AppAreaTests {
+    private let screen = Rect(x: 0, y: 0, width: 1280, height: 800)
+
+    @Test("The app area starts under the panel and fills the width")
+    func areaIsUnderThePanel() {
+        let area = RootView.windowArea(screen: screen)
+        #expect(area.x == 0)
+        #expect(area.y == Int(Panel.height))
+        #expect(area.width == screen.width)
+    }
+
+    @Test("The app area stops over the dock")
+    func areaStopsOverTheDock() {
+        let list = ViewRenderer.displayList(for: RootView(state: state()), in: screen)
+        // The first path is the background of the dock. Its top is the
+        // highest point that the dock draws.
+        var dockTop = Double(screen.height)
+        for item in list {
+            guard case .path(let path, _) = item else { continue }
+            for element in path.elements {
+                switch element {
+                case .move(_, let y), .line(_, let y): dockTop = min(dockTop, y)
+                case .quadratic(_, _, _, let y): dockTop = min(dockTop, y)
+                case .cubic(_, _, _, _, _, let y): dockTop = min(dockTop, y)
+                case .close: break
+                }
+            }
+        }
+        let area = RootView.windowArea(screen: screen)
+        #expect(Double(area.y + area.height) <= dockTop)
+    }
+
+    @Test("A small screen gives no app area, and no negative one")
+    func smallScreen() {
+        let area = RootView.windowArea(screen: Rect(x: 0, y: 0, width: 200, height: 40))
+        #expect(area.height == 0)
+    }
+}
+
 @Suite("Dock clicks")
 struct DockClickTests {
     private let screen = Rect(x: 0, y: 0, width: 1280, height: 800)
@@ -161,17 +219,17 @@ struct DockClickTests {
     /// The middle of the first dock icon. The dock is in the middle of the
     /// screen at the bottom: 172 wide, and the first icon starts after the
     /// padding of 10.
-    private let firstIcon = (x: 1280.0 / 2 - 172 / 2 + 10 + 22, y: 800.0 - 16 - 73 + 10 + 22)
+    private let firstIcon = (x: 1280.0 / 2 - 172 / 2 + 10 + 22,
+                             y: 800.0 - DockView.bottomMargin - DockView.height + 10 + 22)
 
-    @Test("A click on a dock item gives the desktop the colour of the item")
-    func clickSetsTheDesktopColor() {
-        final class Log { var colors: [Color?] = [] }
+    @Test("A click on a dock icon asks the compositor to open the app")
+    func clickOpensTheApp() {
+        final class Log { var opened: [String] = [] }
         let log = Log()
-        let actions = ShellActions(setDesktopColor: { log.colors.append($0) })
+        let actions = ShellActions(openApp: { log.opened.append($0) })
         let host = ViewHost()
         func draw() {
-            _ = host.displayList(for: RootView(state: ShellState(clock: "14:05"), actions: actions),
-                                 in: screen)
+            _ = host.displayList(for: RootView(state: state(), actions: actions), in: screen)
         }
         host.needsUpdate = { draw() }
         draw()
@@ -179,26 +237,17 @@ struct DockClickTests {
         host.pointerMoved(to: firstIcon.x, y: firstIcon.y)
         host.pointerButton(pressed: true)
         host.pointerButton(pressed: false)
-        #expect(log.colors.count == 1)
-        #expect(log.colors.first ?? nil != nil, "the desktop takes a colour")
+        #expect(log.opened == [sampleApps[0].id])
 
-        // A second click on the same item clears it.
+        // The shell asks again for an app that is open already. The
+        // compositor then brings the window to the front.
         host.pointerButton(pressed: true)
         host.pointerButton(pressed: false)
-        #expect(log.colors.count == 2)
-        #expect(log.colors.last ?? nil == nil)
+        #expect(log.opened == [sampleApps[0].id, sampleApps[0].id])
     }
 
-    @Test("A click marks the item with a dot")
-    func clickMarksTheItem() {
-        let host = ViewHost()
-        var list: DisplayList = []
-        func draw() {
-            list = host.displayList(for: RootView(state: ShellState(clock: "14:05")), in: screen)
-        }
-        host.needsUpdate = { draw() }
-        draw()
-
+    @Test("An open app has a dot under its icon")
+    func openAppHasADot() {
         /// The dots are the small shapes. A dot that draws nothing is clear.
         func dots(_ list: DisplayList) -> Int {
             list.filter { item in
@@ -212,10 +261,11 @@ struct DockClickTests {
             }.count
         }
 
-        #expect(dots(list) == 0, "no item is active at the start")
-        host.pointerMoved(to: firstIcon.x, y: firstIcon.y)
-        host.pointerButton(pressed: true)
-        host.pointerButton(pressed: false)
-        #expect(dots(list) == 1)
+        let closed = ViewRenderer.displayList(for: RootView(state: state()), in: screen)
+        #expect(dots(closed) == 0, "no app is open")
+
+        let open = ViewRenderer.displayList(
+            for: RootView(state: state(running: [sampleApps[1].id])), in: screen)
+        #expect(dots(open) == 1)
     }
 }

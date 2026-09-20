@@ -33,6 +33,7 @@ let package = Package(
         .library(name: "Render", targets: ["Render"]),
         .library(name: "Toolkit", targets: ["Toolkit"]),
         .library(name: "Shell", targets: ["Shell"]),
+        .library(name: "Terminal", targets: ["Terminal"]),
         // The display server links these C libraries too (mydistro-ui-check).
         .library(name: "CFreeType", targets: ["CFreeType"]),
         .library(name: "CHarfBuzz", targets: ["CHarfBuzz"]),
@@ -54,10 +55,18 @@ let package = Package(
         // Write your UI here.
         .target(name: "Shell", dependencies: ["Toolkit", "Render"]),
 
+        // What the terminal app shows: the grid of characters, and the
+        // sequences that a program writes to change it. The app itself (the
+        // window and the shell in it) is Sources/TerminalApp of the ui
+        // package. The part here has no system in it, so its tests run on
+        // the Mac.
+        .target(name: "Terminal", dependencies: ["Toolkit", "Render"]),
+
         // How long a frame takes: swift run -c release toolkit-bench
         .executableTarget(name: "toolkit-bench", dependencies: ["Shell", "Toolkit", "Render"]),
 
         .testTarget(name: "ToolkitTests", dependencies: ["Toolkit", "Render"]),
         .testTarget(name: "ShellTests", dependencies: ["Shell", "Toolkit", "Render"]),
+        .testTarget(name: "TerminalTests", dependencies: ["Terminal", "Toolkit", "Render"]),
     ]
 )

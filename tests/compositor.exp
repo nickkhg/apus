@@ -1,17 +1,33 @@
 #!/usr/bin/expect -f
 # Compositor test: boot the installed disk with a (headless) GPU, start
-# mydistro-compositor, open a window with mydistro-hello-client, screenshot
-# the VM and check the pixels. Run after tests/install.exp.
+# mydistro-compositor, then use the dock to open the apps of /Applications.
+# The test moves the pointer, clicks, types on the keyboard, and checks the
+# pixels of the screen. Run after tests/install.exp.
 #
 # With MYDISTRO_UI_DIR set (for example /mnt/host/ui, `make test-dev`), the
 # VM runs the programs from that directory, not the installed ones.
+#
+# The screen is 1280x800:
+#
+#   the panel        the top 28 lines
+#   the app area     y 28 to 702; a window of an app fills it
+#   the dock         73 high, 16 over the bottom: y 711 to 784
+#   the icons        44 wide, 10 apart, in the middle: Hello at x 591,
+#                    Terminal at x 645, both from y 721 to 765
 
-set timeout 120
+set timeout 180
 log_user 1
 source [file dirname [info script]]/lib.exp
 
 set bin ""
 if {[info exists env(MYDISTRO_UI_DIR)]} { set bin "$env(MYDISTRO_UI_DIR)/" }
+
+proc screen {name args} {
+    if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/$name.ppm {*}$args} result]} {
+        fail "$name check: $result"
+    }
+    send_user "\n$result\n"
+}
 
 spawn env VM_GPU=headless vm/run.sh installed
 login
@@ -23,75 +39,83 @@ expect {
     "mydistro-compositor:" { fail "compositor reported an error" }
     timeout                { fail "compositor didn't start" }
 }
+after 1000
 
-send "${bin}mydistro-hello-client --seconds 120 &\r"
+# The desktop, the panel with the name of the system, the dock with an icon
+# for each app, and the pointer in the middle of the screen.
+screen start 128,80=2B2340 2,14=1B1626 12,4-100,24!1B1626 \
+    591,721-635,765!2B2340 645,721-689,765!2B2340 \
+    640,400=000000 641,402=FFFFFF
+
+# The icons answer the pointer: the first one takes its full colour (3070F0)
+# when the pointer is over it. The pointer goes below and right of the pixel
+# that the test reads, so that the pointer image does not cover it.
+screen hover --pointer 620,755 600,730=3070F0
+
+# The pointer leaves the icon, and the compositor keeps running: a handler
+# that asks for a new frame must not bring the compositor into that handler
+# again.
+screen leave --pointer 300,400 600,730-601,731!3070F0
+
+# A click on the Terminal icon starts the app. The compositor gives the
+# window the app area, and the app draws the shell in it.
+screen open-terminal --pointer 667,750 --click
 expect {
-    "WINDOW-MAPPED"          {}
-    "mydistro-hello-client:" { fail "client reported an error" }
-    timeout                  { fail "window never mapped" }
+    "APP-STARTED org.mydistro.terminal" {}
+    timeout { fail "the dock did not start the terminal" }
+}
+expect {
+    "TERMINAL-READY"      {}
+    "mydistro-terminal:"  { fail "the terminal reported an error" }
+    timeout               { fail "the terminal did not open a pseudo terminal" }
+}
+expect {
+    -re {WINDOW-MAPPED "Terminal" 1280x675 at 0,28} {}
+    timeout { fail "the terminal window did not fill the app area" }
 }
 after 1000
 
-# 1280x800 screen. The shell panel is the top 28 pixels. The 400x300 window is
-# centred in the space under it, at 440,264. The pointer starts at the centre.
-#
-#   128,80        the desktop background
-#   2,14          the panel background, left of the padding
-#   12,4-100,24   the name "mydistro" is drawn on the panel
-#   150,4-500,24  the window title is drawn on the panel
-#   576,360       inside the window
-#   444,268       the window's white border, 4 pixels in
-#   444,254       above the window: the background, because the panel moved it
-#   640,400       the pointer's outline, and 641,402 its white fill
-if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/screen.ppm \
-        128,80=2B2340 2,14=1B1626 12,4-100,24!1B1626 150,4-500,24!1B1626 \
-        576,360=3070F0 444,268=FFFFFF 444,254=2B2340 \
-        564,730-716,774!2B2340 570,740-571,741!4C8DF6 \
-        640,400=000000 641,402=FFFFFF} result]} {
-    fail "screenshot check: $result"
-}
-send_user "\n$result\n"
+# The window of the terminal: its background, the prompt of the shell in the
+# first line, and the dot under the icon of the app that is open.
+screen terminal 640,400=14111E 0,28-500,52!14111E 667,771=FFFFFF
 
-# The dock icons react to the pointer. The first icon is at 564,730 to
-# 608,774. The pointer goes on it, below and right of the checked pixel, so
-# that the pointer image does not cover the pixel. The icon then has its full
-# colour (4C8DF6), and not the colour that it has at rest.
-if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/hover.ppm \
-        --pointer 600,760 570,740=4C8DF6} result]} {
-    fail "hover check: $result"
+# The keyboard reaches the app: the compositor sends the keys to the window
+# in front. The shell in the terminal runs what the test types.
+screen typing --type "echo typed-ok > /tmp/typed\\n" 0,28-700,120!14111E
+send "cat /tmp/typed\r"
+expect {
+    "typed-ok" {}
+    timeout    { fail "the shell in the terminal did not get the keys" }
 }
-send_user "\n$result\n"
 
-# The pointer leaves the icon. The icon gets its colour at rest again, and the
-# compositor keeps running: a handler that asks for a new frame must not bring
-# the compositor back into the same handler.
-if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/leave.ppm \
-        --pointer 300,400 570,740-571,741!4C8DF6 564,730-716,774!2B2340} result]} {
-    fail "hover leave check: $result"
+# A second app opens over the first one, and it gets the app area too.
+screen open-hello --pointer 613,750 --click 640,400=3070F0 4,32=FFFFFF
+expect {
+    -re {WINDOW-MAPPED "Hello from Swift" 1280x675 at 0,28} {}
+    timeout { fail "the second window did not fill the app area" }
 }
-send_user "\n$result\n"
 
-# A click on the first dock icon does an action: the item gets a dot under it
-# and the desktop takes the colour of the item (4C8DF6 darkened: 152745).
-if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/click.ppm \
-        --pointer 586,745 --click 128,80=152745 586,771=FFFFFF} result]} {
-    fail "dock click check: $result"
-}
-send_user "\n$result\n"
-
-# The Close button of the panel sends xdg_toplevel.close to the front window.
-# mydistro-hello-client stops when it gets that, so the window goes away.
-if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/close.ppm \
-        --pointer 1200,14 --click 576,360=152745} result]} {
-    fail "close button check: $result"
-}
-send_user "\n$result\n"
-
+# The Close button of the panel closes the window in front. The window of the
+# terminal is then in front again, and it gets the keys again.
+screen close-hello --pointer 1200,14 --click 640,400=14111E
 expect {
     "WINDOW-CLOSE-SENT" {}
     timeout             { fail "the compositor sent no close to the window" }
 }
+screen typing-again --type "echo again-ok > /tmp/again\\n" 0,28-700,160!14111E
+send "cat /tmp/again\r"
+expect {
+    "again-ok" {}
+    timeout    { fail "the keys did not come back to the terminal" }
+}
 
+# Closing the last window gives the desktop back, and the dot under the icon
+# goes away: that pixel is the background of the dock again (1B1626 at 0.85
+# over the desktop is 171320).
+screen close-terminal --pointer 1200,14 --click 640,400=2B2340 667,771=171320
+
+send "\r"
+expect -re "# $"
 send "kill %1\r"
 expect {
     "COMPOSITOR-EXIT" {}

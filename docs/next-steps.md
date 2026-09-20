@@ -4,30 +4,36 @@
 
 In this sequence:
 
-1. Input for apps. Add `wl_seat` with `wl_pointer` and `wl_keyboard`. Send the keymap from xkbcommon. Send pointer events to the window under the pointer, and keyboard events to the focused window.
-2. Window management. Click to focus and raise a window. Move a window with the pointer (`xdg_toplevel.move`). Close a window.
+1. The pointer for apps. `wl_seat` has a keyboard already. Add `wl_pointer`, and send the events to the window under the pointer. The shell must keep the pointer when it is over the panel or the dock.
+2. Window management. A window that moves and that changes its size (`xdg_toplevel.move`, `xdg_toplevel.resize`), and a click that brings a window forward.
 3. `wl_output`. Many apps need it to know the screen size and scale.
 4. Damage tracking. Draw only the parts of the screen that changed.
 5. Stop drawing when libseat disables the seat (for example on a VT switch), and start again when libseat enables it.
 6. A GPU renderer. Use GBM, EGL, and OpenGL ES to draw the display list. Keep `SoftwareRenderer` as a fallback.
 7. `linux-dmabuf`, so that apps can give GPU buffers.
 8. Popups (`xdg_popup` and `xdg_positioner`).
-9. Test with real Wayland apps, for example `foot` or `weston-terminal`. The only client that tests the Swift Wayland server now is `mydistro-hello-client`.
+9. Test with real Wayland apps, for example `foot` or `weston-terminal`. The clients that test the Swift Wayland server now are `mydistro-hello-client` and `mydistro-terminal`.
 10. `wl_registry.global_remove`, for globals that go away (for example a disconnected output).
 
 ## The toolkit and the shell
 
-The toolkit draws the panel and the dock, with `@State`, shapes and the pointer. See [toolkit.md](toolkit.md). Next, in this sequence:
+The toolkit draws the panel and the dock, with `@State`, shapes and the pointer. The dock starts the apps of `/Applications`, and the terminal is one of them. See [toolkit.md](toolkit.md) and [applications.md](applications.md). Next, in this sequence:
 
-1. The keyboard: which view has the focus, and how the keys reach it.
-2. Window title bars, with a close button.
+1. The keyboard in the toolkit: which view has the focus, and how the keys reach it. The keys now go to the app in front only.
+2. An icon file in a bundle, and an image as a display item. An icon is now the first letter of the name.
 3. Text that is too long for its space. Cut it, and add "…".
 4. Clip a view to its frame, and a border along a shape. The renderer fills an outline. It does not draw a line along one.
-5. An image in the UI (an icon file), as a display item.
-6. A scale for a high-resolution screen. Now one point is one pixel.
-7. The dock items start no program. There is nothing to start yet.
-8. A pointer position in a handler, and a drag.
-9. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
+5. A scale for a high-resolution screen. Now one point is one pixel.
+6. A pointer position in a handler, and a drag.
+7. Window title bars, with a close button of their own.
+8. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
+
+## The terminal
+
+1. Text that a user can select, and copy and paste.
+2. The lines that scrolled away, and a way to go back to them.
+3. Key repeat. The compositor sends `repeat_info`, and the app does nothing with it.
+4. More than one window, or more than one shell in one window.
 
 ## The system
 

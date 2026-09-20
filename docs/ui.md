@@ -92,12 +92,14 @@ A test with SourceKit-LSP gave the documentation of the C function `libinput_dis
 |---|---|---|
 | `CDRM`, `CGBM`, `CEGL`, `CGLES`, `CInput`, `CUdev`, `CXKBCommon`, `CSeat`, `CWaylandClient` | System library | The C libraries |
 | `CLinux` | System library | The glibc headers for epoll and signalfd. No library and no C code. |
-| `CXDGShellClient` | C | The `xdg-shell` client code that `wayland-scanner` makes, for the test client |
+| `CXDGShellClient` | C | The `xdg-shell` client code that `wayland-scanner` makes, for the apps |
+| `CPTY` | C | Two operations on a pseudo terminal that Swift cannot do itself, for the terminal |
 | `DRMKit` | Swift library | A Swift layer over libdrm |
 | `Wayland` | Swift library | The Wayland server. See [compositor.md](compositor.md). |
 | `Compositor` | Swift library | The compositor. See [compositor.md](compositor.md). |
 | `mydistro-compositor` | Program | Runs the compositor |
 | `mydistro-hello-client` | Program | A small Wayland app with one window. It uses libwayland-client, as most apps do. |
+| `mydistro-terminal` | Program | The terminal app. See [applications.md](applications.md). |
 | `mydistro-display-probe` | Program | Draws a test pattern on the screen, then restores the screen |
 | `mydistro-ui-check` | Program | Calls each C library once. It needs no screen. |
 
@@ -110,7 +112,7 @@ A test with SourceKit-LSP gave the documentation of the C function `libinput_dis
 | Input devices and hotplug | libinput, libudev | `CInput`, `CUdev` |
 | Keymaps | xkbcommon | `CXKBCommon` |
 | Device access for a session | libseat | `CSeat` |
-| Wayland for apps (the test client only) | libwayland-client | `CWaylandClient` |
+| Wayland for apps (the apps only, not the compositor) | libwayland-client | `CWaylandClient` |
 | Glyphs and text shaping | FreeType, HarfBuzz | `CFreeType`, `CHarfBuzz` |
 
 The compositor does not use libwayland. Its Wayland server is Swift.

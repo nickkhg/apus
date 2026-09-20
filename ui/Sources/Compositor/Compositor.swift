@@ -38,8 +38,11 @@ public final class Compositor {
     private let host = ViewHost()
     /// What the shell can ask the compositor to do.
     private var shellActions = ShellActions()
-    /// The desktop colour that the shell selected, if it selected one.
-    private var desktopColor: UInt32?
+    /// The apps in /Applications. The dock shows one icon for each.
+    private let apps: [AppBundle]
+    /// The same apps, as the shell gets them. They do not change, so the
+    /// compositor makes them once and not for each frame.
+    private let appEntries: [AppEntry]
 
     public var socketName: String { server.socketName }
     public var screenSize: (width: Int, height: Int) { (screen.width, screen.height) }
@@ -57,6 +60,14 @@ public final class Compositor {
         loop = try EventLoop()
         server = try WaylandServer(loop: loop)
         pointer = (Double(screen.width) / 2, Double(screen.height) / 2)
+        apps = AppCatalog.bundles()
+        appEntries = apps.map(\.entry)
+        debug("\(apps.count) apps in \(AppCatalog.directory)")
+        // An app that the dock starts connects to this compositor. The
+        // compositor does not wait for the child, so the kernel removes the
+        // child when it ends.
+        setenv("WAYLAND_DISPLAY", server.socketName, 1)
+        signal(SIGCHLD, SIG_IGN)
 
         loop.watch(fd: seat.fd) { [unowned self] in seat.dispatch() }
         loop.watch(fd: drm.fd) { [unowned self] in drm.handleEvents() }
@@ -72,19 +83,19 @@ public final class Compositor {
         input.handler = { [unowned self] event in handle(event) }
         host.needsUpdate = { [unowned self] in screen.setNeedsFrame() }
         shellActions = ShellActions(
-            closeFrontWindow: { [unowned self] in closeFrontWindow() },
-            setDesktopColor: { [unowned self] color in
-                desktopColor = color?.packed
-                screen.setNeedsFrame()
-            }
+            openApp: { [unowned self] id in openApp(id) },
+            closeFrontWindow: { [unowned self] in closeFrontWindow() }
         )
         shell.clock = Compositor.clockText()
         // The clock changes once a minute. A one-second timer keeps it right
         // without a frame between minutes.
         try loop.onTimer(milliseconds: 1000) { [unowned self] in updateClock() }
+        server.keymap = input.keymapText
+        server.windowArea = { [unowned self] in windowArea }
         server.surfaceCommitted = { [unowned self] surface in surfaceCommitted(surface) }
         server.surfaceDestroyed = { [unowned self] surface in
             windows.removeAll { $0.surface === surface }
+            updateFocus()
             screen.setNeedsFrame()
         }
         screen.setNeedsFrame()
@@ -116,7 +127,7 @@ public final class Compositor {
 
     private func displayList() -> DisplayList {
         var list: DisplayList = [.fill(Rect(x: 0, y: 0, width: screen.width, height: screen.height),
-                                       color: desktopColor ?? options.background)]
+                                       color: options.background)]
         for window in windows {
             if let content = window.surface.content {
                 list.append(.bitmap(content, x: window.x, y: window.y))
@@ -125,6 +136,8 @@ public final class Compositor {
         // The shell goes over the windows, and the pointer over both. The
         // host keeps the state of the shell views from frame to frame.
         var state = shell
+        state.apps = appEntries
+        state.runningApps = Set(windows.compactMap { $0.surface.toplevel?.appID })
         state.windowTitles = windows.map { $0.surface.toplevel?.title ?? "" }
         list += host.displayList(for: RootView(state: state, actions: shellActions), in: screenRect)
         list.append(.bitmap(Cursor.bitmap, x: Int(pointer.x), y: Int(pointer.y)))
@@ -163,13 +176,14 @@ public final class Compositor {
     private func surfaceCommitted(_ surface: Surface) {
         if surface.isMapped, !windows.contains(where: { $0.surface === surface }),
            let content = surface.content {
-            // New windows open centred in the space under the panel, each
-            // further one offset a little.
+            // A window gets the app area: the space between the panel and
+            // the dock. The configure event asked the app for that size. An
+            // app that takes another size goes in the middle of the area.
             let area = windowArea
-            let offset = 32 * windows.count
-            let x = area.x + (area.width - content.width) / 2 + offset
-            let y = area.y + (area.height - content.height) / 2 + offset
+            let x = area.x + max(0, (area.width - content.width) / 2)
+            let y = area.y + max(0, (area.height - content.height) / 2)
             windows.append(Window(surface: surface, x: x, y: y))
+            updateFocus()
             let title = surface.toplevel?.title ?? ""
             log("WINDOW-MAPPED \"\(title)\" \(content.width)x\(content.height) at \(x),\(y)")
         }
@@ -188,10 +202,38 @@ public final class Compositor {
             // BTN_LEFT. The shell gets the click. An app gets nothing yet:
             // there is no input focus and no wl_seat.
             if code == 0x110 { host.pointerButton(pressed: pressed) }
-        case .key(let keysym, let pressed, let control, let alt):
-            // Ctrl+Alt+Backspace (XKB_KEY_BackSpace = 0xff08) quits.
-            if pressed, control, alt, keysym == 0xFF08 { running = false }
+        case .key(let key):
+            // Ctrl+Alt+Backspace (XKB_KEY_BackSpace = 0xff08) quits. Every
+            // other key goes to the window with the focus.
+            if key.pressed, key.control, key.alt, key.keysym == 0xFF08 {
+                running = false
+            } else {
+                server.send(key: key)
+            }
         }
+    }
+
+    /// Starts an app, or brings its window to the front when it is open
+    /// already. A dock icon does this.
+    private func openApp(_ id: String) {
+        if let index = windows.lastIndex(where: { $0.surface.toplevel?.appID == id }) {
+            let window = windows.remove(at: index)
+            windows.append(window)
+            updateFocus()
+            log("APP-RAISED \(id)")
+            screen.setNeedsFrame()
+            return
+        }
+        guard let bundle = apps.first(where: { $0.id == id }) else {
+            log("compositor: no app with the id \(id)")
+            return
+        }
+        AppCatalog.start(bundle)
+    }
+
+    /// The window in front gets the keys.
+    private func updateFocus() {
+        server.setKeyboardFocus(windows.last?.surface)
     }
 
     /// Asks the window in front to close. The app decides what it does.

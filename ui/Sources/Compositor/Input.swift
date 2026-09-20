@@ -14,11 +14,37 @@ final class Input {
         /// Absolute position (a tablet, or QEMU's virtio-tablet), 0...1.
         case pointerPosition(x: Double, y: Double)
         case button(code: UInt32, pressed: Bool)
-        /// An X keysym (see xkbcommon-keysyms.h) with the modifiers active.
-        case key(keysym: UInt32, pressed: Bool, control: Bool, alt: Bool)
+        /// A key of the keyboard.
+        case key(Key)
+    }
+
+    /// One key, for the compositor and for the app with the focus.
+    struct Key {
+        /// The code of the kernel (evdev). wl_keyboard sends this, and the
+        /// app adds 8 to get the xkb keycode.
+        let code: UInt32
+        /// What the keymap makes of the key (see xkbcommon-keysyms.h). The
+        /// compositor uses it for its own keys.
+        let keysym: UInt32
+        let pressed: Bool
+        let control: Bool
+        let alt: Bool
+        let modifiers: Modifiers
+    }
+
+    /// The modifiers that are active, as wl_keyboard.modifiers sends them.
+    struct Modifiers: Equatable {
+        var depressed: UInt32 = 0
+        var latched: UInt32 = 0
+        var locked: UInt32 = 0
+        var group: UInt32 = 0
     }
 
     var handler: (Event) -> Void = { _ in }
+
+    /// The keymap of the system, as xkb text. An app gets it in
+    /// wl_keyboard.keymap, so that it reads the keys in the same way.
+    private(set) var keymapText = ""
 
     private let seat: Seat
     private var udev: OpaquePointer?
@@ -51,6 +77,10 @@ final class Input {
         }
         self.keymap = keymap
         xkbState = xkb_state_new(keymap)
+        if let text = xkb_keymap_get_as_string(keymap, XKB_KEYMAP_FORMAT_TEXT_V1) {
+            keymapText = String(cString: text)
+            free(text)
+        }
 
         guard let udev = udev_new() else { throw .udev }
         self.udev = udev
@@ -80,6 +110,15 @@ final class Input {
         }
     }
 
+    /// The modifier state of xkb, in the form that wl_keyboard wants.
+    private func modifiers() -> Modifiers {
+        Modifiers(
+            depressed: xkb_state_serialize_mods(xkbState, XKB_STATE_MODS_DEPRESSED),
+            latched: xkb_state_serialize_mods(xkbState, XKB_STATE_MODS_LATCHED),
+            locked: xkb_state_serialize_mods(xkbState, XKB_STATE_MODS_LOCKED),
+            group: xkb_state_serialize_layout(xkbState, XKB_STATE_LAYOUT_EFFECTIVE))
+    }
+
     private func handle(_ event: OpaquePointer) {
         let type = libinput_event_get_type(event)
         switch type {
@@ -102,9 +141,13 @@ final class Input {
             let pressed = libinput_event_keyboard_get_key_state(keyboard) == LIBINPUT_KEY_STATE_PRESSED
             let keysym = xkb_state_key_get_one_sym(xkbState, keycode)
             xkb_state_update_key(xkbState, keycode, pressed ? XKB_KEY_DOWN : XKB_KEY_UP)
-            handler(.key(keysym: keysym, pressed: pressed,
-                         control: xkb_state_mod_name_is_active(xkbState, "Control", XKB_STATE_MODS_EFFECTIVE) > 0,
-                         alt: xkb_state_mod_name_is_active(xkbState, "Mod1", XKB_STATE_MODS_EFFECTIVE) > 0))
+            handler(.key(Key(
+                code: libinput_event_keyboard_get_key(keyboard),
+                keysym: keysym,
+                pressed: pressed,
+                control: xkb_state_mod_name_is_active(xkbState, "Control", XKB_STATE_MODS_EFFECTIVE) > 0,
+                alt: xkb_state_mod_name_is_active(xkbState, "Mod1", XKB_STATE_MODS_EFFECTIVE) > 0,
+                modifiers: modifiers())))
         default:
             break
         }

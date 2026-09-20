@@ -29,9 +29,26 @@ package() {
     cd "$startdir/ui"
     local bin
     bin=$(swift build -c release --scratch-path "${SWIFT_SCRATCH:-$srcdir/.build}" --show-bin-path)
+
+    # App bundles go to /Applications, one directory for each app. The
+    # compositor reads them and the dock shows them. A bundle that names a
+    # program of its own gets that program; the program is then not a system
+    # program, so the loop below does not put it in /usr/bin too.
+    local bundle name exec bundled=()
+    for bundle in "$startdir/ui/Apps/"*.app; do
+        name=${bundle##*/}
+        install -Dm644 "$bundle/app.conf" "$pkgdir/Applications/$name/app.conf"
+        exec=$(sed -n 's/^[[:space:]]*exec[[:space:]]*=[[:space:]]*//p' "$bundle/app.conf")
+        if [[ -n $exec && $exec != /* ]]; then
+            install -Dm755 "$bin/${exec##*/}" "$pkgdir/Applications/$name/$exec"
+            bundled+=("${exec##*/}")
+        fi
+    done
+
+    # The system programs: the compositor and the tools.
     local program
     for program in "$bin"/mydistro-*; do
-        if [[ -f $program && -x $program ]]; then
+        if [[ -f $program && -x $program && " ${bundled[*]:-} " != *" ${program##*/} "* ]]; then
             install -Dm755 "$program" "$pkgdir/usr/bin/${program##*/}"
         fi
     done

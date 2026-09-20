@@ -64,18 +64,23 @@ A stack is only as large as its children need. To make a stack fill its space, p
 ui/
 ├── Package.swift          mydistro-ui: the display server, for mydistro only
 ├── Sources/               THE SYSTEM
-│   ├── Compositor/        screen, input, windows, the display list
+├── Apps/                  THE APP BUNDLES: one directory for /Applications
+├── Sources/               THE SYSTEM
+│   ├── Compositor/        screen, input, windows, apps, the display list
 │   ├── Wayland/           the Wayland server
 │   ├── DRMKit/  C*/       the kernel-facing libraries
+│   ├── TerminalApp/       the terminal: the window and the shell in it
 │   └── CompositorMain/  HelloClient/  DisplayProbe/  UICheck/
 └── Toolkit/               A SWIFT PACKAGE: mydistro-toolkit
     ├── Package.swift
     ├── Sources/
     │   ├── Render/        the display list and the software renderer
     │   ├── Toolkit/       View, the layout, the text
+    │   ├── Terminal/      the grid of characters of the terminal
     │   └── Shell/         YOUR UI
     │       ├── RootView.swift
-    │       └── Panel.swift
+    │       ├── Panel.swift
+    │       └── Dock.swift
     └── Tests/
 ```
 
@@ -83,7 +88,8 @@ ui/
 |---|---|
 | `Render` | `Rect`, `Bitmap`, `DisplayItem`, `DisplayList`, `Canvas`, and `SoftwareRenderer`. No other module of ours is below it. |
 | `Toolkit` | The views, the layout, the text, and `ViewRenderer`. It makes display lists. It knows nothing about the screen or about Wayland. |
-| `Shell` | What mydistro draws itself. |
+| `Shell` | What mydistro draws itself: the panel, the dock, and `RootView`. |
+| `Terminal` | What the terminal app draws: the grid of characters, and the escape sequences that change it. The app around it is `ui/Sources/TerminalApp/`. See [applications.md](applications.md). |
 
 ### The root view
 
@@ -92,12 +98,15 @@ ui/
 ```swift
 public struct RootView: View {
     let state: ShellState
+    let actions: ShellActions
 
     public var body: some View {
         VStack(spacing: 0) {
-            Panel(state: state)
+            Panel(state: state, actions: actions)
                 .frame(height: Panel.height)
-            Spacer()            // the windows are behind this space
+            Spacer()            // the app area: the windows are behind it
+            DockView(apps: state.apps, running: state.runningApps, actions: actions)
+                .padding(.bottom, DockView.bottomMargin)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -106,11 +115,11 @@ public struct RootView: View {
 
 To add a part to the interface, write a `View` in `ui/Toolkit/Sources/Shell/` and put it in the body of `RootView`.
 
-`ShellActions` is what the shell can ask the compositor to do: close the front window, and give the desktop a colour. The shell knows nothing about windows or Wayland, so it asks. The Close button of the panel and the dock icons use these actions.
+`ShellActions` is what the shell can ask the compositor to do: open an app, and close the front window. The shell knows nothing about windows, processes or Wayland, so it asks. The dock icons and the Close button of the panel use these actions.
 
-`ShellState` is what the compositor gives the shell for each frame: the window titles and the time. Add a value to it when your UI needs more.
+`ShellState` is what the compositor gives the shell for each frame: the apps in `/Applications`, the apps that are open, the window titles, and the time. Add a value to it when your UI needs more.
 
-`RootView.windowArea(screen:)` says which part of the screen the windows use. The compositor asks the shell, so the shell decides how much space it takes.
+`RootView.windowArea(screen:)` says which part of the screen the windows use: the space between the panel and the dock. The compositor asks the shell, so the shell decides how much space it takes. See [applications.md](applications.md).
 
 ### The two systems
 
@@ -283,7 +292,7 @@ A view of the interface goes in `ui/Toolkit/Sources/Shell/`. A view that every U
 
 ## Tests
 
-`make test-ui` runs the 77 unit tests on the Mac, and `make test-ui-linux` runs the same tests on mydistro. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, and the text. `ui/Toolkit/Tests/ShellTests/` tests the panel.
+`make test-ui` runs the 107 unit tests on the Mac, and `make test-ui-linux` runs the same tests on mydistro. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, the shapes, the state, and the pointer. `ui/Toolkit/Tests/ShellTests/` tests the panel, the dock and the app area. `ui/Toolkit/Tests/TerminalTests/` tests the grid of the terminal and its escape sequences.
 
 A test lays out a view in a rectangle and looks at the display list. For example, this is the test of a spacer:
 
@@ -306,9 +315,9 @@ On a Mac (M-series, 1280 × 800):
 
 | Step | Time |
 |---|---|
-| Lay out the views and make the display list | 0.28 ms |
-| Draw the items | 0.08 ms |
-| A complete frame | 0.36 ms |
+| Lay out the views and make the display list | 0.40 ms |
+| Draw the items | 0.09 ms |
+| A complete frame | 0.49 ms |
 
 The compositor draws a frame only when something changes, so this is the cost
 of a change, not of a second. In the VM the same work is slower, because Mesa
@@ -324,8 +333,8 @@ takes the whole screen makes the renderer fill the whole screen.
 - There are no images and no shadows, and a shape has no border: the renderer
   fills an outline, it does not draw a line along one.
 - The pointer reaches the views, as `onHover`, `onPress` and
-  `onTapGesture`. There is no keyboard and no focus, and a view gets no
-  pointer position in its handlers.
+  `onTapGesture`. A view gets no pointer position in its handlers. The keys
+  go to the app in front, and not to a view: the toolkit has no focus.
 - A view cannot draw outside its frame, and nothing clips a view to its
   frame.
 - One point is one pixel. There is no scale for a high-resolution screen.

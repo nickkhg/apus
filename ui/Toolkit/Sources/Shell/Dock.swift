@@ -1,91 +1,75 @@
 import Toolkit
 
-// The dock at the bottom of the screen. It shows what the new parts of the
-// toolkit do: a shape with round corners, one view for each element of a
-// list, a value that the view owns, and the pointer.
-
-/// One place in the dock.
-public struct DockItem: Identifiable, Equatable, Sendable {
-    /// The name. Its first letter is in the icon, and it is the identity.
-    public let name: String
-    public let color: Color
-
-    public var id: String { name }
-
-    public init(name: String, color: Color) {
-        self.name = name
-        self.color = color
-    }
-}
+// The dock at the bottom of the screen. It shows one icon for each app
+// bundle in /Applications. A click on an icon starts the app, and the app
+// gets the area between the panel and the dock.
 
 /// The row of icons at the bottom of the screen.
 public struct DockView: View {
-    /// The places in the dock. There are no apps to start yet.
-    public static let items = [
-        DockItem(name: "Files", color: Color(hex: 0x4C8DF6)),
-        DockItem(name: "Terminal", color: Color(hex: 0x3BB273)),
-        DockItem(name: "Settings", color: Color(hex: 0xE0A458)),
-    ]
+    /// The sizes of the dock, in pixels. RootView keeps `height` plus
+    /// `bottomMargin` free at the bottom of the screen, so that no window
+    /// goes under the dock.
+    static let iconSize: Double = 44
+    static let dotSize: Double = 5
+    static let dotSpacing: Double = 4
+    static let padding: Double = 10
+    /// The height of the dock: the padding, an icon, and the dot under it.
+    public static let height = 2 * padding + iconSize + dotSpacing + dotSize
+    /// The space between the dock and the bottom of the screen.
+    public static let bottomMargin: Double = 16
 
-    let items: [DockItem]
+    let apps: [AppEntry]
+    let running: Set<String>
     let actions: ShellActions
-    /// The name of the item that the pointer selected, if there is one.
-    @State private var active: String?
 
-    public init(items: [DockItem] = DockView.items, actions: ShellActions = ShellActions()) {
-        self.items = items
+    public init(apps: [AppEntry], running: Set<String> = [],
+                actions: ShellActions = ShellActions()) {
+        self.apps = apps
+        self.running = running
         self.actions = actions
     }
 
     public var body: some View {
-        HStack(spacing: 10) {
-            ForEach(items) { item in
-                DockIcon(item: item, active: $active, actions: actions)
+        if !apps.isEmpty {
+            HStack(spacing: 10) {
+                ForEach(apps) { app in
+                    DockIcon(app: app, isRunning: running.contains(app.id), actions: actions)
+                }
             }
+            .padding(DockView.padding)
+            .background(
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(Color(hex: 0x1B1626).opacity(0.85))
+            )
         }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 18)
-                .fill(Color(hex: 0x1B1626).opacity(0.85))
-        )
     }
 }
 
 /// One icon. It becomes brighter when the pointer is over it, darker while
-/// the pointer is down on it, and a dot under it says that it is active.
+/// the pointer is down on it, and a dot under it says that the app is open.
 struct DockIcon: View {
-    let item: DockItem
-    @Binding var active: String?
+    let app: AppEntry
+    let isRunning: Bool
     let actions: ShellActions
 
     @State private var isHovered = false
     @State private var isPressed = false
 
-    private var isActive: Bool { active == item.name }
-
-    /// A click selects the item, and the desktop takes its colour. A click
-    /// on the item that is already active clears both.
-    private func activate() {
-        let wasActive = isActive
-        active = wasActive ? nil : item.name
-        actions.setDesktopColor(wasActive ? nil : item.color.darkened(by: 0.72))
-    }
-
     var body: some View {
-        Button(action: activate) {
-            VStack(spacing: 4) {
+        Button(action: { actions.openApp(app.id) }) {
+            VStack(spacing: DockView.dotSpacing) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12)
                         .fill(color)
-                    Text(String(item.name.prefix(1)))
+                    Text(String(app.name.prefix(1)))
                         .font(.headline)
                         .foregroundColor(.white)
                 }
-                .frame(width: 44, height: 44)
+                .frame(width: DockView.iconSize, height: DockView.iconSize)
                 .aspectRatio(1, contentMode: .fit)
                 Circle()
-                    .fill(isActive ? Color.white : Color.clear)
-                    .frame(width: 5, height: 5)
+                    .fill(isRunning ? Color.white : Color.clear)
+                    .frame(width: DockView.dotSize, height: DockView.dotSize)
             }
             .onHover { isHovered = $0 }
             .onPress { isPressed = $0 }
@@ -94,11 +78,11 @@ struct DockIcon: View {
 
     private var color: Color {
         if isPressed {
-            item.color.opacity(0.5)
+            app.color.opacity(0.5)
         } else if isHovered {
-            item.color
+            app.color
         } else {
-            item.color.opacity(0.7)
+            app.color.opacity(0.7)
         }
     }
 }

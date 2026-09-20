@@ -61,8 +61,9 @@ public struct Color: View, Equatable, Sendable {
         (Color.byte(red) << 16) | (Color.byte(green) << 8) | Color.byte(blue)
     }
 
-    /// 0xAARRGGBB with the colour multiplied by alpha, as the renderer wants.
-    var premultiplied: UInt32 {
+    /// 0xAARRGGBB with the colour multiplied by alpha, as the renderer
+    /// wants it in a path item.
+    public var premultiplied: UInt32 {
         (Color.byte(alpha) << 24)
             | (Color.byte(red * alpha) << 16)
             | (Color.byte(green * alpha) << 8)

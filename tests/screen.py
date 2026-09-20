@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Screenshot the VM through the QEMU monitor and check pixel colours.
 
-    tests/screen.py MONITOR_SOCKET OUTPUT.ppm [--pointer X,Y] [--click] X,Y=RRGGBB ...
+    tests/screen.py MONITOR_SOCKET OUTPUT.ppm [OPTIONS] X,Y=RRGGBB ...
 
 X and Y are pixels, or fractions of the screen size when they contain a
 dot (0.5,0.5 is the centre).
@@ -16,6 +16,12 @@ the compositor to draw again. The VM needs an absolute pointer device
 
 --click presses the left button and releases it, at the place that --pointer
 gave.
+
+--type TEXT types the text on the keyboard of the VM. It knows the small
+letters, the digits, a few punctuation marks, and "\n" for the Enter key.
+The VM needs a keyboard (VM_GPU=headless and VM_GPU=window add one).
+
+The options run in this order: --pointer, --click, --type.
 
 Exits non-zero if any check fails.
 """
@@ -60,6 +66,46 @@ def click(sock_path):
             "events": [{"type": "btn", "data": {"down": down, "button": "left"}}]}})
         time.sleep(0.3)
     time.sleep(1.0)
+
+
+# The key names of QEMU (qcode) for the characters that a test types.
+KEYS = {
+    " ": "spc", "\n": "ret", "\t": "tab", "-": "minus", "=": "equal",
+    ".": "dot", ",": "comma", "/": "slash", ";": "semicolon", "'": "apostrophe",
+    "[": "bracket_left", "]": "bracket_right", "\\": "backslash", "`": "grave_accent",
+}
+SHIFTED = {
+    ">": "dot", "<": "comma", "|": "backslash", "~": "grave_accent", "?": "slash",
+    ":": "semicolon", '"': "apostrophe", "_": "minus", "+": "equal",
+}
+
+
+def key_name(character):
+    """The QEMU key for a character, and whether Shift is down."""
+    if character in KEYS:
+        return KEYS[character], False
+    if character in SHIFTED:
+        return SHIFTED[character], True
+    if character.isdigit() or ("a" <= character <= "z"):
+        return character, False
+    if "A" <= character <= "Z":
+        return character.lower(), True
+    sys.exit(f"screenshot: --type cannot type {character!r}")
+
+
+def type_text(sock_path, text):
+    """Types the text on the keyboard of the VM."""
+    qmp_path = os.path.join(os.path.dirname(sock_path), "qmp.sock")
+    for character in text:
+        name, shifted = key_name(character)
+        keys = ([{"type": "qcode", "data": "shift"}] if shifted else []) + \
+              [{"type": "qcode", "data": name}]
+        for down in (True, False):
+            events = [{"type": "key", "data": {"down": down, "key": key}}
+                      for key in (keys if down else list(reversed(keys)))]
+            qmp(qmp_path, {"execute": "input-send-event", "arguments": {"events": events}})
+            time.sleep(0.05)
+    time.sleep(1.5)  # the program answers and the compositor draws
 
 
 def screendump(sock_path, out_path):
@@ -136,15 +182,20 @@ def main():
     sock_path, out_path, specs = sys.argv[1], sys.argv[2], sys.argv[3:]
     pointer = None
     clicking = False
-    if specs and specs[0] == "--pointer":
-        pointer = specs[1]
-        specs = specs[2:]
-    if specs and specs[0] == "--click":
-        clicking = True
-        specs = specs[1:]
+    text = None
+    while specs and specs[0].startswith("--"):
+        option = specs.pop(0)
+        if option == "--pointer":
+            pointer = specs.pop(0)
+        elif option == "--click":
+            clicking = True
+        elif option == "--type":
+            text = specs.pop(0).replace("\\n", "\n").replace("\\t", "\t")
+        else:
+            sys.exit(f"screenshot: {option} is not an option")
     screendump(sock_path, out_path)
     width, height, pixels = read_ppm(out_path)
-    if pointer or clicking:
+    if pointer or clicking or text is not None:
         if pointer:
             x, y = pointer.split(",")
             move_pointer(sock_path, coordinate(x, width), coordinate(y, height), width, height)
@@ -152,6 +203,9 @@ def main():
         if clicking:
             click(sock_path)
             print("clicked")
+        if text is not None:
+            type_text(sock_path, text)
+            print(f"typed {text!r}")
         screendump(sock_path, out_path)
         width, height, pixels = read_ppm(out_path)
     print(f"screenshot {width}x{height}")

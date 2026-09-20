@@ -54,7 +54,7 @@ The tests are `expect` scripts. They use the serial console of the VM. `tests/li
 |---|---|
 | `tests/install.exp` | Removes the target disk. Boots the live image and runs `mydistro-install -y /dev/vdb`. Boots the installed disk and checks it (see below). |
 | `tests/display.exp` | Boots the installed disk with `VM_GPU=headless`. Checks `/mnt/host`. Runs `mydistro-ui-check` and `mydistro-display-probe`. Checks a screenshot. |
-| `tests/compositor.exp` | Boots the installed disk with `VM_GPU=headless`. Starts `mydistro-compositor` and `mydistro-hello-client`. Checks a screenshot. Stops the compositor with SIGTERM. |
+| `tests/compositor.exp` | Boots the installed disk with `VM_GPU=headless`. Starts `mydistro-compositor`. Opens the apps from the dock, types in the terminal, and checks screenshots. Stops the compositor with SIGTERM. |
 
 `tests/display.exp` and `tests/compositor.exp` use the disk that `tests/install.exp` made. Run the tests in this sequence. `make test` does this.
 
@@ -83,20 +83,25 @@ The programs print these markers:
 | `COMPOSITOR-READY`, `COMPOSITOR-EXIT` | `mydistro-compositor` |
 | `WINDOW-MAPPED` | `mydistro-compositor`, when a window opens |
 | `WINDOW-CLOSE-SENT` | `mydistro-compositor`, when the Close button of the panel asks a window to close |
+| `APP-STARTED`, `APP-RAISED` | `mydistro-compositor`, when a dock icon starts an app or brings its window forward |
 | `CLIENT-DRAWN` | `mydistro-hello-client` |
+| `TERMINAL-READY` | `mydistro-terminal`, with the size of the grid |
 
 ### Screenshots
 
 `tests/screen.py` gets a screenshot through the QEMU monitor (`screendump`) and checks pixel colours:
 
 ```sh
-tests/screen.py out/vm/monitor.sock out/vm/screen.ppm [--pointer X,Y] X,Y=RRGGBB ...
+tests/screen.py out/vm/monitor.sock out/vm/screen.ppm [OPTIONS] X,Y=RRGGBB ...
 ```
 
-`--pointer X,Y` moves the pointer of the VM to that pixel first, and
-`--click` then presses the left button and releases it. The events go
-through QMP, and the tool waits for the compositor to draw again. The
-compositor test uses them for the dock and for the Close button.
+| Option | Result |
+|---|---|
+| `--pointer X,Y` | Moves the pointer of the VM to that pixel. |
+| `--click` | Presses the left button and releases it, where the pointer is. |
+| `--type TEXT` | Types the text on the keyboard of the VM. It knows the small letters, the digits, a few punctuation marks, and `\n` for the Enter key. |
+
+The events go through QMP, and the tool waits for the compositor to draw again. The options run in this sequence: `--pointer`, `--click`, `--type`. The compositor test uses them for the dock, for the Close button, and for the shell in the terminal.
 
 There are two kinds of check:
 
@@ -109,24 +114,29 @@ The second kind tests drawing that is correct but not exact, for example text. T
 
 X and Y are pixels. If a value contains a dot, it is a fraction of the screen size (`0.5,0.5` is the centre). The screenshot is in `out/vm/screen.ppm`.
 
-The compositor test checks these places on the 1280×800 screen:
+The compositor test checks these places on the 1280×800 screen. The dock has two icons: Hello at x 591, and Terminal at x 645, both from y 721 to y 765.
 
 | Place | Expected | What it is |
 |---|---|---|
 | (128, 80) | `2B2340` | The desktop background |
-| (564, 730) to (716, 774) | Not `2B2340` | The dock at the bottom of the screen |
 | (2, 14) | `1B1626` | The background of the shell panel |
 | (12, 4) to (100, 24) | Not `1B1626` | The name "mydistro" on the panel |
-| (150, 4) to (500, 24) | Not `1B1626` | The window title on the panel |
-| (576, 360) | `3070F0` | The inside of the window |
-| (444, 268) | `FFFFFF` | The border of the window |
-| (444, 254) | `2B2340` | Over the window: the panel moved the window down |
+| (591, 721) to (635, 765) | Not `2B2340` | The first dock icon |
+| (645, 721) to (689, 765) | Not `2B2340` | The second dock icon |
 | (640, 400) | `000000` | The outline of the pointer |
 | (641, 402) | `FFFFFF` | The inside of the pointer |
-| (570, 740) | `4C8DF6` | The first dock icon, after the pointer goes on it |
-| (128, 80) | `152745` | The desktop, after a click on the first dock icon |
-| (586, 771) | `FFFFFF` | The dot under the icon that the click selected |
-| (576, 360) | `152745` | Where the window was, after a click on the Close button |
+| (600, 730) | `3070F0` | The first icon in its full colour, with the pointer on it |
+| (640, 400) | `14111E` | The window of the terminal, over the whole app area |
+| (0, 28) to (500, 52) | Not `14111E` | The prompt of the shell, in the first line of the terminal |
+| (667, 771) | `FFFFFF` | The dot under the icon of the app that is open |
+| (0, 28) to (700, 120) | Not `14111E` | What the test typed, and what the shell answered |
+| (640, 400) | `3070F0` | The window of the second app, over the first one |
+| (4, 32) | `FFFFFF` | The border of that window, at the top left of the app area |
+| (640, 400) | `14111E` | The terminal again, after a click on the Close button |
+| (640, 400) | `2B2340` | The desktop, after the terminal closes too |
+| (667, 771) | `171320` | The background of the dock, where the dot was |
+
+The test also reads `/tmp/typed` on the serial console. The shell in the terminal writes that file. The file is the proof: the keys went from QEMU, through the compositor and the app, to the shell.
 
 ## After a change
 

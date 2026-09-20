@@ -59,7 +59,7 @@ help:
 	@echo "make live       boot live image + blank disk in QEMU (Ctrl-A X quits)"
 	@echo "make installed  boot the disk the installer wrote"
 	@echo "make gui        boot the installed disk in a window (display + input)"
-	@echo "make demo       same, and start the compositor with a test window"
+	@echo "make demo       same, and start the compositor (open an app from the dock)"
 	@echo "make demo-dev   same, with the programs from 'make ui' (out/ui)"
 	@echo "make ui         quick Swift build of ui/ on the Mac into out/ui (shared at /mnt/host/ui in the VM)"
 	@echo "make ui-container  the same build in the build container"
