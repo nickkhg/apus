@@ -1,11 +1,11 @@
-# out/ of the mydistro source tree, shared by QEMU (vm/run.sh) over 9p.
-# Mounted on first access by mnt-host.automount; only in QEMU VMs.
+# out/ of the mydistro source tree, shared by mydistro-vm over virtiofs.
+# Mounted on first access by mnt-host.automount; only in VMs on the Mac.
 [Unit]
 Description=Files shared by the VM host
-ConditionVirtualization=qemu
+ConditionVirtualization=apple
 
 [Mount]
 What=host
 Where=/mnt/host
-Type=9p
-Options=trans=virtio,version=9p2000.L,msize=524288,ro
+Type=virtiofs
+Options=ro

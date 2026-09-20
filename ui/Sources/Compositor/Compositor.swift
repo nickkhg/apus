@@ -49,6 +49,9 @@ public final class Compositor {
     private var running = true
     /// What the shell shows. The clock updates it every minute.
     private var shell = ShellState()
+    /// Writes the screen to a file for the tests, when
+    /// MYDISTRO_SCREENSHOT_SOCKET names a socket. Otherwise nil.
+    private var screenshot: Screenshot?
     /// The shell's view tree: its `@State` values and the pointer.
     private let host = ViewHost()
     /// What the shell can ask the compositor to do.
@@ -132,6 +135,9 @@ public final class Compositor {
             arrange()
             updateFocus()
             screen.setNeedsFrame()
+        }
+        if let path = getenv("MYDISTRO_SCREENSHOT_SOCKET").map({ String(cString: $0) }) {
+            screenshot = Screenshot(path: path, loop: loop) { [unowned self] in screen.front }
         }
         screen.setNeedsFrame()
     }

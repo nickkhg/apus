@@ -1,130 +1,34 @@
 #!/usr/bin/env python3
-"""Screenshot the VM through the QEMU monitor and check pixel colours.
+"""Check the colours of pixels in a picture of the guest's screen.
 
-    tests/screen.py MONITOR_SOCKET OUTPUT.ppm [OPTIONS] X,Y=RRGGBB ...
+    tests/screen.py PICTURE.ppm X,Y=RRGGBB ...
 
-X and Y are pixels, or fractions of the screen size when they contain a
-dot (0.5,0.5 is the centre).
+The guest writes the picture itself, with `mydistro-screen shot`, into the
+`screens` share (out/vm/screens on the Mac). Those are the pixels that the
+compositor gave to the display.
+
+QEMU could make the picture from the host, over its monitor socket, and send
+input over QMP. Apple's Virtualization framework can do neither, so both
+happen in the guest now: see ui/Sources/ScreenTool and
+ui/Sources/Compositor/Screenshot.swift.
+
+X and Y are pixels, or fractions of the screen size when they contain a dot
+(0.5,0.5 is the centre).
 
     X,Y=RRGGBB            this pixel has this colour
     X0,Y0-X1,Y1!RRGGBB    this area has at least one pixel of another colour
                           (for example text drawn over a background)
 
---pointer X,Y moves the pointer of the VM to that pixel first, and waits for
-the compositor to draw again. The VM needs an absolute pointer device
-(virtio-tablet, which VM_GPU=headless and VM_GPU=window add).
-
---click presses the left button and releases it, at the place that --pointer
-gave.
-
---type TEXT types the text on the keyboard of the VM. It knows the small
-letters, the digits, a few punctuation marks, and "\n" for the Enter key.
-The VM needs a keyboard (VM_GPU=headless and VM_GPU=window add one).
-
-The options run in this order: --pointer, --click, --type.
-
 Exits non-zero if any check fails.
 """
-import json
-import os
-import socket
 import sys
-import time
-
-def qmp(sock_path, command):
-    """Runs one QMP command and gives the answer."""
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-        s.connect(sock_path)
-        stream = s.makefile("rw")
-        stream.readline()                       # the greeting
-        for message in ({"execute": "qmp_capabilities"}, command):
-            stream.write(json.dumps(message) + "\n")
-            stream.flush()
-            answer = stream.readline()
-        return answer
-
-
-def move_pointer(sock_path, x, y, width, height):
-    """Moves the pointer of the VM. The tablet is an absolute device, and
-    QEMU wants its coordinates from 0 to 32767 over the whole screen.
-
-    The QEMU monitor has `mouse_move`, but it sends relative motion, which an
-    absolute device does not get. QMP sends absolute events."""
-    qmp_path = os.path.join(os.path.dirname(sock_path), "qmp.sock")
-    qmp(qmp_path, {"execute": "input-send-event", "arguments": {"events": [
-        {"type": "abs", "data": {"axis": "x", "value": int(x * 32767 / width)}},
-        {"type": "abs", "data": {"axis": "y", "value": int(y * 32767 / height)}},
-    ]}})
-    time.sleep(1.0)  # the compositor draws the next frame
-
-
-def click(sock_path):
-    """Presses the left button and releases it."""
-    qmp_path = os.path.join(os.path.dirname(sock_path), "qmp.sock")
-    for down in (True, False):
-        qmp(qmp_path, {"execute": "input-send-event", "arguments": {
-            "events": [{"type": "btn", "data": {"down": down, "button": "left"}}]}})
-        time.sleep(0.3)
-    time.sleep(1.0)
-
-
-# The key names of QEMU (qcode) for the characters that a test types.
-KEYS = {
-    " ": "spc", "\n": "ret", "\t": "tab", "-": "minus", "=": "equal",
-    ".": "dot", ",": "comma", "/": "slash", ";": "semicolon", "'": "apostrophe",
-    "[": "bracket_left", "]": "bracket_right", "\\": "backslash", "`": "grave_accent",
-}
-SHIFTED = {
-    ">": "dot", "<": "comma", "|": "backslash", "~": "grave_accent", "?": "slash",
-    ":": "semicolon", '"': "apostrophe", "_": "minus", "+": "equal",
-}
-
-
-def key_name(character):
-    """The QEMU key for a character, and whether Shift is down."""
-    if character in KEYS:
-        return KEYS[character], False
-    if character in SHIFTED:
-        return SHIFTED[character], True
-    if character.isdigit() or ("a" <= character <= "z"):
-        return character, False
-    if "A" <= character <= "Z":
-        return character.lower(), True
-    sys.exit(f"screenshot: --type cannot type {character!r}")
-
-
-def type_text(sock_path, text):
-    """Types the text on the keyboard of the VM."""
-    qmp_path = os.path.join(os.path.dirname(sock_path), "qmp.sock")
-    for character in text:
-        name, shifted = key_name(character)
-        keys = ([{"type": "qcode", "data": "shift"}] if shifted else []) + \
-              [{"type": "qcode", "data": name}]
-        for down in (True, False):
-            events = [{"type": "key", "data": {"down": down, "key": key}}
-                      for key in (keys if down else list(reversed(keys)))]
-            qmp(qmp_path, {"execute": "input-send-event", "arguments": {"events": events}})
-            time.sleep(0.05)
-    time.sleep(1.5)  # the program answers and the compositor draws
-
-
-def screendump(sock_path, out_path):
-    if os.path.exists(out_path):
-        os.remove(out_path)
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-        s.connect(sock_path)
-        s.sendall(f"screendump {os.path.abspath(out_path)}\n".encode())
-        deadline = time.time() + 10
-        while time.time() < deadline:
-            if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-                time.sleep(0.5)  # let QEMU finish writing
-                return
-            time.sleep(0.2)
-    sys.exit("screenshot: QEMU wrote no file")
 
 
 def read_ppm(path):
-    data = open(path, "rb").read()
+    try:
+        data = open(path, "rb").read()
+    except OSError as error:
+        sys.exit(f"screenshot: cannot read {path}: {error}")
     fields, pos = [], 0
     while len(fields) < 4:  # magic, width, height, maxval
         while data[pos:pos + 1].isspace():
@@ -179,35 +83,10 @@ def differing(pixels, width, area, colour):
 
 
 def main():
-    sock_path, out_path, specs = sys.argv[1], sys.argv[2], sys.argv[3:]
-    pointer = None
-    clicking = False
-    text = None
-    while specs and specs[0].startswith("--"):
-        option = specs.pop(0)
-        if option == "--pointer":
-            pointer = specs.pop(0)
-        elif option == "--click":
-            clicking = True
-        elif option == "--type":
-            text = specs.pop(0).replace("\\n", "\n").replace("\\t", "\t")
-        else:
-            sys.exit(f"screenshot: {option} is not an option")
-    screendump(sock_path, out_path)
-    width, height, pixels = read_ppm(out_path)
-    if pointer or clicking or text is not None:
-        if pointer:
-            x, y = pointer.split(",")
-            move_pointer(sock_path, coordinate(x, width), coordinate(y, height), width, height)
-            print(f"pointer at {pointer}")
-        if clicking:
-            click(sock_path)
-            print("clicked")
-        if text is not None:
-            type_text(sock_path, text)
-            print(f"typed {text!r}")
-        screendump(sock_path, out_path)
-        width, height, pixels = read_ppm(out_path)
+    if len(sys.argv) < 2:
+        sys.exit(__doc__)
+    path, specs = sys.argv[1], sys.argv[2:]
+    width, height, pixels = read_ppm(path)
     print(f"screenshot {width}x{height}")
     failed = False
     for spec in specs:

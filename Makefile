@@ -1,5 +1,6 @@
 # mydistro - host-side entry point. The build runs inside an Apple `container`;
-# testing runs in QEMU on the host.
+# testing runs in a virtual machine on the Mac, through Apple's
+# Virtualization framework (vm/, the mydistro-vm program).
 
 IMAGE     := mydistro-builder
 VOL_WORK  := mydistro-work
@@ -37,6 +38,15 @@ SDK_STAMP        := $(SWIFT_SDKS)/$(SWIFT_SDK).artifactbundle/info.json
 SWIFT_BUILD       = MYDISTRO_CROSS=1 $(SWIFT_MAC)/usr/bin/swift build --package-path ui \
 	--swift-sdks-path $(SWIFT_SDKS) --swift-sdk $(SWIFT_SDK) --static-swift-stdlib
 
+# mydistro-vm boots the images. It builds with the Swift toolchain of Xcode,
+# because Virtualization and AppKit are frameworks of the platform. The
+# program needs the com.apple.security.virtualization entitlement, and a
+# local (ad hoc) signature carries it.
+VM_BUILD = xcrun swift build --package-path vm -c release
+VM       = $(shell xcrun swift build --package-path vm -c release --show-bin-path)/mydistro-vm
+# The expect scripts in tests/ and vm/ start the machine through this.
+export MYDISTRO_VM := $(VM)
+
 # Xcode and other GUI apps start make with a minimal PATH.
 export PATH := /usr/local/bin:/opt/homebrew/bin:$(PATH)
 
@@ -52,11 +62,12 @@ RUN = container run --rm --cap-add ALL -c $(CPUS) -m $(MEM) \
 	-v $(VOL_PKG):/var/cache/pacman/pkg \
 	-w $(CURDIR)
 
-.PHONY: help builder volumes build sdk ui ui-container protocols shell live installed gui demo demo-dev test test-dev test-ui test-ui-linux bench clean distclean
+.PHONY: help builder volumes build sdk ui ui-container protocols shell vm live installed gui demo demo-dev test test-dev test-ui test-ui-linux bench clean distclean
 
 help:
 	@echo "make build      build out/live.img"
-	@echo "make live       boot live image + blank disk in QEMU (Ctrl-A X quits)"
+	@echo "make vm         build mydistro-vm, the virtual machine on the Mac"
+	@echo "make live       boot live image + blank disk (Ctrl-A X quits)"
 	@echo "make installed  boot the disk the installer wrote"
 	@echo "make gui        boot the installed disk in a window (display + input)"
 	@echo "make demo       same, and start the compositor (open an app from the dock)"
@@ -163,32 +174,38 @@ protocols: builder $(SWIFT_MAC)/usr/bin/swift
 shell: builder volumes
 	$(RUN) -it $(IMAGE) bash
 
-live:
-	vm/run.sh live
+# The virtual machine. Signing is part of the build: without the
+# entitlement, Virtualization refuses to make a machine.
+vm:
+	$(VM_BUILD)
+	codesign --force --sign - --entitlements vm/mydistro-vm.entitlements $(VM)
 
-installed:
-	vm/run.sh installed
+live: vm
+	$(VM) live
 
-gui:
-	VM_GPU=window vm/run.sh installed
+installed: vm
+	$(VM) installed
+
+gui: vm
+	VM_GPU=window $(VM) installed
 
 # The installed system in a window, with the compositor and a test window running.
-demo:
+demo: vm
 	vm/demo.exp
 
 # The same, but the VM runs the programs from `make ui` through /mnt/host.
 # It builds them first, so that the VM never runs a program of an older build.
-demo-dev: ui
+demo-dev: ui vm
 	MYDISTRO_UI_DIR=/mnt/host/ui vm/demo.exp
 
-test:
+test: vm
 	tests/install.exp
 	tests/display.exp
 	tests/compositor.exp
 
 # The compositor test with the programs from `make ui`. Needs the installed
 # disk from `make test`.
-test-dev: ui
+test-dev: ui vm
 	MYDISTRO_UI_DIR=/mnt/host/ui tests/compositor.exp
 
 clean:

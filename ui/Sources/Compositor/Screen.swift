@@ -79,6 +79,10 @@ final class Screen: PageFlipHandler {
         setNeedsFrame()
     }
 
+    /// The buffer that the screen shows now. The tests read these pixels:
+    /// they are the ones that went to the display, not a second rendering.
+    var front: DumbFramebuffer { buffers[1 - back] }
+
     /// Puts back what was on screen before (the text console).
     func release() {
         restore?.restore()

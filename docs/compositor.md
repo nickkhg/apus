@@ -10,7 +10,7 @@ In the VM, log in as `root` on the serial console and run these commands:
 LIBSEAT_BACKEND=noop mydistro-compositor &
 ```
 
-Then click an icon in the dock to open an app. `make demo` does these steps for you in a QEMU window.
+Then click an icon in the dock to open an app. `make demo` does these steps for you in a window.
 
 | Item | Details |
 |---|---|

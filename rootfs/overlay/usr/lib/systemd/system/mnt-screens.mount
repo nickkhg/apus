@@ -1,0 +1,11 @@
+# out/vm/screens on the Mac, writable. The tests put a picture of the screen
+# here, because Virtualization has no screenshot of its own: the compositor
+# writes the pixels it shows, and tests/screen.py reads them on the Mac.
+[Unit]
+Description=Screenshots for the VM host
+ConditionVirtualization=apple
+
+[Mount]
+What=screens
+Where=/mnt/screens
+Type=virtiofs

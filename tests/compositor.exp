@@ -4,6 +4,12 @@
 # The test moves the pointer, clicks, types on the keyboard, and checks the
 # pixels of the screen. Run after tests/install.exp.
 #
+# The guest does the seeing and the touching, with mydistro-screen: it asks
+# the compositor for the pixels it is showing, and makes a pointer and a
+# keyboard with uinput. Apple's Virtualization framework, unlike QEMU, gives
+# the host no way to do either. The pictures land in the `screens` share
+# (out/vm/screens on the Mac), where tests/screen.py checks them.
+#
 # With MYDISTRO_UI_DIR set (for example /mnt/host/ui, `make test-dev`), the
 # VM runs the programs from that directory, not the installed ones.
 #
@@ -33,18 +39,57 @@ if {[info exists env(MYDISTRO_SCALE)]} {
     append uienv "MYDISTRO_SCALE=$env(MYDISTRO_SCALE) "
 }
 
+# Moves the pointer, clicks or types, in the guest.
+#
+# The compositor and the apps write to the same console as the shell. A wait
+# for the shell prompt therefore reads their messages too, and a later
+# `expect` never sees them. So when a program is expected to say something
+# while the input happens, use `act_start`, then the expects for those
+# messages, then `act_done`.
+proc act_start {args} {
+    set command "mydistro-screen input"
+    foreach argument $args {
+        # The text of --type has spaces and shell characters (">"), so each
+        # argument goes to the guest shell in single quotes. Without them the
+        # shell splits the text and reads ">" as a redirection.
+        append command " '[string map {' '\\''} $argument]'"
+    }
+    send "$command\r"
+}
+
+proc act_done {} {
+    expect {
+        "mydistro-screen:" { fail "the input command failed" }
+        -re {# $}          {}
+        timeout            { fail "the input command did not finish" }
+    }
+}
+
+proc act {args} {
+    act_start {*}$args
+    act_done
+}
+
+# Writes the screen in the guest, then checks the pixels on the Mac.
 proc screen {name args} {
-    if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/$name.ppm {*}$args} result]} {
+    send "mydistro-screen shot /mnt/screens/$name.ppm\r"
+    expect {
+        "mydistro-screen:" { fail "$name: the compositor gave no picture" }
+        -re {ok [0-9]+ [0-9]+} {}
+        timeout            { fail "$name: no picture" }
+    }
+    expect -re {# $}
+    if {[catch {exec python3 tests/screen.py out/vm/screens/$name.ppm {*}$args} result]} {
         fail "$name check: $result"
     }
     send_user "\n$result\n"
 }
 
-spawn env VM_GPU=headless vm/run.sh installed
+spawn env VM_GPU=headless $env(MYDISTRO_VM) installed
 login
 
 # Root on the serial console has no seat session: libseat opens devices directly.
-send "LIBSEAT_BACKEND=noop ${uienv}${bin}mydistro-compositor &\r"
+send "LIBSEAT_BACKEND=noop MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock ${uienv}${bin}mydistro-compositor &\r"
 expect {
     "COMPOSITOR-READY"     {}
     "mydistro-compositor:" { fail "compositor reported an error" }
@@ -61,16 +106,18 @@ screen start 128,80=2B2340 2,14=1B1626 12,4-100,24!1B1626 \
 # The icons answer the pointer: the first one takes its full colour (3070F0)
 # when the pointer is over it. The pointer goes below and right of the pixel
 # that the test reads, so that the pointer image does not cover it.
-screen hover --pointer 620,755 600,730=3070F0
+act --pointer 620,755
+screen hover 600,730=3070F0
 
 # The pointer leaves the icon, and the compositor keeps running: a handler
 # that asks for a new frame must not bring the compositor into that handler
 # again.
-screen leave --pointer 300,400 600,730-601,731!3070F0
+act --pointer 300,400
+screen leave 600,730-601,731!3070F0
 
 # A click on the Terminal icon starts the app. The compositor gives the
 # window the app area, and the app draws the shell in it.
-screen open-terminal --pointer 667,750 --click
+act_start --pointer 667,750 --click
 expect {
     "APP-STARTED org.mydistro.terminal" {}
     timeout { fail "the dock did not start the terminal" }
@@ -84,6 +131,7 @@ expect {
     -re {WINDOW-MAPPED "Terminal" 1280x675 at 0,28} {}
     timeout { fail "the terminal window did not fill the app area" }
 }
+act_done
 after 1000
 
 # The window of the terminal: its background, the prompt of the shell in the
@@ -92,7 +140,8 @@ screen terminal 640,400=14111E 0,28-500,52!14111E 667,771=FFFFFF
 
 # The keyboard reaches the app: the compositor sends the keys to the window
 # in front. The shell in the terminal runs what the test types.
-screen typing --type "echo typed-ok > /tmp/typed\\n" 0,28-700,120!14111E
+act --type "echo typed-ok > /tmp/typed\\n"
+screen typing 0,28-700,120!14111E
 send "cat /tmp/typed\r"
 expect {
     "typed-ok" {}
@@ -103,7 +152,7 @@ expect {
 # cell, which is the app area less the band of tiles: 1280 - 256 - 8 = 1016.
 # The window of the terminal answers 675 for a tile that holds 384 at most,
 # so it cannot use one and it waits in the rail.
-screen open-hello --pointer 613,750 --click 640,400=3070F0 4,32=FFFFFF
+act_start --pointer 613,750 --click
 # The layout runs before the window is mapped, so the rail comes first.
 expect {
     -re {WINDOW-IN-RAIL "Terminal"} {}
@@ -113,15 +162,20 @@ expect {
     -re {WINDOW-MAPPED "Hello from Swift" 1016x675 at 0,28} {}
     timeout { fail "the second window did not take the principal cell" }
 }
+act_done
+screen open-hello 640,400=3070F0 4,32=FFFFFF
 
 # The Close button of the panel closes the window in front. The window of the
 # terminal is then in front again, and it gets the keys again.
-screen close-hello --pointer 1200,14 --click 640,400=14111E
+act_start --pointer 1200,14 --click
 expect {
     "WINDOW-CLOSE-SENT" {}
     timeout             { fail "the compositor sent no close to the window" }
 }
-screen typing-again --type "echo again-ok > /tmp/again\\n" 0,28-700,160!14111E
+act_done
+screen close-hello 640,400=14111E
+act --type "echo again-ok > /tmp/again\\n"
+screen typing-again 0,28-700,160!14111E
 send "cat /tmp/again\r"
 expect {
     "again-ok" {}
@@ -131,7 +185,8 @@ expect {
 # Closing the last window gives the desktop back, and the dot under the icon
 # goes away: that pixel is the background of the dock again (1B1626 at 0.85
 # over the desktop is 171320).
-screen close-terminal --pointer 1200,14 --click 640,400=2B2340 667,771=171320
+act --pointer 1200,14 --click
+screen close-terminal 640,400=2B2340 667,771=171320
 
 send "\r"
 expect -re "# $"

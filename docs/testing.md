@@ -2,29 +2,33 @@
 
 ## The VM
 
-`vm/run.sh` starts QEMU with these settings:
+`mydistro-vm` starts the VM. It is a Swift program in `vm/`, and it uses Apple's Virtualization framework. The settings are:
 
-- Machine `virt`, aarch64, 4 CPUs, 2 GB of memory, HVF acceleration.
-- UEFI firmware from Homebrew QEMU (`edk2-aarch64-code.fd`). The firmware variables are new for each boot, so the firmware starts `EFI/BOOT/BOOTAA64.EFI` like a new machine.
-- Network: QEMU user networking. The VM gets an address with DHCP.
-- QEMU shares `out/` of the Mac with the VM at `/mnt/host` (read-only).
+- aarch64, 4 CPUs, 2 GB of memory.
+- The EFI firmware of the framework. The firmware variables are new for each boot, so the firmware starts `EFI/BOOT/BOOTAA64.EFI` like a new machine.
+- Network: network address translation. The VM gets an address with DHCP.
+- Two shared directories, over virtiofs. `out/` of the Mac is at `/mnt/host`, read-only. `out/vm/screens` is at `/mnt/screens`, and the VM can write to it.
+
+`make vm` builds the program and signs it. The signature carries the entitlement `com.apple.security.virtualization`. Without that entitlement, the framework refuses to make a VM. A local (ad hoc) signature is sufficient.
 
 | Command | Disks |
 |---|---|
-| `vm/run.sh live` | `out/live.img` (read-only snapshot) and the target disk `out/vm/target.qcow2` |
-| `vm/run.sh installed` | Only the target disk |
+| `mydistro-vm live` | A copy of `out/live.img`, and the target disk `out/vm/target.img` |
+| `mydistro-vm installed` | Only the target disk |
+
+A boot in `live` mode first copies `out/live.img` to `out/vm/live-boot.img`, and the VM uses the copy. The live image therefore never changes. On APFS the copy is a clone: it is immediate, and it uses almost no disk. The copy must be writable, because systemd-boot writes a random seed to the EFI system partition.
 
 The variable `VM_GPU` selects the display:
 
 | `VM_GPU` | Display |
 |---|---|
 | Not set | No display device. Serial console only. |
-| `window` | virtio-gpu in a macOS window, with a keyboard and a tablet (mouse) |
-| `headless` | virtio-gpu with no window, and the same keyboard and tablet as `window`. The QEMU monitor is on `out/vm/monitor.sock`, and QMP is on `out/vm/qmp.sock`. |
+| `window` | A virtio graphics device in a macOS window, with a USB keyboard and a pointer |
+| `headless` | A virtio graphics device with no window. The guest writes the pictures of the screen. See [Screenshots](#screenshots). |
 
-The serial console is always in the terminal. To stop QEMU, push Ctrl-A in the terminal, then push X. In a window, QEMU holds the mouse. Push Control+Option+G to release it.
+The serial console is always in the terminal. To stop the VM, push Ctrl-A in the terminal, then push X.
 
-If `out/vm/target.qcow2` does not exist, `vm/run.sh` makes an 8 GB disk. To start with an empty disk, remove the file. To change the size, set `TARGET_SIZE`, for example `TARGET_SIZE=16G`.
+If `out/vm/target.img` does not exist, the program makes an 8 GB disk. To start with an empty disk, remove the file. To change the size, set `TARGET_SIZE`, for example `TARGET_SIZE=16G`. The disk is a raw file, because the framework reads raw disk images only. The file is sparse: it uses only the blocks that the guest writes.
 
 ## Make targets
 
@@ -89,19 +93,33 @@ The programs print these markers:
 
 ### Screenshots
 
-`tests/screen.py` gets a screenshot through the QEMU monitor (`screendump`) and checks pixel colours:
+Apple's Virtualization framework cannot make a picture of the screen of a guest, and it cannot send input to a guest. QEMU could do both, with `screendump` on its monitor socket and `input-send-event` on QMP. The guest therefore does this work itself, with `mydistro-screen`:
+
+| Command | Result |
+|---|---|
+| `mydistro-screen shot PATH` | Asks the compositor for the pixels that it shows, and writes them to `PATH` as a PPM. |
+| `mydistro-screen input [OPTIONS]` | Moves the pointer, clicks, and types. |
+| `mydistro-screen size` | Prints the size of the screen. |
+
+| Option of `input` | Result |
+|---|---|
+| `--pointer X,Y` | Puts the pointer on that pixel. |
+| `--click` | Presses the left button and releases it, where the pointer is. |
+| `--type TEXT` | Types the text. It knows the small letters, the capitals, the digits, some punctuation, and `\n` for the Enter key. |
+
+The options run in this sequence: `--pointer`, `--click`, `--type`. The compositor test uses them for the dock, for the Close button, and for the shell in the terminal.
+
+`mydistro-screen input` makes a pointer and a keyboard with uinput. The pointer reports where it is, from 0 to 32767 on each axis, which is what QEMU's virtio-tablet also did. The events therefore go through evdev, libinput and xkbcommon, in the same way as the events of a real mouse and a real keyboard. The compositor needs no test code for input.
+
+The compositor writes the pictures. It listens on the socket that `MYDISTRO_SCREENSHOT_SOCKET` names, and it writes the buffer that it gave to the display. The pixels in a picture are therefore the pixels on the screen, and not a second drawing of them. Without that variable, the compositor has no such socket.
+
+`tests/display.exp` runs no compositor, so `mydistro-display-probe --write PATH` writes its own picture.
+
+The tests put the pictures in `/mnt/screens`, which is `out/vm/screens` on the Mac. `tests/screen.py` reads them there and checks pixel colours:
 
 ```sh
-tests/screen.py out/vm/monitor.sock out/vm/screen.ppm [OPTIONS] X,Y=RRGGBB ...
+tests/screen.py PICTURE.ppm X,Y=RRGGBB ...
 ```
-
-| Option | Result |
-|---|---|
-| `--pointer X,Y` | Moves the pointer of the VM to that pixel. |
-| `--click` | Presses the left button and releases it, where the pointer is. |
-| `--type TEXT` | Types the text on the keyboard of the VM. It knows the small letters, the digits, a few punctuation marks, and `\n` for the Enter key. |
-
-The events go through QMP, and the tool waits for the compositor to draw again. The options run in this sequence: `--pointer`, `--click`, `--type`. The compositor test uses them for the dock, for the Close button, and for the shell in the terminal.
 
 There are two kinds of check:
 
@@ -112,7 +130,7 @@ There are two kinds of check:
 
 The second kind tests drawing that is correct but not exact, for example text. The test knows where the glyphs are. It does not know which pixels they cover.
 
-X and Y are pixels. If a value contains a dot, it is a fraction of the screen size (`0.5,0.5` is the centre). The screenshot is in `out/vm/screen.ppm`.
+X and Y are pixels. If a value contains a dot, it is a fraction of the screen size (`0.5,0.5` is the centre).
 
 The compositor test checks these places on the 1280×800 screen. The dock has two icons: Hello at x 591, and Terminal at x 645, both from y 721 to y 765.
 
@@ -136,7 +154,7 @@ The compositor test checks these places on the 1280×800 screen. The dock has tw
 | (640, 400) | `2B2340` | The desktop, after the terminal closes too |
 | (667, 771) | `171320` | The background of the dock, where the dot was |
 
-The test also reads `/tmp/typed` on the serial console. The shell in the terminal writes that file. The file is the proof: the keys went from QEMU, through the compositor and the app, to the shell.
+The test also reads `/tmp/typed` on the serial console. The shell in the terminal writes that file. The file is the proof: the keys went from uinput, through libinput, the compositor and the app, to the shell.
 
 ## After a change
 

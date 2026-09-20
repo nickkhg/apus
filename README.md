@@ -6,7 +6,6 @@ mydistro is a Linux distribution for aarch64, based on Arch Linux ARM. It uses s
 
 - A Mac with Apple silicon.
 - Apple `container` 1.0 or later. Start the service with `container system start`.
-- QEMU from Homebrew: `brew install qemu`.
 - Approximately 28 GB of free disk space. The Swift toolchain for macOS and the Swift SDK use approximately 7.5 GB of this.
 - Optional: Xcode, to edit and build from Xcode.
 
@@ -43,7 +42,7 @@ Other commands:
 | `make shell` | Opens a root shell in the builder container. |
 | `make help` | Lists all commands. |
 
-To stop QEMU, push Ctrl-A in the terminal, then push X.
+To stop a VM, push Ctrl-A in the terminal, then push X.
 
 To use Xcode, open `mydistro.xcodeproj`. Cmd-B runs `make ui`, and Cmd-R starts the new build in a VM. See [User interface](docs/ui.md#xcode).
 

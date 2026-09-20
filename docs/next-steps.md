@@ -58,8 +58,10 @@ The toolkit draws the panel and the dock, with `@State`, shapes and the pointer.
 - Xcode gives no code completion for the Linux modules (see [ui.md](ui.md#limits-of-xcode)). An editor with SourceKit-LSP gives it.
 - The Run action of the Xcode schemes (`make demo-dev`, `make demo`) was not tested in the Xcode window. A test with `xcodebuild` built the UI scheme.
 - Unit tests for the `Wayland` library (wire format and object rules), with `swift test` in the builder container. Now only the VM tests test it.
-- A GPU in the VM needs a QEMU with `virtio-gpu-gl`, for example from UTM.
-- `make gui` and `make demo` open a window. The automated tests do not test them. `tests/display.exp` and `tests/compositor.exp` test the same display with no window.
+- GPU rendering. Two pieces of work, in this sequence:
+  1. The compositor must render with the GPU. It now draws into DRM dumb buffers with the CPU. GBM and GLES (or Vulkan) replace that. This piece is necessary for every other piece, and it is the piece that helps on real hardware under Asahi. The tests must keep the CPU renderer, because exact pixel checks need the same result each time.
+  2. The VM must give the guest a GPU. Apple's Virtualization framework does not (see [ui.md](ui.md#graphics-in-the-vm)). The choices are libkrun, which uses Hypervisor.framework and has virtio-gpu with Venus on Metal; a QEMU built with Venus; or a virtio-gpu device of our own on `VZCustomVirtioDevice` (macOS 26 or later), which means a Venus decoder on MoltenVK.
+- `make gui` and `make demo` open a window. The automated tests do not test them. `tests/display.exp` and `tests/compositor.exp` test the same display with no window. In a window, the keyboard and the pointer are USB devices of the framework, and the tests do not use them: the tests make their own devices with uinput.
 - The tests use one VM disk in sequence. `tests/display.exp` and `tests/compositor.exp` need the disk from `tests/install.exp`.
 - Old builder images use disk space. On 19 September, `container system df` reported 42 GB that `container image prune` can remove.
 

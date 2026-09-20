@@ -24,7 +24,7 @@ if {[info exists env(MYDISTRO_SCALE)]} {
     append uienv "MYDISTRO_SCALE=$env(MYDISTRO_SCALE) "
 }
 
-spawn env VM_GPU=window vm/run.sh installed
+spawn env VM_GPU=window $env(MYDISTRO_VM) installed
 login
 send "LIBSEAT_BACKEND=noop ${uienv}${bin}mydistro-compositor &\r"
 expect {
