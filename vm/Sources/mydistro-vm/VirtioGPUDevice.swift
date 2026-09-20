@@ -20,6 +20,10 @@ import Virtualization
 ///
 /// VZCustomVirtioDevice arrived in macOS 27, so everything here is behind
 /// that version and the rest of the program runs without it.
+/// How wide the window of host-visible memory is. It is address space, not
+/// memory: the guest maps parts of it as it needs them.
+private let hostVisibleSize: UInt64 = 8 << 30
+
 @available(macOS 27, *)
 final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked Sendable {
     private let width: UInt32
@@ -32,6 +36,8 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
     /// What the guest asked for, for the log. The first stage is about
     /// whether the guest binds at all, so it counts the commands.
     private var counts: [UInt32: Int] = [:]
+    private var submissions = 0
+    private var blobs = 0
 
     init(width: Int, height: Int, venusCapset: Data) {
         self.width = UInt32(width)
@@ -59,8 +65,32 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
         // the device offers it. It is optional: a guest that does not want
         // 3D still binds.
         if capsets > 0 {
-            configuration.optionalFeatures.subset0 |= 1 << VirtioGPU.Feature.contextInit.rawValue
+            // VIRGL is here for the kernel, not for us. The guest's driver
+            // only reports VIRTGPU_PARAM_3D_FEATURES, and only allows the
+            // 3D ioctls at all, when it negotiated VIRTIO_GPU_F_VIRGL. Mesa's
+            // Venus asks for that parameter before anything else and stops
+            // without it. So a Venus device offers VIRGL as well, even
+            // though no virgl command ever arrives.
+            configuration.optionalFeatures.subset0 |=
+                (1 << VirtioGPU.Feature.virgl.rawValue)
+                | (1 << VirtioGPU.Feature.contextInit.rawValue)
+                | (1 << VirtioGPU.Feature.resourceBlob.rawValue)
         }
+
+        // The window of memory that the guest can see directly. Venus needs
+        // it, and the guest's driver only reports VIRTGPU_PARAM_HOST_VISIBLE
+        // when the device has the region. The guest maps parts of it; the
+        // size is the largest it can address, not memory we hold.
+        let allowedRegions = VZCustomVirtioDeviceConfiguration
+            .maximumAllowedSharedMemoryRegionCount
+        if capsets > 0, allowedRegions > 0 {
+            configuration.sharedMemoryRegions = [
+                VZVirtioSharedMemoryRegionConfiguration(
+                    regionID: VirtioGPU.hostVisibleRegion, size: hostVisibleSize)
+            ]
+        }
+        log("virtio-gpu: the framework allows \(allowedRegions) shared memory regions; "
+            + "the device has \(configuration.sharedMemoryRegions.count)")
 
         let delegate = VirtioGPUDevice(width: width, height: height, venusCapset: venusCapset)
         let provider = Provider(delegate: delegate)
@@ -151,11 +181,117 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
             answer.append(venusCapset)
             write(answer, to: element)
 
-        // The first stage answers the rest without doing the work, so that
-        // the driver keeps going and we can see how far it gets.
+        // The 3D commands go to the renderer.
+        case .contextCreate:
+            handleContextCreate(header, element)
+
+        case .contextDestroy:
+            renderer { VirglRenderer.destroyContext(id: header.contextID) }
+            write(header.answer(.okNoData), to: element)
+
+        case .contextAttachResource, .contextDetachResource:
+            // The body is one resource id.
+            let resource: UInt32 = (try? element.readBytes(withExactLength: 8))?.value(at: 0) ?? 0
+            renderer {
+                if command == .contextAttachResource {
+                    VirglRenderer.attach(resource: resource, toContext: header.contextID)
+                } else {
+                    VirglRenderer.detach(resource: resource, fromContext: header.contextID)
+                }
+            }
+            write(header.answer(.okNoData), to: element)
+
+        case .submit3D:
+            handleSubmit(header, element)
+
+        case .resourceCreateBlob:
+            handleCreateBlob(header, element)
+
+        case .resourceUnref:
+            let resource: UInt32 = (try? element.readBytes(withExactLength: 8))?.value(at: 0) ?? 0
+            renderer { VirglRenderer.unref(resource: resource) }
+            write(header.answer(.okNoData), to: element)
+
+        // The 2D commands are still answered without the work. A guest that
+        // draws through Venus does not use them.
         default:
             write(header.answer(.okNoData), to: element)
         }
+    }
+
+    /// Runs a piece of work on the renderer, when there is one.
+    private func renderer(_ body: () -> Void) {
+        #if VIRGL
+        body()
+        #endif
+    }
+
+    private func handleContextCreate(_ header: VirtioGPU.Header, _ element: VZVirtioQueueElement) {
+        // 8 bytes of fields, then up to 64 bytes of name.
+        let bodyLength = min(element.readBuffersAvailableByteCount, 72)
+        guard bodyLength >= 8, let body = try? element.readBytes(withExactLength: bodyLength),
+              let create = VirtioGPU.ContextCreate(body) else {
+            write(header.answer(.errorUnspecified), to: element)
+            return
+        }
+        var result: Int32 = 0
+        renderer {
+            result = VirglRenderer.createContext(id: header.contextID,
+                                                 capset: create.capset, name: create.name)
+        }
+        log("VIRTIO-GPU-CONTEXT the guest made context \(header.contextID) "
+            + "for capset \(create.capset) (\(create.name)), result \(result)")
+        write(header.answer(result == 0 ? .okNoData : .errorUnspecified), to: element)
+    }
+
+    private func handleSubmit(_ header: VirtioGPU.Header, _ element: VZVirtioQueueElement) {
+        // `struct virtio_gpu_cmd_submit`: the size of the stream, then
+        // padding, then the stream itself.
+        guard let fields = try? element.readBytes(withExactLength: 8) else {
+            write(header.answer(.errorUnspecified), to: element)
+            return
+        }
+        let size = Int(fields.value(at: 0) as UInt32)
+        guard size > 0, size <= element.readBuffersAvailableByteCount,
+              var stream = (try? element.readBytes(withExactLength: size)).map({ [UInt8]($0) })
+        else {
+            write(header.answer(.errorUnspecified), to: element)
+            return
+        }
+
+        var result: Int32 = 0
+        renderer {
+            result = VirglRenderer.submit(&stream, context: header.contextID)
+            // A guest that asked for a fence waits for the work, so let the
+            // renderer finish what it can before the answer goes back.
+            if header.flags & VirtioGPU.flagFence != 0 { VirglRenderer.poll() }
+        }
+        submissions += 1
+        if submissions <= 3 || submissions % 500 == 0 {
+            log("VIRTIO-GPU-SUBMIT stream \(submissions) of \(size) bytes to context "
+                + "\(header.contextID), result \(result)")
+        }
+        write(header.answer(result == 0 ? .okNoData : .errorUnspecified), to: element)
+    }
+
+    private func handleCreateBlob(_ header: VirtioGPU.Header, _ element: VZVirtioQueueElement) {
+        guard let body = try? element.readBytes(withExactLength: 32),
+              let blob = VirtioGPU.CreateBlob(body) else {
+            write(header.answer(.errorUnspecified), to: element)
+            return
+        }
+        var result: Int32 = 0
+        renderer {
+            result = VirglRenderer.createBlob(
+                resource: blob.resource, context: header.contextID, memory: blob.memory,
+                flags: blob.flags, blobID: blob.blobID, size: blob.size)
+        }
+        blobs += 1
+        if blobs <= 3 {
+            log("VIRTIO-GPU-BLOB resource \(blob.resource), \(blob.size) bytes, "
+                + "memory \(blob.memory), result \(result)")
+        }
+        write(header.answer(result == 0 ? .okNoData : .errorUnspecified), to: element)
     }
 
     private func write(_ data: Data, to element: VZVirtioQueueElement) {

@@ -79,3 +79,65 @@ enum GPUFailure: Error, CustomStringConvertible {
     }
 }
 #endif
+
+#if VIRGL
+extension VirglRenderer {
+    /// Makes a context for a capset. Venus asks for one before it does
+    /// anything else, and every stream of commands goes to a context.
+    static func createContext(id: UInt32, capset: UInt32, name: String) -> Int32 {
+        var result: Int32 = -1
+        name.withCString { text in
+            result = virgl_renderer_context_create_with_flags(
+                id, capset, UInt32(strlen(text)), text)
+        }
+        return result
+    }
+
+    static func destroyContext(id: UInt32) {
+        virgl_renderer_context_destroy(id)
+    }
+
+    /// Gives a stream of commands to a context. For Venus the stream is
+    /// Vulkan calls, and virglrenderer makes the same calls here.
+    static func submit(_ commands: inout [UInt8], context: UInt32) -> Int32 {
+        commands.withUnsafeMutableBytes { raw in
+            // The count is in 32-bit words, as the specification says.
+            virgl_renderer_submit_cmd(raw.baseAddress, Int32(context),
+                                      Int32(raw.count / 4))
+        }
+    }
+
+    /// A resource that is memory rather than a picture.
+    static func createBlob(resource: UInt32, context: UInt32, memory: UInt32,
+                           flags: UInt32, blobID: UInt64, size: UInt64) -> Int32 {
+        var args = virgl_renderer_resource_create_blob_args()
+        args.res_handle = resource
+        args.ctx_id = context
+        args.blob_mem = memory
+        args.blob_flags = flags
+        args.blob_id = blobID
+        args.size = size
+        args.iovecs = nil
+        args.num_iovs = 0
+        return virgl_renderer_resource_create_blob(&args)
+    }
+
+    static func attach(resource: UInt32, toContext context: UInt32) {
+        virgl_renderer_ctx_attach_resource(Int32(context), Int32(resource))
+    }
+
+    static func detach(resource: UInt32, fromContext context: UInt32) {
+        virgl_renderer_ctx_detach_resource(Int32(context), Int32(resource))
+    }
+
+    static func unref(resource: UInt32) {
+        virgl_renderer_resource_unref(resource)
+    }
+
+    /// Lets the renderer finish what it can. The device calls this after a
+    /// stream, so that a guest that waits for a fence is not left waiting.
+    static func poll() {
+        virgl_renderer_poll()
+    }
+}
+#endif

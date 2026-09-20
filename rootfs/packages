@@ -12,3 +12,11 @@ mydistro-release
 
 # The Swift UI (packages/mydistro-ui, built from ui/)
 mydistro-ui
+
+# Vulkan, for a guest with a GPU. vulkan-virtio is Mesa's Venus driver: it
+# turns Vulkan calls into a stream that the virtio-gpu device carries to the
+# renderer on the Mac. vulkan-icd-loader is what an app links to. The GLES of
+# the compositor reaches Vulkan through zink, which mesa already has.
+# See docs/gpu.md.
+vulkan-icd-loader
+vulkan-virtio

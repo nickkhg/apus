@@ -45,9 +45,37 @@ enum VirtioGPU {
         case getCapsetInfo = 0x0108
         case getCapset = 0x0109
         case getEDID = 0x010A
+        case resourceAssignUUID = 0x010B
+        /// A resource that is memory. Venus uses these for everything.
+        case resourceCreateBlob = 0x010C
+        case setScanoutBlob = 0x010D
+
+        // The 3D commands. A context is where the work happens: the guest
+        // makes one for a capset, and then submits streams of commands to it.
+        case contextCreate = 0x0200
+        case contextDestroy = 0x0201
+        case contextAttachResource = 0x0202
+        case contextDetachResource = 0x0203
+        case resourceCreate3D = 0x0204
+        case transferToHost3D = 0x0205
+        case transferFromHost3D = 0x0206
+        case submit3D = 0x0207
+        case resourceMapBlob = 0x0208
+        case resourceUnmapBlob = 0x0209
+
         case updateCursor = 0x0300
         case moveCursor = 0x0301
     }
+
+    /// The shared memory region that holds memory the guest can see
+    /// directly. The specification calls it VIRTIO_GPU_SHM_ID_HOST_VISIBLE.
+    /// Mesa's Venus requires it: without the region the guest's driver
+    /// reports no VIRTGPU_PARAM_HOST_VISIBLE, and Venus takes no device.
+    static let hostVisibleRegion: UInt8 = 0
+
+    /// The flag in a command header that asks for a fence: the guest waits
+    /// for the answer until the work is done.
+    static let flagFence: UInt32 = 1
 
     enum Response: UInt32 {
         case okNoData = 0x1100
@@ -166,5 +194,43 @@ extension Data {
             for index in 0..<8 { value |= UInt64(bytes[offset + index]) << (index * 8) }
         }
         return value
+    }
+}
+
+extension VirtioGPU {
+    /// `struct virtio_gpu_ctx_create`, after the header: the length of the
+    /// name, then which capset the context is for, then the name.
+    struct ContextCreate {
+        let capset: UInt32
+        let name: String
+
+        init?(_ body: Data) {
+            guard body.count >= 8 else { return nil }
+            let nameLength = Int(body.value(at: 0) as UInt32)
+            capset = body.value(at: 4)
+            let start = body.startIndex + 8
+            let end = min(start + nameLength, body.endIndex)
+            name = start < end
+                ? String(decoding: body[start..<end], as: UTF8.self) : ""
+        }
+    }
+
+    /// `struct virtio_gpu_resource_create_blob`, after the header.
+    struct CreateBlob {
+        let resource: UInt32
+        let memory: UInt32
+        let flags: UInt32
+        let blobID: UInt64
+        let size: UInt64
+
+        init?(_ body: Data) {
+            guard body.count >= 32 else { return nil }
+            resource = body.value(at: 0)
+            memory = body.value(at: 4)
+            flags = body.value(at: 8)
+            // 4 bytes of padding sit between the flags and the id.
+            blobID = body.value(at: 16)
+            size = body.value(at: 24)
+        }
     }
 }
