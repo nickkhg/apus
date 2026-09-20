@@ -52,6 +52,7 @@ The builder container mounts the repository at the same path as on the Mac. Thus
 | `ui/Tools/WaylandScanner/` | The generator of the Swift protocol code. |
 | `mydistro.xcodeproj`, `xcode/` | The Xcode project, and the script that its targets run. |
 | `vm/` | `mydistro-vm`: the VM on the Mac, with Apple's Virtualization framework. |
+| `build/make-virglrenderer.sh` | Builds the renderer of the host side of the GPU. See [gpu.md](gpu.md). |
 | `vm/demo.exp` | Starts the compositor in a window (`make demo`). |
 | `tests/` | The automated tests. |
 | `out/` | Build results and VM disks. Git ignores this directory. |
