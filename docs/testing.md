@@ -40,7 +40,7 @@ A window follows its own size when a person changes it, and it counts pixels, no
 | `cpu` | 2560x1600 | 37.1 ms | 46.9 ms | 27 |
 | `gpu` | 2560x1600 | 49.4 ms | 186.5 ms | 20 |
 
-The GPU renderer is the slower one in a VM, because the VM has no GPU: Mesa renders with the CPU (llvmpipe), and the GPU path adds a texture for each window and a new framebuffer for each frame. On hardware with a GPU the numbers are not these. The compositor draws the whole screen for each frame, so the size of the screen is what counts most.
+The GPU renderer is the slower one in a VM, because the VM has no GPU. Mesa renders with the CPU (llvmpipe). The GPU path then adds work of its own: a texture for each window, and a new framebuffer for each frame. On hardware with a GPU the numbers are not these. The compositor draws the whole screen for each frame, so the size of the screen is what counts most.
 
 If `out/vm/target.img` does not exist, the program makes an 8 GB disk. To start with an empty disk, remove the file. To change the size, set `TARGET_SIZE`, for example `TARGET_SIZE=16G`. The disk is a raw file, because the framework reads raw disk images only. The file is sparse: it uses only the blocks that the guest writes.
 
