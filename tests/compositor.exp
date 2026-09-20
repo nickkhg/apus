@@ -208,7 +208,10 @@ expect {
 }
 act_done
 after 1000
-screen close-terminal 400,400=07080A 36,400=12161A
+# Nothing is open, so the canvas says how to open something. The message is
+# in the middle of the canvas, which is 1200 x 784 at 72,8.
+screen close-terminal 400,400=07080A 36,400=12161A \
+    560,370-790,420!07080A
 
 send "\r"
 expect -re "# $"

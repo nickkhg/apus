@@ -39,6 +39,10 @@ public enum Palette {
     /// A window in a tile.
     public static let widget = Color(hex: 0x49C7C7)
 
+    /// A notice that warns, and one that reports a failure.
+    public static let warning = Color(hex: 0xE0A458)
+    public static let error = Color(hex: 0xE0574B)
+
     /// Text and marks, from clear to faint.
     public static let text = Color(hex: 0xF2F5F4)
     public static let secondaryText = Color(hex: 0xA3AEB4)

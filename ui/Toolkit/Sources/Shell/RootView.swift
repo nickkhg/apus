@@ -23,31 +23,32 @@ public struct ShellState: Equatable, Sendable {
     public var mode: RenderMode
     /// Summon is over the canvas.
     public var summonIsOpen: Bool
-    /// What a person typed into Summon.
-    public var summonQuery: String
-    /// Which line of Summon Enter chooses.
-    public var summonSelection: Int
     /// The windows that wait for a cell, and the cells that the band holds
     /// for them.
     public var standIns: [StandIn]
     /// The bar over each window that has room for one.
     public var heads: [WindowHead]
+    /// The messages that wait to be read.
+    public var notices: [Notice]
+    /// The part of the screen that the layout owns, in points. The shell
+    /// puts a notice and the empty message inside it.
+    public var canvas: Rect
 
     public init(apps: [AppEntry] = [], windows: [WindowEntry] = [],
                 layout: WindowLayoutKind = .principal, clock: Clock = Clock(),
                 mode: RenderMode = .cpu, summonIsOpen: Bool = false,
-                summonQuery: String = "", summonSelection: Int = 0,
-                standIns: [StandIn] = [], heads: [WindowHead] = []) {
+                standIns: [StandIn] = [], heads: [WindowHead] = [],
+                notices: [Notice] = [], canvas: Rect = Rect(x: 0, y: 0, width: 0, height: 0)) {
         self.apps = apps
         self.windows = windows
         self.layout = layout
         self.clock = clock
         self.mode = mode
         self.summonIsOpen = summonIsOpen
-        self.summonQuery = summonQuery
-        self.summonSelection = summonSelection
         self.standIns = standIns
         self.heads = heads
+        self.notices = notices
+        self.canvas = canvas
     }
 
     /// The ids of the apps that have a window now.
@@ -77,6 +78,8 @@ public struct ShellActions {
     public var closeWindow: (String) -> Void
     /// Takes a window out of the large cell, so that it becomes a tile.
     public var makeWidget: (String) -> Void
+    /// Takes a message away.
+    public var dismissNotice: (String) -> Void
 
     public init(openApp: @escaping (String) -> Void = { _ in },
                 closeFrontWindow: @escaping () -> Void = {},
@@ -85,7 +88,8 @@ public struct ShellActions {
                 nextLayout: @escaping () -> Void = {},
                 setLayout: @escaping (WindowLayoutKind) -> Void = { _ in },
                 closeWindow: @escaping (String) -> Void = { _ in },
-                makeWidget: @escaping (String) -> Void = { _ in }) {
+                makeWidget: @escaping (String) -> Void = { _ in },
+                dismissNotice: @escaping (String) -> Void = { _ in }) {
         self.openApp = openApp
         self.closeFrontWindow = closeFrontWindow
         self.raiseWindow = raiseWindow
@@ -94,6 +98,7 @@ public struct ShellActions {
         self.setLayout = setLayout
         self.closeWindow = closeWindow
         self.makeWidget = makeWidget
+        self.dismissNotice = dismissNotice
     }
 }
 
@@ -109,14 +114,21 @@ public struct RootView: View {
 
     public var body: some View {
         ZStack(alignment: .topLeading) {
-            // The cells that the band holds for windows with no place. They
-            // are in the canvas, so they go under the rail and under Summon.
+            // Nothing is open: the canvas says how to open something.
+            if state.windows.isEmpty, state.canvas.width > 0 {
+                EmptyCanvas()
+                    .frame(width: Double(state.canvas.width),
+                           height: Double(state.canvas.height))
+                    .offset(x: Double(state.canvas.x), y: Double(state.canvas.y))
+            }
             // The bar over each window that has room for one.
             ForEach(state.heads) { head in
                 WindowHeadView(head: head, actions: actions)
                     .frame(width: Double(head.cell.width), height: Metrics.headHeight)
                     .offset(x: Double(head.cell.x), y: Double(head.cell.y))
             }
+            // The cells that the band holds for windows with no place. They
+            // are in the canvas, so they go under the rail and under Summon.
             ForEach(state.standIns) { card in
                 StandInCard(card: card, actions: actions)
                     .frame(width: Double(card.frame.width), height: Double(card.frame.height))
@@ -128,11 +140,37 @@ public struct RootView: View {
                 Spacer()        // the canvas: the windows are behind it
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The messages, at the end of the band, so that none of them
+            // covers the window in the large cell.
+            ForEach(Array(noticePlaces.enumerated()), id: \.offset) { place in
+                NoticeView(notice: place.element.notice, actions: actions)
+                    .frame(width: Double(place.element.frame.width),
+                           height: Double(place.element.frame.height))
+                    .offset(x: Double(place.element.frame.x), y: Double(place.element.frame.y))
+            }
             if state.summonIsOpen {
                 SummonView(state: state, actions: actions)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Where each message goes: a column at the end of the band, from the
+    /// bottom of the canvas upwards, so that the newest one is lowest.
+    var noticePlaces: [(notice: Notice, frame: Rect)] {
+        guard state.canvas.width > Int(WindowMetrics.tile) else { return [] }
+        let x = state.canvas.x + state.canvas.width - Int(WindowMetrics.tile)
+        var bottom = state.canvas.y + state.canvas.height
+        var places: [(Notice, Rect)] = []
+        for notice in state.notices.reversed() {
+            let height = Int(NoticeView.height(of: notice))
+            bottom -= height
+            guard bottom > state.canvas.y else { break }
+            places.append((notice, Rect(x: x, y: bottom,
+                                        width: Int(WindowMetrics.tile), height: height)))
+            bottom -= Int(Metrics.gap)
+        }
+        return places
     }
 
     /// The canvas of `screen`: everything that is not the rail. A layout

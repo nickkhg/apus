@@ -381,3 +381,27 @@ Reading it gives where the value is now. Writing it gives the value somewhere to
 - `@Environment(\.now)` reads that time in a view, and any other value of the environment.
 
 The design must be right with no motion at all. A renderer that cannot hold the frame rate may end every move at once and lose nothing but the pleasure.
+
+## The keyboard
+
+A view reads the keys with `onKey`. It answers whether it used the key, and a key that no view used belongs to whatever is under the toolkit. In mydistro that is the app with the focus.
+
+```swift
+SummonView(state: state, actions: actions)
+    .onKey { key in
+        switch key.named {
+        case .escape: actions.toggleSummon(); return true
+        default: return false
+        }
+    }
+```
+
+- The view in front reads a key first, as with the pointer. A view behind it hears nothing about a key that the front view used.
+- `KeyEvent.named` names the keys that do something instead of writing something: `escape`, `enter`, `tab`, `backspace`, `delete`, the four arrows, `home` and `end`. `characters` holds what a key writes, and it is empty for the named ones.
+- A view that leaves the tree stops reading. Summon keeps its query in `@State`, so the query starts again every time it opens.
+
+The compositor gives each key to the shell first, and sends it to the app only when no view of the shell used it.
+
+## Notices
+
+A notice is a short message from the system or from an app. It never covers the window in the large cell. It goes where a tile would go, at the end of the band, and the newest one is lowest. `Notice.Kind` is `information`, `warning` or `failure`, and each has a colour. The colour never carries the meaning on its own. The text says it too.

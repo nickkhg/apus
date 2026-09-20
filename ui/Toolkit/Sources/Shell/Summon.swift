@@ -72,15 +72,16 @@ enum SummonMetrics {
 public enum SummonList {
     /// Every line that the query leaves, in the order that they are shown.
     /// The selected line is an index into this.
-    public static func items(for state: ShellState) -> [SummonItem] {
-        groups(for: state).flatMap(\.items)
+    public static func items(for state: ShellState, query: String = "") -> [SummonItem] {
+        groups(for: state, query: query).flatMap(\.items)
     }
 
     /// The line that Enter chooses.
-    public static func selected(in state: ShellState) -> SummonItem? {
-        let all = items(for: state)
+    public static func selected(in state: ShellState, query: String = "",
+                                at selection: Int = 0) -> SummonItem? {
+        let all = items(for: state, query: query)
         guard !all.isEmpty else { return nil }
-        return all[min(max(0, state.summonSelection), all.count - 1)]
+        return all[min(max(0, selection), all.count - 1)]
     }
 
     /// Does the query pick this line? A query matches when every word of it
@@ -91,9 +92,8 @@ public enum SummonList {
         return words.allSatisfy { text.contains($0) }
     }
 
-    public static func groups(for state: ShellState) -> [SummonGroup] {
+    public static func groups(for state: ShellState, query: String = "") -> [SummonGroup] {
         // A query of spaces alone has no words, so it narrows nothing.
-        let query = state.summonQuery
         let all = allGroups(for: state)
         guard !query.isEmpty else { return all }
         return all.compactMap { group in
@@ -162,19 +162,26 @@ public enum SummonList {
 public struct SummonView: View {
     let state: ShellState
     let actions: ShellActions
+    /// What a person typed. It belongs to this view: it starts again every
+    /// time Summon opens, because the view leaves the tree when it closes.
+    @State private var query = ""
+    /// Which line Enter takes.
+    @State private var selection = 0
 
     public init(state: ShellState, actions: ShellActions = ShellActions()) {
         self.state = state
         self.actions = actions
     }
 
-    private var groups: [SummonGroup] { SummonList.groups(for: state) }
+    private var groups: [SummonGroup] { SummonList.groups(for: state, query: query) }
 
     private var count: Int {
         groups.reduce(0) { $0 + $1.items.count }
     }
 
-    private var selection: SummonItem? { SummonList.selected(in: state) }
+    private var chosen: SummonItem? {
+        SummonList.selected(in: state, query: query, at: selection)
+    }
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -185,11 +192,54 @@ public struct SummonView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(white: 0, alpha: 0.66))
+        // Summon is the surface in front, so it reads every key. Nothing
+        // under it may read the keyboard while it is open.
+        .onKey { key in
+            guard key.isPressed else { return true }
+            switch key.named {
+            case .escape:
+                actions.toggleSummon()
+            case .enter:
+                if let chosen { choose(chosen) }
+                actions.toggleSummon()
+            case .tab, .down:
+                move(by: 1)
+            case .up:
+                move(by: -1)
+            case .backspace:
+                if !query.isEmpty {
+                    query.removeLast()
+                    selection = 0
+                }
+            default:
+                guard !key.characters.isEmpty, !key.control, !key.alt else { return true }
+                query += key.characters
+                selection = 0
+            }
+            return true
+        }
+    }
+
+    /// Moves the line that Enter takes, and goes round at the ends.
+    private func move(by step: Int) {
+        let count = SummonList.items(for: state, query: query).count
+        guard count > 0 else { return }
+        selection = (selection + step + count) % count
+    }
+
+    /// Does what a line says.
+    private func choose(_ item: SummonItem) {
+        switch item.kind {
+        case .window(let id): actions.raiseWindow(id)
+        case .app(let id): actions.openApp(id)
+        case .command(.closeFrontWindow): actions.closeFrontWindow()
+        case .command(.layout(let kind)): actions.setLayout(kind)
+        }
     }
 
     private var surface: some View {
         VStack(spacing: 0) {
-            query
+            queryLine
             Divider(thickness: 1).foregroundColor(Palette.divider)
             list
             Divider(thickness: 1).foregroundColor(Palette.divider)
@@ -205,19 +255,18 @@ public struct SummonView: View {
         )
     }
 
-    /// The line where a query goes. The keys reach it once the toolkit can
-    /// give a view the keyboard; until then the list answers the pointer.
-    private var query: some View {
+    /// The line where the query is shown, with a caret after it.
+    private var queryLine: some View {
         HStack(spacing: 10) {
             Circle()
                 .stroke(Palette.dimText, lineWidth: 1.5)
                 .frame(width: 12, height: 12)
-            if state.summonQuery.isEmpty {
+            if query.isEmpty {
                 Text("Type to narrow the list")
                     .font(Font(size: 14))
                     .foregroundColor(Palette.dimText)
             } else {
-                Text(state.summonQuery)
+                Text(query)
                     .font(Font(size: 14))
                     .foregroundColor(Palette.text)
             }
@@ -236,7 +285,7 @@ public struct SummonView: View {
     private var list: some View {
         VStack(alignment: .leading, spacing: 0) {
             if groups.isEmpty {
-                Text("No item matches \(state.summonQuery)")
+                Text("No item matches \(query)")
                     .font(Font(size: 13))
                     .foregroundColor(Palette.dimText)
                     .padding(.horizontal, 16)
@@ -246,7 +295,7 @@ public struct SummonView: View {
                 GroupHeader(title: group.title)
                 ForEach(group.items) { item in
                     SummonRow(item: item, actions: actions,
-                              isSelected: item.id == selection?.id)
+                              isSelected: item.id == chosen?.id)
                 }
             }
         }

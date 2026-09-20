@@ -69,6 +69,8 @@ public final class Compositor {
     private let host = ViewHost()
     /// What the shell can ask the compositor to do.
     private var shellActions = ShellActions()
+    /// The messages that wait to be read.
+    private var notices: [Notice] = []
     /// The layout that owns the canvas. A window never floats: this is the
     /// only thing that gives a window a frame.
     private var layoutKind = WindowLayoutKind.principal
@@ -148,7 +150,11 @@ public final class Compositor {
             },
             setLayout: { [unowned self] kind in setLayout(kind) },
             closeWindow: { [unowned self] id in closeWindow(id) },
-            makeWidget: { [unowned self] id in makeWidget(id) }
+            makeWidget: { [unowned self] id in makeWidget(id) },
+            dismissNotice: { [unowned self] id in
+                notices.removeAll { $0.id == id }
+                screen.setNeedsFrame()
+            }
         )
         shell.clock = Compositor.clockText()
         // The clock changes once a minute. A one-second timer keeps it right
@@ -221,6 +227,8 @@ public final class Compositor {
         state.windows = windowEntries
         state.standIns = standIns
         state.heads = heads
+        state.notices = notices
+        state.canvas = windowArea
         // The time of this frame. Everything that moves reads it, so things
         // that start together stay together.
         host.now = Double(monotonicMilliseconds()) / 1000
@@ -479,6 +487,16 @@ public final class Compositor {
         screen.setNeedsFrame()
     }
 
+    /// Says something to the person at the screen. The same message twice
+    /// replaces the first one, so a button that fails does not fill the
+    /// screen with cards.
+    private func post(_ notice: Notice) {
+        notices.removeAll { $0.id == notice.id }
+        notices.append(notice)
+        log("NOTICE \(notice.kind) \"\(notice.title)\"")
+        screen.setNeedsFrame()
+    }
+
     /// Asks one window to close. The app decides what it does with that.
     private func closeWindow(_ id: String) {
         guard let window = windows.first(where: { $0.id == id }) else { return }
@@ -550,76 +568,20 @@ public final class Compositor {
             // The Super key opens Summon and closes it again.
             if key.pressed, key.keysym == Keysym.superLeft || key.keysym == Keysym.superRight {
                 shell.summonIsOpen.toggle()
-                shell.summonQuery = ""
-                shell.summonSelection = 0
                 screen.setNeedsFrame()
                 return
             }
-            // While Summon is open it takes every key: it is the one surface
-            // in front, so nothing under it may read the keyboard.
-            if shell.summonIsOpen {
-                if key.pressed { summonKey(key) }
+            // The shell reads the key first. A surface of the shell that is
+            // in front, such as Summon, takes it. A key that no view of the
+            // shell used goes to the app that has the focus.
+            if host.key(KeyEvent(
+                keysym: key.keysym,
+                characters: Keysym.character(of: key.keysym).map(String.init) ?? "",
+                isPressed: key.pressed, control: key.control, alt: key.alt)) {
+                screen.setNeedsFrame()
                 return
             }
             server.send(key: key)
-        }
-    }
-
-    /// One key for Summon: it narrows the list, moves in it, or chooses.
-    private func summonKey(_ key: Input.Key) {
-        switch key.keysym {
-        case Keysym.escape:
-            shell.summonIsOpen = false
-        case Keysym.enter, Keysym.keypadEnter:
-            let chosen = SummonList.selected(in: shellStateForSummon)
-            shell.summonIsOpen = false
-            shell.summonQuery = ""
-            shell.summonSelection = 0
-            if let chosen { choose(chosen) }
-        case Keysym.tab, Keysym.down:
-            move(by: 1)
-        case Keysym.up:
-            move(by: -1)
-        case Keysym.backspace:
-            if !shell.summonQuery.isEmpty {
-                shell.summonQuery.removeLast()
-                shell.summonSelection = 0
-            }
-        default:
-            // A key that makes a character narrows the list.
-            guard let character = Keysym.character(of: key.keysym) else { return }
-            shell.summonQuery.append(character)
-            shell.summonSelection = 0
-        }
-        screen.setNeedsFrame()
-    }
-
-    /// Moves the selection, and stops at the ends of the list.
-    private func move(by step: Int) {
-        let count = SummonList.items(for: shellStateForSummon).count
-        guard count > 0 else { return }
-        shell.summonSelection = (shell.summonSelection + step + count) % count
-    }
-
-    /// The state that Summon reads. It needs the apps and the windows, which
-    /// the display list fills in for each frame.
-    private var shellStateForSummon: ShellState {
-        var state = shell
-        state.apps = appEntries
-        state.layout = layoutKind
-        state.windows = windowEntries
-        state.standIns = standIns
-        state.heads = heads
-        return state
-    }
-
-    /// Does what a line of Summon says.
-    private func choose(_ item: SummonItem) {
-        switch item.kind {
-        case .window(let id): raiseWindow(id)
-        case .app(let id): openApp(id)
-        case .command(.closeFrontWindow): closeFrontWindow()
-        case .command(.layout(let kind)): setLayout(kind)
         }
     }
 
@@ -641,9 +603,17 @@ public final class Compositor {
         }
         guard let bundle = apps.first(where: { $0.id == id }) else {
             log("compositor: no app with the id \(id)")
+            post(Notice(id: "start:\(id)", kind: .failure, source: "mydistro",
+                        title: "No app has the name \(id)",
+                        detail: "Its bundle is not in \(AppCatalog.directory)."))
             return
         }
-        AppCatalog.start(bundle)
+        guard AppCatalog.start(bundle) != nil else {
+            post(Notice(id: "start:\(id)", kind: .failure, source: bundle.name,
+                        title: "\(bundle.name) did not start",
+                        detail: "The system could not run \(bundle.command)."))
+            return
+        }
     }
 
     /// The window in front gets the keys.

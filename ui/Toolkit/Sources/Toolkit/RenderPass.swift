@@ -14,6 +14,9 @@ public struct RenderPass {
     /// Where the views that answer a click are, in the order that they were
     /// drawn. The last one is in front.
     public internal(set) var tapRegions: [TapRegion] = []
+    /// The views that want the keys, in the order that they were drawn. The
+    /// last one is in front, and it reads a key first.
+    public internal(set) var keyRegions: [KeyRegion] = []
 
     public init() {}
 }
