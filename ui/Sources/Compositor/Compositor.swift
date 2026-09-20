@@ -68,7 +68,7 @@ public final class Compositor {
     private let options: Options
     private let seat: Seat
     private let drm: DRMDevice
-    private let screen: Screen
+    private let screen: any Screen
     private let input: Input
     /// Watches for a change of the display, so that the screen can follow it.
     private let display: DisplayMonitor?
@@ -78,6 +78,12 @@ public final class Compositor {
     private var windows: [Window] = []   // back to front
     private var pointer: (x: Double, y: Double)
     private var running = true
+    /// How the shell draws depth. It follows the renderer, because the two
+    /// modes are for different costs, and MYDISTRO_SHELL_MODE overrides it.
+    /// A test that compares the two renderers pins this, so that the only
+    /// difference between the two pictures is the renderer.
+    private let shellMode: RenderMode
+
     /// What the shell shows. The clock updates it every minute.
     private var shell = ShellState()
     /// Writes the screen to a file for the tests, when
@@ -125,8 +131,9 @@ public final class Compositor {
         seat = try Seat()
         debug("seat \(seat.name) active; opening display")
         drm = try Compositor.openDisplayDevice(seat: seat)
-        screen = try Screen(device: drm)
+        screen = try makeScreen(device: drm)
         scale = Compositor.chosenScale(options: options, screen: screen)
+        shellMode = Compositor.chosenShellMode(usesGPU: screen.usesGPU)
         debug("screen \(drm.path) \(screen.output) scale \(scale); starting input")
         input = try Input(seat: seat)
         debug("input ready; starting Wayland server")
@@ -154,7 +161,7 @@ public final class Compositor {
         try loop.onSignal(SIGINT) { [unowned self] in running = false }
         try loop.onSignal(SIGTERM) { [unowned self] in running = false }
 
-        screen.draw = { [unowned self] canvas in SoftwareRenderer.render(displayList(), into: canvas) }
+        screen.displayList = { [unowned self] in displayList() }
         screen.sizeChanged = { [unowned self] in screenSizeChanged() }
         screen.frameShown = { [unowned self] in
             let now = monotonicMilliseconds()
@@ -211,7 +218,7 @@ public final class Compositor {
             screen.setNeedsFrame()
         }
         if let path = getenv("MYDISTRO_SCREENSHOT_SOCKET").map({ String(cString: $0) }) {
-            screenshot = Screenshot(path: path, loop: loop) { [unowned self] in screen.front }
+            screenshot = Screenshot(path: path, loop: loop, screen: screen)
         }
         screen.setNeedsFrame()
     }
@@ -263,6 +270,7 @@ public final class Compositor {
         // host keeps the state of the shell views from frame to frame.
         var state = shell
         state.apps = appEntries
+        state.mode = shellMode
         state.layout = layoutKind
         state.windows = windowEntries
         state.standIns = standIns
@@ -304,6 +312,20 @@ public final class Compositor {
     /// The setting wins. Without it, the size of the screen in millimetres
     /// gives the density, and a dense screen takes a scale of 2. A display
     /// that reports no size at all, as a virtual one often does, keeps 1.
+    /// The mode of the shell: the renderer chooses, and
+    /// MYDISTRO_SHELL_MODE overrides.
+    private static func chosenShellMode(usesGPU: Bool) -> RenderMode {
+        guard let text = getenv("MYDISTRO_SHELL_MODE").map({ String(cString: $0) }),
+              !text.isEmpty else {
+            return usesGPU ? .gpu : .cpu
+        }
+        guard let mode = RenderMode(rawValue: text) else {
+            log("compositor: MYDISTRO_SHELL_MODE must be 'cpu' or 'gpu', not '\(text)'")
+            return usesGPU ? .gpu : .cpu
+        }
+        return mode
+    }
+
     private static func chosenScale(options: Options, screen: Screen) -> Double {
         if let scale = options.scale, scale > 0 { return scale }
         if let text = getenv("MYDISTRO_SCALE").map({ String(cString: $0) }),

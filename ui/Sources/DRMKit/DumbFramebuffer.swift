@@ -73,44 +73,13 @@ public final class DumbFramebuffer {
     }
 
     /// Writes the pixels as a binary PPM (P6), for the tests.
-    ///
-    /// The bytes go to a second file which is then renamed, so a reader on
-    /// the host (the picture lands in a shared directory) never sees half a
-    /// picture.
     public func writePPM(to path: String) throws(DRMError) {
-        let temporary = path + ".part"
-        guard let file = fopen(temporary, "wb") else {
-            throw .call("fopen", errno: errno)
-        }
-
-        var bytes = [UInt8]()
-        bytes.reserveCapacity(width * height * 3)
-        withPixels { pixels, stride in
-            for y in 0..<height {
-                let row = pixels + y * stride
-                for x in 0..<width {
-                    let pixel = row[x]              // XRGB8888
-                    bytes.append(UInt8((pixel >> 16) & 0xFF))
-                    bytes.append(UInt8((pixel >> 8) & 0xFF))
-                    bytes.append(UInt8(pixel & 0xFF))
-                }
-            }
-        }
-
-        let header = "P6\n\(width) \(height)\n255\n"
-        var written = header.withCString { fwrite($0, 1, strlen($0), file) == strlen($0) }
-        written = written && bytes.withUnsafeBytes {
-            fwrite($0.baseAddress, 1, $0.count, file) == $0.count
-        }
-        fclose(file)
-        guard written else {
-            unlink(temporary)
-            throw .call("fwrite", errno: errno)
-        }
-        guard rename(temporary, path) == 0 else {
-            let err = errno
-            unlink(temporary)
-            throw .call("rename", errno: err)
+        // The mapping lives as long as this object, so the pointer is safe
+        // to keep for the call. withPixels rethrows an untyped error, which
+        // a typed throw cannot pass on.
+        let (start, rowStride) = withPixels { ($0, $1) }
+        try PPM.write(width: width, height: height, to: path) { x, y in
+            start[y * rowStride + x] & 0xFFFFFF   // XRGB8888
         }
     }
 

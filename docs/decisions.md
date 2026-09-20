@@ -95,6 +95,36 @@ mydistro needs a panel, window title bars and a settings UI. It does not need al
 
 An incremental dependency graph saves work in a large app. A shell is small: a complete layout of the panel takes microseconds. If a later UI needs incremental updates, the view API does not change.
 
+## A GPU renderer beside the CPU renderer (20 September)
+
+The compositor can now draw with the GPU: GBM makes the buffers, EGL draws into them, and GLES draws the display list. `MYDISTRO_RENDERER=gpu` chooses it. The CPU renderer stays, and it is the default.
+
+Both renderers take the same display list. [Scene.swift](../ui/Toolkit/Sources/Render/Scene.swift) says that from its first line. The compositor, the toolkit and the shell did not change.
+
+The tests keep the CPU renderer. Its pixels are the same on every run, and the tests check exact colours. A GPU rounds its own way, and a different driver would give different pixels. `tests/gpu.exp` runs the GPU renderer and checks only the solid colours, which both renderers must get exactly right.
+
+The two renderers agree to 3 of 255 in a colour channel. The difference is rounding: the CPU divides by 256 (a shift), and the GPU divides by 255.
+
+Filling an outline has no rule on a GPU. The GPU renderer therefore asks `SoftwareRenderer.mask` for the coverage of a path and puts it in a texture. That is the rasterizer of the CPU renderer, so the edges are the same in both. `TextureCache` keeps the masks. The shapes of a shell do not change from frame to frame, so the CPU draws each one time only.
+
+This work does not give the guest a GPU. In a VM, Mesa still renders with the CPU (llvmpipe), because Apple's Virtualization framework offers a Linux guest no 3D. The gain is on real hardware, and the renderer is the piece that every way of giving a guest a GPU needs first.
+
+## A bug in the blend, found by the second renderer (20 September)
+
+The GPU renderer disagreed with the CPU renderer wherever something was partly transparent: the dock, the icons and the edges of the glyphs. The GPU was right.
+
+`SoftwareRenderer.blend` had this line:
+
+```swift
+let rb = ((dst & 0xFF00FF) * inverse >> 8) & 0xFF00FF
+```
+
+This is the C idiom, and in C it means `((dst & mask) * inverse) >> 8`. In Swift a shift binds tighter than a multiplication, so it means `(dst & mask) * (inverse >> 8)`. `inverse` is `255 - alpha`, so it is always below 256, so `inverse >> 8` is always 0.
+
+Every partly transparent colour therefore covered what was under it instead of blending with it. The dock was darker than it should be. The smooth edge of a shape went to black, and not to the colour behind it. `scale`, a few lines above, has the brackets and was right.
+
+Two renderers that must agree found a bug that one renderer could not. The tests now hold the arithmetic. See `ui/Toolkit/Tests/RenderTests/BlendTests.swift`.
+
 ## Software rendering in the VM (19 September)
 
 QEMU from Homebrew has no `virtio-gpu-gl`. The compositor renders with the CPU, and Mesa uses llvmpipe. Screenshots are the same each time, and this makes the tests reliable, so the tests must keep the CPU renderer. On 20 September we found that Apple's Virtualization framework gives a Linux guest no GPU either. See [ui.md](ui.md#graphics-in-the-vm) and [next-steps.md](next-steps.md).

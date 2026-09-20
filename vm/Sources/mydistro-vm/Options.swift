@@ -23,6 +23,8 @@ struct Options {
     var display: Display
     /// The size of the target disk, in bytes.
     var targetSize: UInt64
+    /// The size of the screen, in pixels.
+    var screen: (width: Int, height: Int)
 
     static let usage = """
         usage: mydistro-vm live|installed
@@ -32,6 +34,8 @@ struct Options {
 
         VM_GPU selects the display: unset (console only), window, or headless.
         TARGET_SIZE sets the size of the target disk (default 8G).
+        VM_SCREEN sets the size of the screen, for example 1920x1200
+        (default 1280x800; the pixel tests need that size).
         """
 
     static func parse(
@@ -51,19 +55,36 @@ struct Options {
 
         let size = environment["TARGET_SIZE"] ?? "8G"
         guard let targetSize = bytes(size) else { throw .badSize(size) }
-        return Options(mode: mode, display: display, targetSize: targetSize)
+
+        // The pixel tests read fixed positions, so the default stays the
+        // size that tests/compositor.exp describes.
+        let wanted = environment["VM_SCREEN"] ?? "1280x800"
+        guard let screen = screenSize(wanted) else { throw .badScreen(wanted) }
+
+        return Options(mode: mode, display: display, targetSize: targetSize, screen: screen)
+    }
+
+    /// A size as WIDTHxHEIGHT.
+    private static func screenSize(_ text: String) -> (width: Int, height: Int)? {
+        let parts = text.lowercased().split(separator: "x")
+        guard parts.count == 2, let width = Int(parts[0]), let height = Int(parts[1]),
+              width >= 640, height >= 480 else { return nil }
+        return (width, height)
     }
 
     enum Failure: Error, CustomStringConvertible {
         case usage
         case badDisplay
         case badSize(String)
+        case badScreen(String)
 
         var description: String {
             switch self {
             case .usage: Options.usage
             case .badDisplay: "VM_GPU must be empty, 'window' or 'headless'"
             case .badSize(let text): "TARGET_SIZE is not a size: \(text)"
+            case .badScreen(let text):
+                "VM_SCREEN must be WIDTHxHEIGHT, at least 640x480: \(text)"
             }
         }
     }

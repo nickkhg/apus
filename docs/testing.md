@@ -23,10 +23,12 @@ The variable `VM_GPU` selects the display:
 | `VM_GPU` | Display |
 |---|---|
 | Not set | No display device. Serial console only. |
-| `window` | A virtio graphics device in a macOS window, with a USB keyboard and a pointer |
+| `window` | A virtio graphics device in a macOS window, with a USB keyboard and a pointer. A resize of the window resizes the screen of the guest, and the compositor lays out again. |
 | `headless` | A virtio graphics device with no window. The guest writes the pictures of the screen. See [Screenshots](#screenshots). |
 
 The serial console is always in the terminal. To stop the VM, push Ctrl-A in the terminal, then push X.
+
+`VM_SCREEN` sets the size of the screen, for example `VM_SCREEN=1920x1200`. The default is 1280x800, which is the size that the pixel tests read.
 
 If `out/vm/target.img` does not exist, the program makes an 8 GB disk. To start with an empty disk, remove the file. To change the size, set `TARGET_SIZE`, for example `TARGET_SIZE=16G`. The disk is a raw file, because the framework reads raw disk images only. The file is sparse: it uses only the blocks that the guest writes.
 

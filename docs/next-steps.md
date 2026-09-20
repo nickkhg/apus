@@ -59,10 +59,18 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
 - Xcode gives no code completion for the Linux modules (see [ui.md](ui.md#limits-of-xcode)). An editor with SourceKit-LSP gives it.
 - The Run action of the Xcode schemes (`make demo-dev`, `make demo`) was not tested in the Xcode window. A test with `xcodebuild` built the UI scheme.
 - Unit tests for the `Wayland` library (wire format and object rules), with `swift test` in the builder container. Now only the VM tests test it.
-- GPU rendering. Two pieces of work, in this sequence:
-  1. The compositor must render with the GPU. It now draws into DRM dumb buffers with the CPU. GBM and GLES (or Vulkan) replace that. This piece is necessary for every other piece, and it is the piece that helps on real hardware under Asahi. The tests must keep the CPU renderer, because exact pixel checks need the same result each time.
-  2. The VM must give the guest a GPU. Apple's Virtualization framework does not (see [ui.md](ui.md#graphics-in-the-vm)). The choices are libkrun, which uses Hypervisor.framework and has virtio-gpu with Venus on Metal; a QEMU built with Venus; or a virtio-gpu device of our own on `VZCustomVirtioDevice` (macOS 26 or later), which means a Venus decoder on MoltenVK.
-- `make gui` and `make demo` open a window. The automated tests do not test them. `tests/display.exp` and `tests/compositor.exp` test the same display with no window. In a window, the keyboard and the pointer are USB devices of the framework, and the tests do not use them: the tests make their own devices with uinput.
+- The VM must give the guest a GPU. The compositor can now render with one (see [ui.md](ui.md#the-two-renderers)). Apple's Virtualization framework gives a Linux guest none. There are three ways:
+
+  | Way | What it needs |
+  |---|---|
+  | libkrun | It uses Hypervisor.framework, not Virtualization. It has virtio-gpu with Venus on Metal. |
+  | QEMU with Venus | A build of our own. The QEMU of Homebrew does not have it. |
+  | A virtio-gpu device of our own | `VZCustomVirtioDevice`, on macOS 26 or later. We must then write a Venus decoder on MoltenVK. |
+
+- The GPU renderer draws a `path` from a coverage texture. The CPU makes that texture. `TextureCache` keeps it, so a shape that stays costs nothing after the first frame. A shape that moves or changes size goes to the CPU again. To fill an outline on the GPU, use a stencil pass and then a cover pass, with more than one sample for the smooth edges.
+- The GPU renderer sends the pixels of a window to the GPU at each commit. The GPU can read a buffer of the app directly, with `EGL_WL_bind_wayland_display` or with dma-buf. That removes the copy.
+- The GPU renderer draws one quad for each item. Items with the same texture and colour could go into one draw.
+- `make gui` and `make demo` open a window. The automated tests do not test them. `tests/display.exp` and `tests/compositor.exp` test the same display with no window. In a window, the keyboard and the pointer are USB devices of the framework. The tests do not use those devices. They make their own with uinput.
 - The tests use one VM disk in sequence. `tests/display.exp` and `tests/compositor.exp` need the disk from `tests/install.exp`.
 - Old builder images use disk space. On 19 September, `container system df` reported 42 GB that `container image prune` can remove.
 

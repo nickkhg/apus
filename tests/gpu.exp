@@ -1,0 +1,129 @@
+#!/usr/bin/expect -f
+# GPU renderer test: boot the installed disk with a (headless) GPU, draw the
+# same screen with each renderer, and check that the two agree.
+# Run after tests/install.exp.
+#
+# The GPU renderer draws the display list through GBM, EGL and GLES, and the
+# CPU renderer draws it into a dumb buffer. Both take the same list, so both
+# must make the same picture. tests/renderers.py holds that.
+#
+# In a VM there is no GPU, so Mesa renders with the CPU (llvmpipe). The code
+# path is the same, which is what this test covers: EGL on GBM, the shaders,
+# the textures, the page flip of a GBM buffer, and giving the buffers back.
+#
+# The test reads no part of the shell, so a change to the shell needs no
+# change here. tests/compositor.exp checks what the shell draws, with the CPU
+# renderer, where the pixels are the same on every run.
+
+set timeout 180
+log_user 1
+source [file dirname [info script]]/lib.exp
+
+set bin ""
+set uienv ""
+if {[info exists env(MYDISTRO_UI_DIR)]} {
+    set bin "$env(MYDISTRO_UI_DIR)/"
+    set uienv "MYDISTRO_UI_DIR=$env(MYDISTRO_UI_DIR) "
+}
+
+# Waits for the guest to finish what it was given.
+#
+# A wait for the shell prompt is not sufficient. The compositor and the apps
+# write to the same console as the shell, so a prompt can go past while an
+# expect is reading their lines, and the wait for it after that never ends.
+#
+# This sends a command of its own with a number that rises, so nothing
+# already in the stream can answer for it, and the shell runs it only after
+# the command before it has finished. The number is written as $((N)): the
+# shell's echo of the command line then reads "MARK-$((3))" and only the
+# output reads "MARK-3", so the echo cannot answer either.
+set marks 0
+
+proc settle {what} {
+    global marks
+    incr marks
+    send "echo MARK-\$(($marks))\r"
+    expect {
+        "MARK-$marks" {}
+        timeout { fail "$what: the guest did not answer" }
+    }
+}
+
+# Runs one command in the guest and waits for it to end.
+proc guest {command what} {
+    global marks
+    incr marks
+    send "$command; echo MARK-\$(($marks))\r"
+    expect {
+        "MARK-$marks" {}
+        timeout { fail "$what: the guest did not finish" }
+    }
+}
+
+# Runs the compositor with one renderer, writes the screen, and stops it.
+proc drawWith {renderer name} {
+    global bin uienv
+    # MYDISTRO_SHELL_MODE pins how the shell draws depth. Without it the
+    # shell follows the renderer, and the two pictures would differ because
+    # the shell chose to draw differently, not because the renderer did.
+    send "LIBSEAT_BACKEND=noop MYDISTRO_RENDERER=$renderer MYDISTRO_SHELL_MODE=cpu MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock ${uienv}${bin}mydistro-compositor &\r"
+    if {$renderer eq "gpu"} {
+        # The renderer says which GL it got. In a VM that is llvmpipe.
+        expect {
+            -re {GPU-RENDERER [^\r\n]*} { send_user "\n$expect_out(0,string)\n" }
+            "mydistro-compositor:"      { fail "the compositor reported an error" }
+            timeout                     { fail "the GPU renderer did not start" }
+        }
+    }
+    expect {
+        "COMPOSITOR-READY"     {}
+        "mydistro-compositor:" { fail "$renderer: the compositor reported an error" }
+        timeout                { fail "$renderer: the compositor did not start" }
+    }
+    after 1500
+
+    send "${bin}mydistro-screen shot /mnt/screens/$name.ppm\r"
+    expect {
+        "mydistro-screen:"     { fail "$renderer: the compositor gave no picture" }
+        -re {ok [0-9]+ [0-9]+} {}
+        timeout                { fail "$renderer: no picture" }
+    }
+    settle "$renderer: the picture"
+
+    # Stopping matters: a GBM surface with a buffer still lent to the display
+    # never goes away, and the compositor would not stop.
+    #
+    # `%%` is the job that started last. The second compositor of this test
+    # is job 2, so `kill %1` would say "no such job".
+    send "kill %%\r"
+    expect {
+        "COMPOSITOR-EXIT" {}
+        timeout           { fail "$renderer: the compositor did not stop" }
+    }
+    settle "$renderer: the exit"
+
+    # COMPOSITOR-EXIT comes before the process goes: the message is printed,
+    # and then the screen, the GL context and the DRM device are given back.
+    # The next compositor cannot become DRM master while the last one still
+    # holds the device, and drmModeSetCrtc then says "Permission denied".
+    # `wait` waits for the job to really end.
+    guest "wait" "$renderer: the compositor did not go away"
+}
+
+spawn env VM_GPU=headless $env(MYDISTRO_VM) installed
+login
+
+drawWith cpu renderer-cpu
+drawWith gpu renderer-gpu
+
+if {[catch {exec python3 tests/renderers.py \
+        out/vm/screens/renderer-cpu.ppm out/vm/screens/renderer-gpu.ppm} result]} {
+    fail "the renderers disagree: $result"
+}
+send_user "\n$result\n"
+
+send "poweroff\r"
+expect eof
+wait
+
+send_user "\n\nGPU TEST PASSED\n"

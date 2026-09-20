@@ -7,10 +7,14 @@
 // VM_GPU selects the display:
 //   (unset)    no display device; serial console only
 //   window     a virtio graphics device in a macOS window, with a keyboard
-//              and a pointer
+//              and a pointer. A resize of the window resizes the screen of
+//              the guest.
 //   headless   a virtio graphics device with no window. The tests read the
 //              screen in the guest and write it to the `screens` share,
 //              because Virtualization has no screenshot of its own.
+//
+// VM_SCREEN sets the size of the screen, for example 1920x1200. The default
+// is 1280x800, which is the size that the pixel tests read.
 //
 // The serial console is always on stdin and stdout. Ctrl-A X stops the
 // machine. out/ on the Mac is shared read-only with the guest at /mnt/host.
@@ -48,7 +52,7 @@ runner.start()
 
 switch options.display {
 case .window:
-    Window(runner: runner).run()
+    Window(runner: runner, size: options.screen).run()
 case .none, .headless:
     RunLoop.main.run()
 }

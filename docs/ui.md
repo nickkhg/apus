@@ -173,10 +173,28 @@ To test the new programs automatically, run `make test-dev`. It runs the composi
 
 `make ui-container` does the same as `make ui` in the builder container, with the cache `/work/swiftpm/dev`.
 
+## The two renderers
+
+The compositor has two renderers. `MYDISTRO_RENDERER` chooses one:
+
+| Value | Renderer |
+|---|---|
+| `cpu` (the default) | `SoftwareScreen`: the CPU draws into DRM dumb buffers. |
+| `gpu` | `GPUScreen`: GLES draws into GBM buffers, through EGL. |
+
+Both take the same display list, so nothing above the renderer changes. The chain of the GPU renderer is the usual one for a compositor with no window system under it:
+
+1. GBM makes buffers on the same DRM device that the display uses.
+2. EGL draws into those buffers, with the GBM platform.
+3. GLES draws the display list (`GLRenderer`). Each item becomes one quad: a colour for a `fill`, a texture for a `bitmap`, and the coverage of the outline for a `path`.
+4. `eglSwapBuffers` finishes a buffer. The buffer becomes a KMS framebuffer, and a page flip puts it on the display.
+
+A `path` becomes a texture because the GPU has no rule for filling an outline. The coverage comes from `SoftwareRenderer.mask`, which is the rasterizer that the CPU renderer uses, so the edges are the same in both. `TextureCache` keeps the masks. The CPU therefore rasterizes a shape that does not change one time only.
+
+The tests use the CPU renderer. Its pixels are the same on every run, and the tests check exact colours. `tests/gpu.exp` draws one screen with each renderer and compares the two pictures. They agree to 3 of 255 in a colour channel. The difference is rounding: the CPU divides by 256, and the GPU divides by 255.
+
 ## Graphics in the VM
 
-The VM has a virtio graphics device without 3D, so Mesa renders with the CPU (llvmpipe) and the compositor renders with the CPU.
+The VM has a virtio graphics device without 3D, so Mesa renders with the CPU (llvmpipe). The GPU renderer still runs there: the code path is the same, and only the driver under it is software. That is how `tests/gpu.exp` covers it.
 
-Apple's Virtualization framework gives a Linux guest no GPU. `VZVirtioGraphicsDeviceConfiguration` is a 2D scanout, and it never offers the 3D feature bit. The 3D graphics device of the framework, `VZMacGraphicsDeviceConfiguration`, accepts macOS guests only.
-
-The compositor also does not use a GPU yet. It draws into DRM dumb buffers with the CPU and puts them on the screen with a page flip. See [next-steps.md](next-steps.md) for the work that a GPU needs.
+Apple's Virtualization framework gives a Linux guest no GPU. `VZVirtioGraphicsDeviceConfiguration` is a 2D scanout, and it never offers the 3D feature bit. The 3D graphics device of the framework, `VZMacGraphicsDeviceConfiguration`, accepts macOS guests only. See [next-steps.md](next-steps.md) for the ways to give a guest a real GPU.
