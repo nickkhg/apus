@@ -23,6 +23,12 @@ if {[info exists env(MYDISTRO_UI_DIR)]} {
 if {[info exists env(MYDISTRO_SCALE)]} {
     append uienv "MYDISTRO_SCALE=$env(MYDISTRO_SCALE) "
 }
+# Which renderer draws. `cpu` is the default; `gpu` draws with GBM, EGL and
+# GLES. In a VM there is no GPU, so Mesa renders with the CPU (llvmpipe)
+# either way. See docs/ui.md.
+if {[info exists env(MYDISTRO_RENDERER)]} {
+    append uienv "MYDISTRO_RENDERER=$env(MYDISTRO_RENDERER) "
+}
 
 spawn env VM_GPU=window $env(MYDISTRO_VM) installed
 login
@@ -31,9 +37,9 @@ expect {
     "COMPOSITOR-READY"     {}
     "mydistro-compositor:" { fail "compositor reported an error" }
 }
-send_user "\n\n>>> mydistro compositor is running in the QEMU window.\n"
-send_user ">>> Click the T in the dock to open the terminal, and type in it.\n"
+send_user "\n\n>>> mydistro is running in the window.\n"
+send_user ">>> Press Super to open Summon, and type the name of an app.\n"
 send_user ">>> Ctrl+Alt+Backspace stops the compositor.\n"
-send_user ">>> Close the QEMU window to stop the VM.\n\n"
+send_user ">>> Close the window to stop the VM.\n\n"
 set timeout -1
 expect eof

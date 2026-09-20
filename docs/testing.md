@@ -30,6 +30,18 @@ The serial console is always in the terminal. To stop the VM, push Ctrl-A in the
 
 `VM_SCREEN` sets the size of the screen, for example `VM_SCREEN=1920x1200`. The default is 1280x800, which is the size that the pixel tests read.
 
+A window follows its own size when a person changes it, and it counts pixels, not points. A Mac with small pixels therefore gives the guest two times the pixels in each direction, which is four times the work for each frame. `VM_RESIZE=off` keeps the size that `VM_SCREEN` gave.
+
+`MYDISTRO_FRAME_LOG` times the frames. `MYDISTRO_FRAME_LOG=20` writes one line for each 20 frames: the average, the longest, and the size of the screen. These are the times of the shell with nothing open, in a VM, where Mesa renders with the CPU:
+
+| Renderer | Size | Average | Longest | Frames a second |
+|---|---|---|---|---|
+| `cpu` | 1280x800 | 14.2 ms | 17.0 ms | 71 |
+| `cpu` | 2560x1600 | 37.1 ms | 46.9 ms | 27 |
+| `gpu` | 2560x1600 | 49.4 ms | 186.5 ms | 20 |
+
+The GPU renderer is the slower one in a VM, because the VM has no GPU: Mesa renders with the CPU (llvmpipe), and the GPU path adds a texture for each window and a new framebuffer for each frame. On hardware with a GPU the numbers are not these. The compositor draws the whole screen for each frame, so the size of the screen is what counts most.
+
 If `out/vm/target.img` does not exist, the program makes an 8 GB disk. To start with an empty disk, remove the file. To change the size, set `TARGET_SIZE`, for example `TARGET_SIZE=16G`. The disk is a raw file, because the framework reads raw disk images only. The file is sparse: it uses only the blocks that the guest writes.
 
 ## Make targets

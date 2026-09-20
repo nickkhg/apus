@@ -82,6 +82,7 @@ final class SoftwareScreen: Screen, PageFlipHandler {
     private var canPageFlip = true
     /// True while a frame is being drawn.
     private var isDrawing = false
+    private var timer = FrameTimer(name: "cpu")
     /// Set when the display reported a change. The new size is taken between
     /// frames, because a buffer that the screen is showing cannot go away.
     private var displayMayHaveChanged = false
@@ -151,7 +152,8 @@ final class SoftwareScreen: Screen, PageFlipHandler {
 
     private func drawFrame() {
         isDrawing = true
-        defer { isDrawing = false }
+        timer.began()
+        defer { isDrawing = false; timer.ended(width: width, height: height) }
         needsFrame = false
         let buffer = buffers[back]
         let list = displayList()

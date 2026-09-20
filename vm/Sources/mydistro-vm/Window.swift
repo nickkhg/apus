@@ -9,11 +9,13 @@ import Virtualization
 final class Window: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let runner: Runner
     private let size: (width: Int, height: Int)
+    private let followsWindow: Bool
     private var window: NSWindow?
 
-    init(runner: Runner, size: (width: Int, height: Int)) {
+    init(runner: Runner, size: (width: Int, height: Int), followsWindow: Bool) {
         self.runner = runner
         self.size = size
+        self.followsWindow = followsWindow
     }
 
     /// Opens the window and runs until the guest or the window stops.
@@ -35,7 +37,12 @@ final class Window: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // A resize of the window resizes the screen of the guest, and the
         // compositor lays out again for the new size. The pixel tests are
         // not affected: they run headless, with no window and no view.
-        view.automaticallyReconfiguresDisplay = true
+        //
+        // The view follows its backing size, not its size in points. A Mac
+        // with small pixels therefore gives the guest twice the pixels in
+        // each direction, which is four times the work for each frame.
+        // VM_RESIZE=off keeps the size that VM_SCREEN asked for.
+        view.automaticallyReconfiguresDisplay = followsWindow
 
         let window = NSWindow(
             contentRect: view.frame,

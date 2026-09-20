@@ -25,6 +25,8 @@ struct Options {
     var targetSize: UInt64
     /// The size of the screen, in pixels.
     var screen: (width: Int, height: Int)
+    /// Whether a resize of the window resizes the screen of the guest.
+    var followsWindow: Bool
 
     static let usage = """
         usage: mydistro-vm live|installed
@@ -36,6 +38,9 @@ struct Options {
         TARGET_SIZE sets the size of the target disk (default 8G).
         VM_SCREEN sets the size of the screen, for example 1920x1200
         (default 1280x800; the pixel tests need that size).
+        VM_RESIZE=off keeps that size when the window changes size. The
+        default follows the window, and a Mac with small pixels then gives
+        the guest twice the pixels in each direction.
         """
 
     static func parse(
@@ -61,7 +66,14 @@ struct Options {
         let wanted = environment["VM_SCREEN"] ?? "1280x800"
         guard let screen = screenSize(wanted) else { throw .badScreen(wanted) }
 
-        return Options(mode: mode, display: display, targetSize: targetSize, screen: screen)
+        // A window on a Mac with small pixels has twice as many pixels in
+        // each direction as it has points. The guest then draws four times
+        // the pixels, which the CPU renderer feels. VM_RESIZE=off keeps the
+        // size that VM_SCREEN asked for.
+        let followsWindow = (environment["VM_RESIZE"] ?? "on") != "off"
+
+        return Options(mode: mode, display: display, targetSize: targetSize,
+                       screen: screen, followsWindow: followsWindow)
     }
 
     /// A size as WIDTHxHEIGHT.

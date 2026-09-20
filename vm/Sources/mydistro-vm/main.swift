@@ -52,7 +52,8 @@ runner.start()
 
 switch options.display {
 case .window:
-    Window(runner: runner, size: options.screen).run()
+    Window(runner: runner, size: options.screen,
+           followsWindow: options.followsWindow).run()
 case .none, .headless:
     RunLoop.main.run()
 }

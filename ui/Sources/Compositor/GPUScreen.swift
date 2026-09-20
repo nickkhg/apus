@@ -57,6 +57,7 @@ final class GPUScreen: Screen, PageFlipHandler {
     private var canPageFlip = true
     /// True while a frame is being drawn.
     private var isDrawing = false
+    private var timer = FrameTimer(name: "gpu")
     private var displayMayHaveChanged = false
 
     init(device: DRMDevice) throws {
@@ -238,7 +239,8 @@ final class GPUScreen: Screen, PageFlipHandler {
 
     private func drawFrame() {
         isDrawing = true
-        defer { isDrawing = false }
+        timer.began()
+        defer { isDrawing = false; timer.ended(width: width, height: height) }
         needsFrame = false
         guard let surface else { return }
         let next: (bo: OpaquePointer, framebuffer: ImportedFramebuffer)
