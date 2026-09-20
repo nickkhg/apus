@@ -310,3 +310,62 @@ struct SpacerAxisTests {
         #expect(items.last?.y == 192)
     }
 }
+
+@Suite("Text that is too long for its space")
+struct TruncationTests {
+    private let long = "a window title that is much too long for the space it has"
+
+    /// The bitmap that a line of text draws, in a space of `width` points.
+    private func bitmap(_ text: String, width: Int) -> Bitmap? {
+        let view = Text(text).font(Font(size: 12)).frame(width: Double(width), height: 20)
+        let list = ViewRenderer.displayList(for: view,
+                                            in: Rect(x: 0, y: 0, width: width, height: 20))
+        for item in list {
+            if case .bitmap(let bitmap, _, _) = item { return bitmap }
+        }
+        return nil
+    }
+
+    @Test("A line that fits is drawn whole")
+    func aShortLineIsWhole() {
+        guard let wide = bitmap("ab", width: 400), let narrow = bitmap("ab", width: 399) else {
+            Issue.record("expected text")
+            return
+        }
+        #expect(wide.width == narrow.width)
+    }
+
+    @Test("A line that does not fit is cut to its space")
+    func aLongLineIsCut() {
+        guard let full = bitmap(long, width: 1000), let cut = bitmap(long, width: 120) else {
+            Issue.record("expected text")
+            return
+        }
+        #expect(cut.width < full.width)
+        #expect(cut.width <= 120)
+    }
+
+    @Test("A narrower space cuts more")
+    func lessSpaceCutsMore() {
+        guard let wide = bitmap(long, width: 200), let narrow = bitmap(long, width: 100) else {
+            Issue.record("expected text")
+            return
+        }
+        #expect(narrow.width < wide.width)
+    }
+
+    @Test("A line takes the width that it is offered, and no more")
+    func theSizeFollowsTheOffer() {
+        let node = Text(long).node(environment: EnvironmentValues())
+        let natural = node.size(fitting: .unspecified).width
+        #expect(node.size(fitting: Proposal(width: 80, height: 20)).width == 80)
+        // An offer larger than the line leaves the line at its own width.
+        #expect(node.size(fitting: Proposal(width: natural + 100, height: 20)).width == natural)
+    }
+
+    @Test("A space too small for anything draws nothing that overflows")
+    func aTinySpaceIsSafe() {
+        guard let tiny = bitmap(long, width: 4) else { return }
+        #expect(tiny.width <= 20)
+    }
+}

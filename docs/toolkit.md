@@ -382,6 +382,13 @@ Reading it gives where the value is now. Writing it gives the value somewhere to
 
 The design must be right with no motion at all. A renderer that cannot hold the frame rate may end every move at once and lose nothing but the pleasure.
 
+## Text that is too long
+
+A `Text` never wraps. A line that is wider than the space it gets is cut, and it ends in "…".
+
+- A line takes the width that its parent offers when the offer is smaller than the line. It keeps its own width when the offer is larger.
+- The cut is over the characters of the string, not over the glyphs. One glyph is not one character. A letter and the mark over it are two glyphs of one character, and some pairs of letters are one glyph. A cut between glyphs would cut inside a character.
+
 ## The keyboard
 
 A view reads the keys with `onKey`. It answers whether it used the key, and a key that no view used belongs to whatever is under the toolkit. In mydistro that is the app with the focus.

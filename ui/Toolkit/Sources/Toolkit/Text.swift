@@ -45,15 +45,24 @@ final class TextNode: LayoutNode {
     }
 
     override func computeSize(fitting proposal: Proposal) -> Size {
-        // The text is as wide as its glyphs, whatever the parent proposes.
+        // The text is as wide as its glyphs, unless the parent offers less.
+        // Then it takes what it is offered and cuts itself when it draws.
         // Only the height of a line comes from the font. The glyphs are in
         // pixels, and a layout is in points.
-        Size(width: (shaped.width / scale).rounded(.up),
-             height: (shaped.height / scale).rounded(.up))
+        let natural = (shaped.width / scale).rounded(.up)
+        var width = natural
+        if let offered = proposal.width, offered.isFinite, offered < natural {
+            width = max(0, offered)
+        }
+        return Size(width: width, height: (shaped.height / scale).rounded(.up))
     }
 
     override func render(in frame: Frame, into pass: inout RenderPass) {
         guard !shaped.glyphs.isEmpty, color.alpha > 0 else { return }
+        // A line that is too long for its space ends in "…". The frame is in
+        // points and the glyphs are in pixels.
+        let shaped = fitted(to: frame.width * scale)
+        guard !shaped.glyphs.isEmpty else { return }
         let width = Int(shaped.width.rounded(.up))
         let height = Int(shaped.height.rounded(.up))
         guard width > 0, height > 0 else { return }
@@ -71,6 +80,34 @@ final class TextNode: LayoutNode {
         // points and the bitmap is in pixels.
         pass.list.append(.bitmap(bitmap, x: Int((frame.x * pass.scale).rounded()),
                                  y: Int((frame.y * pass.scale).rounded())))
+    }
+
+    /// The text that fits in `room` pixels: the whole line, or as much of it
+    /// as fits with "…" at the end.
+    ///
+    /// The search is over the characters of the string and not over the
+    /// glyphs, because one glyph is not one character: a letter and the mark
+    /// over it are two glyphs of one character, and some pairs of letters
+    /// are one glyph. Cutting between glyphs would cut inside a character.
+    private func fitted(to room: Double) -> ShapedText {
+        guard room > 0, shaped.width > room else { return shaped }
+        let characters = Array(string)
+        guard !characters.isEmpty else { return shaped }
+
+        // The longest prefix that still fits with the "…" after it.
+        var low = 0, high = characters.count
+        var best = FontCache.shared.shape("…", font: font)
+        while low < high {
+            let middle = (low + high + 1) / 2
+            let candidate = FontCache.shared.shape(String(characters[0..<middle]) + "…", font: font)
+            if candidate.width <= room {
+                best = candidate
+                low = middle
+            } else {
+                high = middle - 1
+            }
+        }
+        return best
     }
 
     /// Multiplies the glyph's coverage by the colour and puts it in the image.
