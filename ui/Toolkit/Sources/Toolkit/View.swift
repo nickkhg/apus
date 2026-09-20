@@ -19,6 +19,15 @@ public protocol View {
 
 extension View {
     public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
+        guard let state = environment.viewState else {
+            body.makeNodes(into: &nodes, environment: environment)
+            return
+        }
+        // The position of this view in the tree is the name of its @State
+        // values. See State.swift.
+        state.enter(Self.self)
+        defer { state.leave() }
+        state.connect(self)
         body.makeNodes(into: &nodes, environment: environment)
     }
 
@@ -124,9 +133,17 @@ public struct ConditionalView<First: View, Second: View>: View {
     init(second: Second) { content = .second(second) }
 
     public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
+        // Each branch is a different place, so the two branches do not share
+        // the state of the views in them.
         switch content {
-        case .first(let view): view.makeNodes(into: &nodes, environment: environment)
-        case .second(let view): view.makeNodes(into: &nodes, environment: environment)
+        case .first(let view):
+            environment.viewState?.enter(identity: 0)
+            view.makeNodes(into: &nodes, environment: environment)
+            environment.viewState?.leave()
+        case .second(let view):
+            environment.viewState?.enter(identity: 1)
+            view.makeNodes(into: &nodes, environment: environment)
+            environment.viewState?.leave()
         }
     }
 }
@@ -144,18 +161,46 @@ public struct ArrayView<Content: View>: View {
 }
 
 /// One view for each element of a collection.
-public struct ForEach<Data: RandomAccessCollection, Content: View>: View {
+///
+/// The identity of an element says which views belong to it. Thus the state
+/// of a row follows its element when the elements change order:
+///
+///     ForEach(apps, id: \.name) { app in AppIcon(app) }
+///     ForEach(apps) { app in AppIcon(app) }          // apps are Identifiable
+///     ForEach(0..<4) { index in Dot(index) }         // the number is the id
+public struct ForEach<Data: RandomAccessCollection, ID: Hashable, Content: View>: View {
     public typealias Body = Never
     let data: Data
+    let identity: (Data.Element) -> ID
     let content: (Data.Element) -> Content
 
-    public init(_ data: Data, @ViewBuilder content: @escaping (Data.Element) -> Content) {
+    public init(_ data: Data, id: KeyPath<Data.Element, ID>,
+                @ViewBuilder content: @escaping (Data.Element) -> Content) {
         self.data = data
+        self.identity = { $0[keyPath: id] }
         self.content = content
     }
 
     public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
-        for element in data { content(element).makeNodes(into: &nodes, environment: environment) }
+        for element in data {
+            environment.viewState?.enter(identity: identity(element).hashValue)
+            content(element).makeNodes(into: &nodes, environment: environment)
+            environment.viewState?.leave()
+        }
+    }
+}
+
+extension ForEach where Data.Element: Identifiable, ID == Data.Element.ID {
+    /// For elements that say what their identity is.
+    public init(_ data: Data, @ViewBuilder content: @escaping (Data.Element) -> Content) {
+        self.init(data, id: \.id, content: content)
+    }
+}
+
+extension ForEach where Data == Range<Int>, ID == Int {
+    /// For a range of numbers. The number is the identity.
+    public init(_ data: Range<Int>, @ViewBuilder content: @escaping (Int) -> Content) {
+        self.init(data, id: \.self, content: content)
     }
 }
 

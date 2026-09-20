@@ -57,16 +57,19 @@ A display list is an array of items from back to front:
 |---|---|
 | `.fill(Rect, color:)` | A solid colour |
 | `.bitmap(Bitmap, x:, y:)` | An image with premultiplied alpha, or an opaque image |
+| `.path(Path, color:)` | An outline of lines and curves, filled with smooth edges |
 
 The display list is the interface between the UI layer and the pixels. The toolkit makes items from views, and only the renderer writes pixels. Thus, a GPU renderer can replace `SoftwareRenderer` and the toolkit does not change.
 
-## The shell panel
+## The shell
 
 The top 28 pixels of the screen are the shell panel. The compositor draws it with the toolkit, over the windows and under the pointer. It has the name of the system, the title of the front window, and the time in it.
 
-The compositor draws `RootView` from the `Shell` library over the whole screen. `RootView` puts the panel at the top and leaves the space under it free, and `RootView.windowArea(screen:)` tells the compositor where the windows go. Thus the shell decides how much space it takes.
+The compositor draws `RootView` from the `Shell` library over the whole screen. `RootView` puts the panel at the top, the dock at the bottom, and leaves the space between them free. `RootView.windowArea(screen:)` tells the compositor where the windows go, so the shell decides how much space it takes.
 
 The compositor gives the shell a `ShellState` for each frame: the window titles from the Wayland toplevels, and the time from `localtime_r`. A timer in the event loop reads the clock every second and asks for a frame when the minute changes.
+
+A `ViewHost` keeps the shell between frames: the `@State` values of the shell views, and which view the pointer is over. When the pointer moves, the compositor gives the position to the host. The host then calls the `onHover` handler of a view that the pointer entered or left. A handler that changes a state value asks for a frame. This is how the dock icons become brighter under the pointer.
 
 The shell is a view, so its tests need no screen. See [toolkit.md](toolkit.md).
 

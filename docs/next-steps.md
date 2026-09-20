@@ -17,20 +17,20 @@ In this sequence:
 
 ## The toolkit and the shell
 
-The toolkit draws the panel. See [toolkit.md](toolkit.md). Next, in this sequence:
+The toolkit draws the panel and the dock, with `@State`, shapes and the pointer. See [toolkit.md](toolkit.md). Next, in this sequence:
 
-1. `@State` and automatic updates. Now the compositor makes the view again for each frame, and it asks for a frame when it knows that something changed. A view cannot ask for a frame.
-2. Input for views: hit testing and a `.onTap` modifier. Then the panel can have buttons.
+1. A click. `onHover` works, but a view cannot get a button press, so the dock icons do nothing.
+2. The keyboard: which view has the focus, and how the keys reach it.
 3. Window title bars, with a close button.
 4. Text that is too long for its space. Cut it, and add "…".
-5. More display items: rounded corners, a border, and an image. The renderer has fills and bitmaps only.
-6. A scale for a high-resolution screen. Now one point is one pixel.
-7. An app launcher and a settings UI.
-8. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
+5. Clip a view to its frame, and a border along a shape. The renderer fills an outline. It does not draw a line along one.
+6. An image in the UI (an icon file), as a display item.
+7. A scale for a high-resolution screen. Now one point is one pixel.
+8. An app launcher and a settings UI.
+9. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
 
 ## The system
 
-- The clock in the image is UTC, because the image has no `/etc/localtime`. The panel has the UTC time in it. Add a time zone, or a setting for it.
 - Root has no password. Add a user account and a password for use outside a VM.
 - Start the compositor at login, or with a display manager, as a normal user through logind.
 - `make gui` gives a text login on tty1. The compositor does not start on tty1 automatically.

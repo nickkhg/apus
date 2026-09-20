@@ -54,6 +54,9 @@ let package = Package(
         // Write your UI here.
         .target(name: "Shell", dependencies: ["Toolkit", "Render"]),
 
+        // How long a frame takes: swift run -c release toolkit-bench
+        .executableTarget(name: "toolkit-bench", dependencies: ["Shell", "Toolkit", "Render"]),
+
         .testTarget(name: "ToolkitTests", dependencies: ["Toolkit", "Render"]),
         .testTarget(name: "ShellTests", dependencies: ["Shell", "Toolkit", "Render"]),
     ]

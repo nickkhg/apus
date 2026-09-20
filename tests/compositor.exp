@@ -46,8 +46,28 @@ after 1000
 if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/screen.ppm \
         128,80=2B2340 2,14=1B1626 12,4-100,24!1B1626 150,4-500,24!1B1626 \
         576,360=3070F0 444,268=FFFFFF 444,254=2B2340 \
+        564,730-716,774!2B2340 570,740-571,741!4C8DF6 \
         640,400=000000 641,402=FFFFFF} result]} {
     fail "screenshot check: $result"
+}
+send_user "\n$result\n"
+
+# The dock icons react to the pointer. The first icon is at 564,730 to
+# 608,774. The pointer goes on it, below and right of the checked pixel, so
+# that the pointer image does not cover the pixel. The icon then has its full
+# colour (4C8DF6), and not the colour that it has at rest.
+if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/hover.ppm \
+        --pointer 600,760 570,740=4C8DF6} result]} {
+    fail "hover check: $result"
+}
+send_user "\n$result\n"
+
+# The pointer leaves the icon. The icon gets its colour at rest again, and the
+# compositor keeps running: a handler that asks for a new frame must not bring
+# the compositor back into the same handler.
+if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/leave.ppm \
+        --pointer 300,400 570,740-571,741!4C8DF6 564,730-716,774!2B2340} result]} {
+    fail "hover leave check: $result"
 }
 send_user "\n$result\n"
 

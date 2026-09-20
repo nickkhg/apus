@@ -131,12 +131,23 @@ The only platform-dependent code is in `FontCache.swift`: which directory the fo
 | View | Purpose |
 |---|---|
 | `Color` | A colour, and a view that fills its space |
-| `Rectangle` | A rectangle in the foreground colour |
 | `Text` | One line of text |
 | `Spacer` | Space that grows |
 | `Divider` | A line across a stack |
 | `VStack`, `HStack`, `ZStack` | Children in a column, in a row, or on top of each other |
 | `ForEach`, `Group`, `AnyView`, `EmptyView` | Containers |
+
+| Shape | Purpose |
+|---|---|
+| `Rectangle` | A rectangle. It draws as a plain fill. |
+| `RoundedRectangle(cornerRadius:)` | A rectangle with round corners |
+| `Circle` | A circle in the middle of the space, as large as the shorter side |
+| `Ellipse` | An oval that fills the space |
+| `Capsule` | A rectangle with half-circle ends |
+
+A shape takes the foreground colour, or the colour of `fill(_:)`. The renderer
+draws the outline with smooth edges. To make a shape of your own, write a
+`struct` that conforms to `Shape` and give it a `path(in:)` method.
 
 | Modifier | Purpose |
 |---|---|
@@ -145,11 +156,76 @@ The only platform-dependent code is in `FontCache.swift`: which directory the fo
 | `.padding(_:)`, `.padding(_ edges:_:)` | Space around the view |
 | `.background(_:)` | A view behind this one, with the same frame |
 | `.offset(x:y:)` | Moves the view after the layout |
+| `.aspectRatio(_:contentMode:)`, `.scaledToFit()`, `.scaledToFill()` | Keeps the proportions |
 | `.foregroundColor(_:)`, `.font(_:)` | The colour and the font for the views inside |
+| `.onHover { isOver in ... }` | Called when the pointer comes over the view and when it leaves |
 
 A `body` uses `if`, `if`/`else`, `switch`, and `for` loops, as SwiftUI does.
 
 `.foregroundColor(_:)` and `.font(_:)` set values that flow down the tree. Each view uses the value of the nearest modifier above it.
+
+## State
+
+A view is a value, and the toolkit makes the view tree again for each frame.
+A value in a view thus cannot survive a frame. `@State` keeps the value
+outside the view and connects it to the new view at the start of each frame.
+A change to a state value asks for a new frame.
+
+```swift
+struct DockIcon: View {
+    let item: DockItem
+    @State private var isHovered = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 12)
+            .fill(isHovered ? item.color : item.color.opacity(0.7))
+            .frame(width: 44, height: 44)
+            .onHover { isHovered = $0 }
+    }
+}
+```
+
+`$isHovered` gives a `Binding`, for a view that must change a value that
+another view owns:
+
+```swift
+struct Row: View {
+    @Binding var isOn: Bool
+}
+```
+
+The name of a state value is the position of its view in the tree: the type
+of the view, the number of views of that type before it in the same parent,
+and the path from the root. `ForEach` adds the identity of the element, and
+the two branches of an `if` are different places. Thus:
+
+- A view that moves to another position gets the state of that position.
+- A view that goes away loses its state.
+- A row keeps its state when the rows change order, if `ForEach` knows the
+  identity of the elements.
+
+Only a view with a `body` can have state. A view that draws itself
+(`Body == Never`) cannot.
+
+`ViewState` holds the values, and `ViewHost` holds a `ViewState`. The
+compositor keeps one host for the shell, so the values live as long as the
+compositor. A test can give `ViewRenderer.render` a `ViewState` of its own.
+
+## The pointer
+
+`ViewHost` sends the pointer to the views:
+
+```swift
+let host = ViewHost()
+host.needsUpdate = { screen.setNeedsFrame() }
+let items = host.displayList(for: RootView(state: shell), in: screenRect)
+host.pointerMoved(to: x, y: y)
+```
+
+The host calls `onHover` when the pointer comes over a view, and again when
+it leaves. It calls the handler one time for each change, not for each
+movement of the pointer. A view under another view also hears the pointer,
+because a view tree has no window order.
 
 ## Text
 
@@ -172,7 +248,7 @@ A view of the interface goes in `ui/Toolkit/Sources/Shell/`. A view that every U
 
 ## Tests
 
-`make test-ui` runs the unit tests on the Mac, and `make test-ui-linux` runs the same tests on mydistro. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, and the text. `ui/Toolkit/Tests/ShellTests/` tests the panel.
+`make test-ui` runs the 67 unit tests on the Mac, and `make test-ui-linux` runs the same tests on mydistro. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, and the text. `ui/Toolkit/Tests/ShellTests/` tests the panel.
 
 A test lays out a view in a rectangle and looks at the display list. For example, this is the test of a spacer:
 
@@ -188,10 +264,32 @@ let items = fills(view, width: 100, height: 10)
 
 `tests/compositor.exp` also checks the panel on the screen of the VM.
 
+## Speed
+
+`make bench` draws the shell into memory and gives the time of one frame.
+On a Mac (M-series, 1280 × 800):
+
+| Step | Time |
+|---|---|
+| Lay out the views and make the display list | 0.28 ms |
+| Draw the items | 0.08 ms |
+| A complete frame | 0.36 ms |
+
+The compositor draws a frame only when something changes, so this is the cost
+of a change, not of a second. In the VM the same work is slower, because Mesa
+draws with the CPU.
+
+Use `make bench` after a change that touches the layout or the renderer. A
+frame that becomes 10 times slower is usually a layout error: a view that
+takes the whole screen makes the renderer fill the whole screen.
+
 ## Limits
 
-- There is no `@State` and there is no automatic update. The compositor makes the view again for each frame, and it asks for a frame when something changes.
 - `Text` does not wrap and does not cut a long line.
-- There are no rounded corners, no images, and no shadows. The display list has fills and bitmaps only.
-- Views do not get input. The compositor sends input to the window under the pointer.
+- There are no images and no shadows, and a shape has no border: the renderer
+  fills an outline, it does not draw a line along one.
+- Only the pointer reaches the views, and only as `onHover`. There is no
+  click, no keyboard and no focus.
+- A view cannot draw outside its frame, and nothing clips a view to its
+  frame.
 - One point is one pixel. There is no scale for a high-resolution screen.

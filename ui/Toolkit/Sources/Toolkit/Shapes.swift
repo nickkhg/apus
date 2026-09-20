@@ -1,9 +1,17 @@
 import Render
 
 /// A rectangle that fills its space with the foreground colour.
-public struct Rectangle: View {
-    public typealias Body = Never
+///
+/// It is a Shape, so `fill(_:)` works on it. It draws as a plain fill and not
+/// as a path, because a rectangle needs no smooth edges.
+public struct Rectangle: Shape {
     public init() {}
+
+    public func path(in frame: Frame) -> Path {
+        var path = Path()
+        path.addRectangle(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
+        return path
+    }
 
     public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
         nodes.append(FillNode(color: environment.foregroundColor))

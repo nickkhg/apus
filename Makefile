@@ -4,6 +4,9 @@
 IMAGE     := mydistro-builder
 VOL_WORK  := mydistro-work
 VOL_PKG   := mydistro-pkgcache
+# The time zone of the image. The compositor shows this time in the panel.
+# Change it here, or with `timedatectl set-timezone` on a running system.
+TIMEZONE  ?= Europe/London
 CPUS      ?= 8
 MEM       ?= 8g
 
@@ -43,12 +46,13 @@ export PATH := /usr/local/bin:/opt/homebrew/bin:$(PATH)
 # container as on the Mac, so compiler messages point to files that Xcode and
 # other editors can open.
 RUN = container run --rm --cap-add ALL -c $(CPUS) -m $(MEM) \
+	-e TIMEZONE=$(TIMEZONE) \
 	-v $(CURDIR):$(CURDIR) \
 	-v $(VOL_WORK):/work \
 	-v $(VOL_PKG):/var/cache/pacman/pkg \
 	-w $(CURDIR)
 
-.PHONY: help builder volumes build sdk ui ui-container protocols shell live installed gui demo demo-dev test test-dev test-ui test-ui-linux clean distclean
+.PHONY: help builder volumes build sdk ui ui-container protocols shell live installed gui demo demo-dev test test-dev test-ui test-ui-linux bench clean distclean
 
 help:
 	@echo "make build      build out/live.img"
@@ -63,6 +67,7 @@ help:
 	@echo "make test       install, display and compositor tests"
 	@echo "make test-ui    unit tests of the toolkit and the shell, on the Mac (seconds)"
 	@echo "make test-ui-linux  the same tests in the builder container"
+	@echo "make bench      how long one frame of the shell takes"
 	@echo "make test-dev   the compositor test, with the programs from 'make ui'"
 	@echo "make shell      root shell in the build container"
 	@echo "make clean      remove build output (keeps package cache)"
@@ -136,6 +141,10 @@ ui-container: builder volumes
 # builds for macOS. A run takes a few seconds.
 test-ui: $(SWIFT_MAC)/usr/bin/swift
 	$(SWIFT_MAC)/usr/bin/swift test --package-path ui/Toolkit
+
+# How long one frame of the shell takes, on the Mac.
+bench: $(SWIFT_MAC)/usr/bin/swift
+	$(SWIFT_MAC)/usr/bin/swift run -c release --package-path ui/Toolkit toolkit-bench
 
 # The same tests on mydistro itself (aarch64 Linux), in the builder container.
 test-ui-linux: builder volumes

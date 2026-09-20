@@ -41,7 +41,7 @@ final class TextNode: LayoutNode {
         Size(width: shaped.width.rounded(.up), height: shaped.height.rounded(.up))
     }
 
-    override func render(in frame: Frame, into list: inout DisplayList) {
+    override func render(in frame: Frame, into pass: inout RenderPass) {
         guard !shaped.glyphs.isEmpty, color.alpha > 0 else { return }
         let width = Int(shaped.width.rounded(.up))
         let height = Int(shaped.height.rounded(.up))
@@ -57,7 +57,7 @@ final class TextNode: LayoutNode {
         let bitmap = Bitmap(width: width, height: height, isOpaque: false, pixels: pixels)
         // The text sits at the top-left of its frame; a frame or a stack has
         // already put the frame where the alignment wants it.
-        list.append(.bitmap(bitmap, x: Int(frame.x.rounded()), y: Int(frame.y.rounded())))
+        pass.list.append(.bitmap(bitmap, x: Int(frame.x.rounded()), y: Int(frame.y.rounded())))
     }
 
     /// Multiplies the glyph's coverage by the colour and puts it in the image.

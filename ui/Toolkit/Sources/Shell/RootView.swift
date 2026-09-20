@@ -35,9 +35,9 @@ public struct RootView: View {
         VStack(spacing: 0) {
             Panel(state: state)
                 .frame(height: Panel.height)
-            Spacer()
+            Spacer()            // the windows are behind this space
             DockView()
-                .frame(height: 80)
+                .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

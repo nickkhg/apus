@@ -69,3 +69,53 @@ struct PanelTests {
         #expect(texts(items(ShellState(windowTitles: [""], clock: "14:05"))).count == 2)
     }
 }
+
+@Suite("Dock")
+struct DockTests {
+    private let screen = Rect(x: 0, y: 0, width: 1280, height: 800)
+
+    /// The paths of a view, with the size of each one.
+    private func paths(_ view: some View) -> [(width: Double, height: Double)] {
+        ViewRenderer.displayList(for: view, in: screen).compactMap { item in
+            guard case .path(let path, _) = item else { return nil }
+            var xs: [Double] = []
+            var ys: [Double] = []
+            for element in path.elements {
+                switch element {
+                case .move(let x, let y), .line(let x, let y): xs.append(x); ys.append(y)
+                case .quadratic(_, _, let x, let y): xs.append(x); ys.append(y)
+                case .cubic(_, _, _, _, let x, let y): xs.append(x); ys.append(y)
+                case .close: break
+                }
+            }
+            return ((xs.max() ?? 0) - (xs.min() ?? 0), (ys.max() ?? 0) - (ys.min() ?? 0))
+        }
+    }
+
+    @Test("The dock is as large as its icons, not as large as the screen")
+    func dockKeepsItsSize() {
+        let shapes = paths(DockView())
+        // One background and three icons.
+        #expect(shapes.count == 4)
+        for icon in shapes.dropFirst() {
+            #expect(icon == (width: 44, height: 44))
+        }
+        let background = shapes[0]
+        #expect(background.width == 44 * 3 + 10 * 2 + 20)
+        #expect(background.height == 44 + 20)
+    }
+
+    @Test("The dock is at the bottom of the screen, under the panel")
+    func dockIsAtTheBottom() {
+        let list = ViewRenderer.displayList(for: RootView(state: ShellState(clock: "14:05")),
+                                            in: screen)
+        var lowest = 0.0
+        for item in list {
+            guard case .path(let path, _) = item else { continue }
+            for element in path.elements {
+                if case .line(_, let y) = element { lowest = max(lowest, y) }
+            }
+        }
+        #expect(lowest > 700 && lowest <= 800 - 16)
+    }
+}

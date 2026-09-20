@@ -34,6 +34,8 @@ public final class Compositor {
     private var running = true
     /// What the shell shows. The clock updates it every minute.
     private var shell = ShellState()
+    /// The shell's view tree: its `@State` values and the pointer.
+    private let host = ViewHost()
 
     public var socketName: String { server.socketName }
     public var screenSize: (width: Int, height: Int) { (screen.width, screen.height) }
@@ -64,6 +66,7 @@ public final class Compositor {
             for window in windows { window.surface.sendFrameDone(time: now) }
         }
         input.handler = { [unowned self] event in handle(event) }
+        host.needsUpdate = { [unowned self] in screen.setNeedsFrame() }
         shell.clock = Compositor.clockText()
         // The clock changes once a minute. A one-second timer keeps it right
         // without a frame between minutes.
@@ -108,10 +111,11 @@ public final class Compositor {
                 list.append(.bitmap(content, x: window.x, y: window.y))
             }
         }
-        // The shell goes over the windows, and the pointer over both.
+        // The shell goes over the windows, and the pointer over both. The
+        // host keeps the state of the shell views from frame to frame.
         var state = shell
         state.windowTitles = windows.map { $0.surface.toplevel?.title ?? "" }
-        ViewRenderer.render(RootView(state: state), in: screenRect, into: &list)
+        list += host.displayList(for: RootView(state: state), in: screenRect)
         list.append(.bitmap(Cursor.bitmap, x: Int(pointer.x), y: Int(pointer.y)))
         return list
     }
@@ -180,6 +184,9 @@ public final class Compositor {
     private func movePointer(to position: (x: Double, y: Double)) {
         pointer = (min(max(position.x, 0), Double(screen.width - 1)),
                    min(max(position.y, 0), Double(screen.height - 1)))
+        // The shell views that watch the pointer hear it here. A view that
+        // changes because of it asks for a frame itself.
+        host.pointerMoved(to: pointer.x, y: pointer.y)
         screen.setNeedsFrame()
     }
 }

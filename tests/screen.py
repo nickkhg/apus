@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Screenshot the VM through the QEMU monitor and check pixel colours.
 
-    tests/screen.py MONITOR_SOCKET OUTPUT.ppm X,Y=RRGGBB X0,Y0-X1,Y1!RRGGBB...
+    tests/screen.py MONITOR_SOCKET OUTPUT.ppm [--pointer X,Y] X,Y=RRGGBB ...
 
 X and Y are pixels, or fractions of the screen size when they contain a
 dot (0.5,0.5 is the centre).
@@ -10,12 +10,44 @@ dot (0.5,0.5 is the centre).
     X0,Y0-X1,Y1!RRGGBB    this area has at least one pixel of another colour
                           (for example text drawn over a background)
 
+--pointer X,Y moves the pointer of the VM to that pixel first, and waits for
+the compositor to draw again. The VM needs an absolute pointer device
+(virtio-tablet, which VM_GPU=headless and VM_GPU=window add).
+
 Exits non-zero if any check fails.
 """
+import json
 import os
 import socket
 import sys
 import time
+
+def qmp(sock_path, command):
+    """Runs one QMP command and gives the answer."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.connect(sock_path)
+        stream = s.makefile("rw")
+        stream.readline()                       # the greeting
+        for message in ({"execute": "qmp_capabilities"}, command):
+            stream.write(json.dumps(message) + "\n")
+            stream.flush()
+            answer = stream.readline()
+        return answer
+
+
+def move_pointer(sock_path, x, y, width, height):
+    """Moves the pointer of the VM. The tablet is an absolute device, and
+    QEMU wants its coordinates from 0 to 32767 over the whole screen.
+
+    The QEMU monitor has `mouse_move`, but it sends relative motion, which an
+    absolute device does not get. QMP sends absolute events."""
+    qmp_path = os.path.join(os.path.dirname(sock_path), "qmp.sock")
+    qmp(qmp_path, {"execute": "input-send-event", "arguments": {"events": [
+        {"type": "abs", "data": {"axis": "x", "value": int(x * 32767 / width)}},
+        {"type": "abs", "data": {"axis": "y", "value": int(y * 32767 / height)}},
+    ]}})
+    time.sleep(1.0)  # the compositor draws the next frame
+
 
 def screendump(sock_path, out_path):
     if os.path.exists(out_path):
@@ -89,8 +121,18 @@ def differing(pixels, width, area, colour):
 
 def main():
     sock_path, out_path, specs = sys.argv[1], sys.argv[2], sys.argv[3:]
+    pointer = None
+    if specs and specs[0] == "--pointer":
+        pointer = specs[1]
+        specs = specs[2:]
     screendump(sock_path, out_path)
     width, height, pixels = read_ppm(out_path)
+    if pointer:
+        x, y = pointer.split(",")
+        move_pointer(sock_path, coordinate(x, width), coordinate(y, height), width, height)
+        screendump(sock_path, out_path)
+        width, height, pixels = read_ppm(out_path)
+        print(f"pointer at {pointer}")
     print(f"screenshot {width}x{height}")
     failed = False
     for spec in specs:

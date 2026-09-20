@@ -20,7 +20,7 @@ The variable `VM_GPU` selects the display:
 |---|---|
 | Not set | No display device. Serial console only. |
 | `window` | virtio-gpu in a macOS window, with a keyboard and a tablet (mouse) |
-| `headless` | virtio-gpu with no window. The QEMU monitor is on `out/vm/monitor.sock`. |
+| `headless` | virtio-gpu with no window, and the same keyboard and tablet as `window`. The QEMU monitor is on `out/vm/monitor.sock`, and QMP is on `out/vm/qmp.sock`. |
 
 The serial console is always in the terminal. To stop QEMU, push Ctrl-A in the terminal, then push X. In a window, QEMU holds the mouse. Push Control+Option+G to release it.
 
@@ -89,8 +89,12 @@ The programs print these markers:
 `tests/screen.py` gets a screenshot through the QEMU monitor (`screendump`) and checks pixel colours:
 
 ```sh
-tests/screen.py out/vm/monitor.sock out/vm/screen.ppm X,Y=RRGGBB X0,Y0-X1,Y1!RRGGBB...
+tests/screen.py out/vm/monitor.sock out/vm/screen.ppm [--pointer X,Y] X,Y=RRGGBB ...
 ```
+
+`--pointer X,Y` moves the pointer of the VM to that pixel first, through the
+QEMU monitor, and waits for the compositor to draw again. The compositor
+test uses it to test that a dock icon becomes brighter under the pointer.
 
 There are two kinds of check:
 
@@ -108,6 +112,7 @@ The compositor test checks these places on the 1280×800 screen:
 | Place | Expected | What it is |
 |---|---|---|
 | (128, 80) | `2B2340` | The desktop background |
+| (564, 730) to (716, 774) | Not `2B2340` | The dock at the bottom of the screen |
 | (2, 14) | `1B1626` | The background of the shell panel |
 | (12, 4) to (100, 24) | Not `1B1626` | The name "mydistro" on the panel |
 | (150, 4) to (500, 24) | Not `1B1626` | The window title on the panel |
@@ -116,6 +121,7 @@ The compositor test checks these places on the 1280×800 screen:
 | (444, 254) | `2B2340` | Over the window: the panel moved the window down |
 | (640, 400) | `000000` | The outline of the pointer |
 | (641, 402) | `FFFFFF` | The inside of the pointer |
+| (570, 740) | `4C8DF6` | The first dock icon, after the pointer goes on it |
 
 ## After a change
 

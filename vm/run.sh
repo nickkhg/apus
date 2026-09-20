@@ -7,7 +7,8 @@
 # VM_GPU selects the display:
 #   (unset)    no display device; serial console only
 #   window     virtio-gpu in a macOS window, plus keyboard and tablet (mouse)
-#   headless   virtio-gpu with no window; `screendump` on out/vm/monitor.sock
+#   headless   virtio-gpu with no window, plus keyboard and tablet;
+#              `screendump` on out/vm/monitor.sock, input events on out/vm/qmp.sock
 #              saves the screen (used by tests/display.exp)
 #
 # The serial console is always on stdio. Quit QEMU with Ctrl-A X.
@@ -42,9 +43,13 @@ case "${VM_GPU:-}" in
         set -- "$@" -serial mon:stdio -display cocoa \
             -device virtio-gpu-pci -device virtio-keyboard-pci -device virtio-tablet-pci ;;
     headless)
-        rm -f out/vm/monitor.sock
-        set -- "$@" -serial mon:stdio -display none -device virtio-gpu-pci \
-            -monitor unix:out/vm/monitor.sock,server,nowait ;;
+        rm -f out/vm/monitor.sock out/vm/qmp.sock
+        # The same devices as in a window, so that a test can move the
+        # pointer. QMP sends the input events; the monitor makes screenshots.
+        set -- "$@" -serial mon:stdio -display none \
+            -device virtio-gpu-pci -device virtio-keyboard-pci -device virtio-tablet-pci \
+            -monitor unix:out/vm/monitor.sock,server,nowait \
+            -qmp unix:out/vm/qmp.sock,server,nowait ;;
     *) echo "VM_GPU must be empty, 'window' or 'headless'" >&2; exit 2 ;;
 esac
 

@@ -27,7 +27,7 @@ open class LayoutNode {
     }
 
     /// Subclasses add their drawing items here. `frame` is in screen points.
-    open func render(in frame: Frame, into list: inout DisplayList) {}
+    open func render(in frame: Frame, into pass: inout RenderPass) {}
 }
 
 /// A node that draws nothing and takes no space.
@@ -54,18 +54,18 @@ final class FillNode: LayoutNode {
         return max(0, proposed)
     }
 
-    override func render(in frame: Frame, into list: inout DisplayList) {
+    override func render(in frame: Frame, into pass: inout RenderPass) {
         guard color.alpha > 0 else { return }
         let rect = frame.pixels
         guard rect.width > 0, rect.height > 0 else { return }
         if color.isOpaque {
-            list.append(.fill(rect, color: color.packed))
+            pass.list.append(.fill(rect, color: color.packed))
         } else {
             // The renderer blends bitmaps, not fills, so a translucent
             // colour becomes a one-colour bitmap.
             let pixels = [UInt32](repeating: color.premultiplied, count: rect.width * rect.height)
             let bitmap = Bitmap(width: rect.width, height: rect.height, isOpaque: false, pixels: pixels)
-            list.append(.bitmap(bitmap, x: rect.x, y: rect.y))
+            pass.list.append(.bitmap(bitmap, x: rect.x, y: rect.y))
         }
     }
 }
@@ -157,7 +157,7 @@ final class StackNode: LayoutNode {
         }
     }
 
-    override func render(in frame: Frame, into list: inout DisplayList) {
+    override func render(in frame: Frame, into pass: inout RenderPass) {
         let sizes = childSizes(fitting: Proposal(frame.size))
         var main = frame.size.length(axis) == 0 ? 0.0 : startOffset(sizes: sizes, in: frame)
         for (child, size) in zip(children, sizes) {
@@ -165,7 +165,7 @@ final class StackNode: LayoutNode {
             let origin: (x: Double, y: Double) = axis == .horizontal
                 ? (frame.x + main, frame.y + across)
                 : (frame.x + across, frame.y + main)
-            child.render(in: Frame(origin: origin, size: size), into: &list)
+            child.render(in: Frame(origin: origin, size: size), into: &pass)
             main += size.length(axis) + spacing
         }
     }
@@ -226,12 +226,12 @@ final class ZStackNode: LayoutNode {
                     height: sizes.map(\.height).max() ?? 0)
     }
 
-    override func render(in frame: Frame, into list: inout DisplayList) {
+    override func render(in frame: Frame, into pass: inout RenderPass) {
         for child in children {
             let size = child.size(fitting: Proposal(frame.size))
             let offset = alignment.offset(for: size, in: frame.size)
             child.render(in: Frame(origin: (frame.x + offset.x, frame.y + offset.y), size: size),
-                         into: &list)
+                         into: &pass)
         }
     }
 }
@@ -284,11 +284,17 @@ final class FrameNode: LayoutNode {
         return Swift.max(0, value)
     }
 
-    override func render(in frame: Frame, into list: inout DisplayList) {
-        let inner = child.size(fitting: Proposal(frame.size))
-        let offset = alignment.offset(for: inner, in: frame.size)
-        child.render(in: Frame(origin: (frame.x + offset.x, frame.y + offset.y), size: inner),
-                     into: &list)
+    override func render(in frame: Frame, into pass: inout RenderPass) {
+        // Usually the parent gives this node the size that it asked for. If
+        // the space is larger, the node keeps its size and goes in the middle
+        // of it, and the child goes where the alignment says.
+        let mine = size(fitting: Proposal(frame.size))
+        let space = Alignment.center.offset(for: mine, in: frame.size)
+        let inner = child.size(fitting: Proposal(mine))
+        let offset = alignment.offset(for: inner, in: mine)
+        child.render(in: Frame(origin: (frame.x + space.x + offset.x, frame.y + space.y + offset.y),
+                               size: inner),
+                     into: &pass)
     }
 }
 
@@ -312,11 +318,11 @@ final class PaddingNode: LayoutNode {
         return Size(width: size.width + insets.horizontal, height: size.height + insets.vertical)
     }
 
-    override func render(in frame: Frame, into list: inout DisplayList) {
+    override func render(in frame: Frame, into pass: inout RenderPass) {
         let size = Size(width: max(0, frame.width - insets.horizontal),
                         height: max(0, frame.height - insets.vertical))
         child.render(in: Frame(origin: (frame.x + insets.leading, frame.y + insets.top), size: size),
-                     into: &list)
+                     into: &pass)
     }
 }
 
@@ -334,9 +340,9 @@ final class BackgroundNode: LayoutNode {
         child.size(fitting: proposal)
     }
 
-    override func render(in frame: Frame, into list: inout DisplayList) {
-        background.render(in: frame, into: &list)
-        child.render(in: frame, into: &list)
+    override func render(in frame: Frame, into pass: inout RenderPass) {
+        background.render(in: frame, into: &pass)
+        child.render(in: frame, into: &pass)
     }
 }
 
@@ -356,8 +362,8 @@ final class OffsetNode: LayoutNode {
         child.size(fitting: proposal)
     }
 
-    override func render(in frame: Frame, into list: inout DisplayList) {
+    override func render(in frame: Frame, into pass: inout RenderPass) {
         child.render(in: Frame(x: frame.x + dx, y: frame.y + dy, width: frame.width, height: frame.height),
-                     into: &list)
+                     into: &pass)
     }
 }

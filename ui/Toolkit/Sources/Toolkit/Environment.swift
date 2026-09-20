@@ -5,6 +5,10 @@ public struct EnvironmentValues: Sendable {
     public var foregroundColor: Color = .white
     public var font: Font = .body
 
+    /// Where the `@State` values of the view tree are. The renderer puts it
+    /// here, so that a view needs no global. See State.swift.
+    var viewState: ViewState?
+
     public init() {}
 }
 

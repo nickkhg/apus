@@ -33,6 +33,9 @@ public enum DisplayItem {
     case fill(Rect, color: UInt32)
     /// A bitmap with its top-left corner at (x, y).
     case bitmap(Bitmap, x: Int, y: Int)
+    /// An outline filled with a colour, 0xAARRGGBB with the colour
+    /// multiplied by alpha. The edges are smooth.
+    case path(Path, color: UInt32)
 }
 
 public typealias DisplayList = [DisplayItem]
@@ -58,6 +61,8 @@ public enum SoftwareRenderer {
                 fill(rect, color: color, canvas)
             case .bitmap(let bitmap, let x, let y):
                 draw(bitmap, x: x, y: y, canvas)
+            case .path(let path, let color):
+                fill(path, color: color, canvas)
             }
         }
     }
@@ -90,6 +95,137 @@ public enum SoftwareRenderer {
                 }
             }
         }
+    }
+
+    // MARK: - Paths
+
+    /// Fills a path with the non-zero winding rule. Each pixel row is
+    /// sampled on 4 lines, and the ends of a span add a part of a pixel, so
+    /// the edges are smooth.
+    ///
+    /// The coverage of a row is in memory that this function owns, not in an
+    /// array: an array checks its bounds and its owner for each pixel, and
+    /// that is most of the work in the inner loop.
+    private static func fill(_ path: Path, color: UInt32, _ canvas: Canvas) {
+        let segments = path.segments().filter { $0.y0 != $0.y1 }
+        guard !segments.isEmpty else { return }
+
+        var minimum = (x: segments[0].x0, y: segments[0].y0)
+        var maximum = minimum
+        for segment in segments {
+            minimum = (min(minimum.x, segment.x0, segment.x1), min(minimum.y, segment.y0, segment.y1))
+            maximum = (max(maximum.x, segment.x0, segment.x1), max(maximum.y, segment.y0, segment.y1))
+        }
+        let top = max(0, Int(minimum.y.rounded(.down)))
+        let bottom = min(canvas.height, Int(maximum.y.rounded(.up)) + 1)
+        let left = max(0, Int(minimum.x.rounded(.down)))
+        let right = min(canvas.width, Int(maximum.x.rounded(.up)) + 1)
+        guard top < bottom, left < right else { return }
+
+        let samples = 4
+        let share = 1.0 / Double(samples)
+        let width = right - left
+        let coverage = UnsafeMutablePointer<Double>.allocate(capacity: width)
+        defer { coverage.deallocate() }
+        // The crossings of one sample line. There are never more of them
+        // than there are edges, so the memory is allocated one time.
+        let crossings = UnsafeMutablePointer<Crossing>.allocate(capacity: segments.count)
+        defer { crossings.deallocate() }
+
+        segments.withUnsafeBufferPointer { segments in
+            for row in top..<bottom {
+                coverage.update(repeating: 0, count: width)
+                for sample in 0..<samples {
+                    let y = Double(row) + (Double(sample) + 0.5) * share
+                    var count = 0
+                    for segment in segments {
+                        let rising = segment.y1 > segment.y0
+                        let low = rising ? segment.y0 : segment.y1
+                        let high = rising ? segment.y1 : segment.y0
+                        guard y >= low, y < high else { continue }
+                        let t = (y - segment.y0) / (segment.y1 - segment.y0)
+                        crossings[count] = Crossing(x: segment.x0 + t * (segment.x1 - segment.x0),
+                                                    direction: rising ? 1 : -1)
+                        count += 1
+                    }
+                    guard count > 1 else { continue }
+                    sort(crossings, count: count)
+                    var winding = 0
+                    for index in 0..<(count - 1) {
+                        winding += crossings[index].direction
+                        guard winding != 0 else { continue }
+                        add(from: crossings[index].x, to: crossings[index + 1].x,
+                            share: share, left: left, width: width, into: coverage)
+                    }
+                }
+                write(coverage, width: width, color: color, row: row, left: left, canvas)
+            }
+        }
+    }
+
+    /// Where a sample line crosses an edge, and whether the edge goes down.
+    private struct Crossing {
+        let x: Double
+        let direction: Int
+    }
+
+    /// Puts the crossings in order from left to right. A sample line crosses
+    /// a shape two or four times, so a simple sort is the fastest one.
+    @inline(__always)
+    private static func sort(_ crossings: UnsafeMutablePointer<Crossing>, count: Int) {
+        for index in 1..<count {
+            let crossing = crossings[index]
+            var position = index - 1
+            while position >= 0, crossings[position].x > crossing.x {
+                crossings[position + 1] = crossings[position]
+                position -= 1
+            }
+            crossings[position + 1] = crossing
+        }
+    }
+
+    /// Adds the coverage of one span of one sample line. A pixel at the end
+    /// of the span gets the part of it that the span covers.
+    @inline(__always)
+    private static func add(from start: Double, to end: Double, share: Double,
+                            left: Int, width: Int, into coverage: UnsafeMutablePointer<Double>) {
+        let first = max(start, Double(left))
+        let last = min(end, Double(left + width))
+        guard first < last else { return }
+
+        let firstPixel = Int(first.rounded(.down))
+        let lastPixel = Int((last - 1e-9).rounded(.down))
+        if firstPixel == lastPixel {
+            coverage[firstPixel - left] += (last - first) * share
+            return
+        }
+        // The first and the last pixel get a part. Every pixel between them
+        // is completely inside the span.
+        coverage[firstPixel - left] += (Double(firstPixel + 1) - first) * share
+        if firstPixel + 1 < lastPixel {
+            for pixel in (firstPixel + 1)..<lastPixel { coverage[pixel - left] += share }
+        }
+        coverage[lastPixel - left] += (last - Double(lastPixel)) * share
+    }
+
+    private static func write(_ coverage: UnsafeMutablePointer<Double>, width: Int,
+                              color: UInt32, row: Int, left: Int, _ canvas: Canvas) {
+        let line = canvas.pixels + row * canvas.stride + left
+        for index in 0..<width {
+            let amount = coverage[index]
+            guard amount > 0.002 else { continue }
+            line[index] = blend(scale(color, by: min(amount, 1)), over: line[index])
+        }
+    }
+
+    /// Multiplies a premultiplied colour by a part, for partial coverage.
+    @inline(__always)
+    private static func scale(_ color: UInt32, by part: Double) -> UInt32 {
+        guard part < 1 else { return color }
+        let amount = UInt32((part * 255).rounded())
+        let rb = (((color & 0x00FF00FF) * amount) >> 8) & 0x00FF00FF
+        let ag = ((((color >> 8) & 0x00FF00FF) * amount) >> 8) << 8 & 0xFF00FF00
+        return rb | ag
     }
 
     /// Source-over for premultiplied alpha: out = src + dst × (1 − αsrc).
