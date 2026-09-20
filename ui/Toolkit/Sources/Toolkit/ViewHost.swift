@@ -36,6 +36,9 @@ public final class ViewHost {
     private var isSendingEvents = false
     /// A handler asked for a frame. One frame is enough for all of them.
     private var missedUpdate = false
+    /// True while the view tree is being laid out. A value that changes then
+    /// must not bring the owner back here.
+    private var isRendering = false
 
     public init() {
         state.needsUpdate = { [unowned self] in requestUpdate() }
@@ -46,12 +49,23 @@ public final class ViewHost {
     /// `rect` is in points, and `scale` says how many pixels there are to a
     /// point. The pointer positions that this host takes are in points too.
     public func displayList(for view: some View, in rect: Rect, scale: Double = 1) -> DisplayList {
+        // A view may set a state value while it is being laid out: an
+        // animated value gives itself a target that way. That asks for a
+        // frame, and the owner draws at once when it is asked, so without
+        // this the renderer would start again in the middle of a pass and
+        // lose its place in the tree.
+        isRendering = true
         let pass = ViewRenderer.render(view, in: rect, state: state, scale: scale, now: now)
+        isRendering = false
         hoverRegions = pass.hoverRegions
         tapRegions = pass.tapRegions
         keyRegions = pass.keyRegions
-        // A move that has not arrived needs the next frame to carry it on.
-        if state.isMoving { requestUpdate() }
+        // A move that has not arrived needs the next frame to carry it on,
+        // and so does a value that changed while the tree was laid out.
+        if state.isMoving || missedUpdate {
+            missedUpdate = false
+            needsUpdate()
+        }
         // The frames moved, so the pointer can now be over other views.
         if let pointer { updateHover(at: pointer) }
         return pass.list
@@ -171,7 +185,7 @@ public final class ViewHost {
     // MARK: - Frames
 
     private func requestUpdate() {
-        if isSendingEvents {
+        if isSendingEvents || isRendering {
             missedUpdate = true
         } else {
             needsUpdate()

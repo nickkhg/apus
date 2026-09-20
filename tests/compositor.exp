@@ -120,6 +120,10 @@ act --pointer 1200,740
 # The Super key opens Summon. The surface is 720 wide and in the middle, so
 # it covers the middle of the screen, and what is under it is dimmed.
 act --key super
+# Summon comes in over 160 ms, so the screen is read after it arrives. The
+# pixels of a picture are checked, and a picture of a move is not a picture
+# of the design.
+after 500
 # The surface is 720 wide and in the middle of the screen, so x 280 to 1000.
 # A point to the left of it shows the desktop with the dim layer over it.
 screen summon 640,120=12161A 150,400=020203
@@ -180,6 +184,34 @@ after 1000
 # tile is 256 wide at x 1016, and 256 tall from y 8.
 screen open-hello 400,400=3070F0 84,44=FFFFFF \
     1100,200=14111E 1040,24-1250,44!14111E
+
+# The terminal comes back to the front. Hello named a smallest size of
+# 600 x 400, so it cannot use a tile of 256: the band holds a square cell
+# for it and the shell draws a stand-in card there, while the window itself
+# waits in the rail and draws nothing.
+act_start --key super --type "terminal" --key enter
+expect {
+    -re {WINDOW-IN-RAIL "Hello from Swift"} {}
+    timeout { fail "the window that cannot fit a tile did not go to the rail" }
+}
+act_done
+after 1000
+# The card is in the first cell of the band: 256 wide at x 1016, 256 tall
+# from y 8. Its background is the colour of an empty cell, and its head
+# names the app.
+screen stand-in 1100,200=0E1114 1040,24-1250,44!0E1114
+
+# Hello comes back to the front, so that it has a cell again and the step
+# below closes it and not the terminal.
+act_start --key super --type "hello" --key enter
+# Hello kept the size it had before it went to the rail, so it is the
+# terminal that moves: out of the large cell and back into a tile.
+expect {
+    -re {WINDOW-CONFIGURED "[^"]*" 256x256 was 920x744} {}
+    timeout { fail "the window in the rail did not come back to the large cell" }
+}
+act_done
+after 1000
 
 # A command of Summon closes the window in front. The window of the terminal
 # is then in front again, and it gets the keys again.

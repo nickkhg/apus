@@ -166,6 +166,7 @@ These rules apply:
 ## Current limits
 
 - Apps get no pointer input. The seat has a keyboard only.
+- A second compositor cannot start at once after the first one stops. `COMPOSITOR-EXIT` goes on the console before the process ends, and the screen and the DRM device go back after that. A compositor that starts inside that window fails to become DRM master, with `drmModeSetCrtc: Permission denied`. Wait for the process to end, not for the line.
 - A person cannot move a window or change its size by hand. The layout owns every frame, and Summon or the rail chooses which window is in front.
 - The compositor draws the full screen for each frame. It ignores damage.
 - Apps can use only `wl_shm` buffers, not GPU buffers (`linux-dmabuf`).

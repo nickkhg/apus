@@ -27,6 +27,11 @@ final class Client {
     var width = 400
     var height = 300
     var sizeIsFixed = false
+    /// The smallest size that this window accepts. A layout reads it as the
+    /// answer to a proposal, so a window with a minimum larger than a tile
+    /// can never be a tile. This is how a foreign app behaves, and the test
+    /// needs one.
+    var minimum = (width: 600, height: 400)
     /// How many pixels of the buffer make one point. wl_output says it. The
     /// window keeps its size in points and draws that many times more
     /// pixels, so that it is sharp on a screen with small pixels.
@@ -66,13 +71,22 @@ while let argument = arguments.popFirst() {
     case "--seconds":
         guard let seconds = arguments.popFirst().flatMap(UInt32.init) else { fail("--seconds needs a number") }
         alarm(seconds)   // SIGALRM ends the process
+    case "--min-size":
+        let text = arguments.popFirst() ?? ""
+        if text == "none" {
+            client.minimum = (0, 0)
+        } else {
+            let parts = text.split(separator: "x").compactMap { Int($0) }
+            guard parts.count == 2 else { fail("--min-size needs WxH or none") }
+            client.minimum = (parts[0], parts[1])
+        }
     case "--size":
         let parts = (arguments.popFirst() ?? "").split(separator: "x").compactMap { Int($0) }
         guard parts.count == 2 else { fail("--size needs WxH") }
         (client.width, client.height) = (parts[0], parts[1])
         client.sizeIsFixed = true
     default:
-        fail("usage: mydistro-hello-client [--seconds N] [--size WxH]")
+        fail("usage: mydistro-hello-client [--seconds N] [--size WxH] [--min-size WxH|none]")
     }
 }
 
@@ -221,6 +235,10 @@ let toplevel = xdg_surface_get_toplevel(xdgSurface)
 xdg_toplevel_add_listener(toplevel, toplevelListener, clientPointer)
 xdg_toplevel_set_title(toplevel, "Hello from Swift")
 xdg_toplevel_set_app_id(toplevel, "org.mydistro.hello")
+if client.minimum.width > 0 || client.minimum.height > 0 {
+    xdg_toplevel_set_min_size(toplevel, Int32(client.minimum.width),
+                              Int32(client.minimum.height))
+}
 wl_surface_commit(client.surface)
 
 while wl_display_dispatch(display) != -1 {}

@@ -36,7 +36,7 @@ The source of a bundle is a directory in `ui/Apps/`. The `mydistro-ui` package c
 
 | Bundle | Program | Content |
 |---|---|---|
-| `Hello.app` | `/usr/bin/mydistro-hello-client` | The test client of the compositor: one coloured window. |
+| `Hello.app` | `/usr/bin/mydistro-hello-client` | The test client of the compositor: one coloured window. It names a smallest size of 600 × 400, so no tile can hold it. The test uses it to check the card that stands in for a window with no cell. `--min-size WxH` or `--min-size none` changes that size. |
 | `Terminal.app` | `bin/mydistro-terminal` in the bundle | The terminal. |
 
 A bundle that names a program with a path in the bundle gets that program from the build. The program is then in the bundle only, and not in `/usr/bin`.

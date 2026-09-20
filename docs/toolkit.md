@@ -405,3 +405,16 @@ The compositor gives each key to the shell first, and sends it to the app only w
 ## Notices
 
 A notice is a short message from the system or from an app. It never covers the window in the large cell. It goes where a tile would go, at the end of the band, and the newest one is lowest. `Notice.Kind` is `information`, `warning` or `failure`, and each has a colour. The colour never carries the meaning on its own. The text says it too.
+
+## The two modes
+
+The shell draws in one of two modes, and `Appearance` holds what differs.
+
+| | CPU | GPU |
+| --- | --- | --- |
+| A surface stands off what is behind it with | a line of one point, and a large step in the colour | a shadow, and a smaller step |
+| The layer under Summon dims by | 0.66 | 0.5, because a blur does some of the work |
+
+Neither mode is the other one with the effects turned off. Turn the shadows off in GPU mode and the surfaces run together. That is the proof that the two sets of values are not one set.
+
+`ShellState.mode` carries the choice. The compositor makes that choice from the renderer that it has. The display list carries no shadow, no blur and no gradient yet. GPU mode therefore holds its own values and has nothing yet to draw them with.

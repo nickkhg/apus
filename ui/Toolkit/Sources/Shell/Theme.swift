@@ -17,6 +17,42 @@ public enum RenderMode: String, Sendable {
     case gpu
 }
 
+/// What differs between the two modes.
+///
+/// CPU mode separates one surface from another with a line of one point and
+/// a large step in the background colour. GPU mode has a shadow and a blur
+/// to do that work, so it holds a smaller step and drops most of the lines.
+///
+/// Neither mode is the other one with the effects turned off. Turn the
+/// shadows off in GPU mode and the surfaces run together, which is the proof
+/// that the two sets of values are not the same set.
+public struct Appearance: Equatable, Sendable {
+    public let mode: RenderMode
+
+    public init(_ mode: RenderMode) {
+        self.mode = mode
+    }
+
+    /// The line around a surface that floats. GPU mode draws a shadow there
+    /// instead, so it needs no line.
+    public var surfaceLine: Double {
+        mode == .cpu ? 1 : 0
+    }
+
+    /// How dark the layer under a surface makes what is behind it. A blur
+    /// does some of that work in GPU mode, so the layer is lighter.
+    public var dim: Double {
+        mode == .cpu ? 0.66 : 0.5
+    }
+
+    /// A surface over the canvas. CPU mode leans on the step between one
+    /// colour and the next, so its surface stays near the desktop. GPU mode
+    /// lifts the surface, because a shadow holds it off instead.
+    public var surface: Color {
+        mode == .cpu ? Palette.surface : Palette.surface.lightened(by: 0.04)
+    }
+}
+
 /// The colours of the shell.
 public enum Palette {
     /// The desktop, behind everything.

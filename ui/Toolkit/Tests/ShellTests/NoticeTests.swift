@@ -80,3 +80,76 @@ struct NoticeTests {
         #expect(empty > open)
     }
 }
+
+@Suite("The two modes")
+struct AppearanceTests {
+    @Test("A surface on a CPU has a line, and on a GPU it has none")
+    func onlyTheCPUModeDrawsALine() {
+        #expect(Appearance(.cpu).surfaceLine == 1)
+        #expect(Appearance(.gpu).surfaceLine == 0)
+    }
+
+    @Test("A blur does some of the dimming, so a GPU dims less")
+    func theGPUDimsLess() {
+        #expect(Appearance(.gpu).dim < Appearance(.cpu).dim)
+    }
+
+    @Test("A CPU holds a larger step between one surface and the next")
+    func theCPUHoldsALargerStep() {
+        let cpu = Appearance(.cpu).surface
+        let gpu = Appearance(.gpu).surface
+        func distance(_ colour: Color) -> Double {
+            abs(colour.red - Palette.desktop.red)
+                + abs(colour.green - Palette.desktop.green)
+                + abs(colour.blue - Palette.desktop.blue)
+        }
+        // The GPU surface is further from the desktop, because a shadow
+        // holds it off instead of the colour doing all the work.
+        #expect(distance(gpu) > distance(cpu))
+    }
+
+    @Test("Summon dims what is behind it by the amount that the mode says")
+    func summonFollowsTheMode() {
+        let screen = Rect(x: 0, y: 0, width: 1280, height: 800)
+
+        /// How dark the layer under Summon is, once it has arrived.
+        func dimmed(_ mode: RenderMode) -> UInt32? {
+            let state = ShellState(apps: sampleApps, mode: mode, summonIsOpen: true,
+                                   canvas: Rect(x: 72, y: 8, width: 1200, height: 784))
+            let host = ViewHost()
+            // Summon comes in, so the first frame draws nothing of the layer.
+            host.now = 0
+            _ = host.displayList(for: RootView(state: state), in: screen)
+            host.now = 1
+            let list = host.displayList(for: RootView(state: state), in: screen)
+            // The layer is a black fill across the whole screen.
+            for item in list {
+                if case .fill(let rect, let colour) = item,
+                   rect.width >= screen.width, colour >> 24 > 0, colour & 0xFFFFFF == 0 {
+                    return colour >> 24
+                }
+            }
+            return nil
+        }
+
+        guard let cpu = dimmed(.cpu), let gpu = dimmed(.gpu) else {
+            Issue.record("Summon drew no layer under it")
+            return
+        }
+        #expect(cpu > gpu)
+    }
+
+    @Test("Summon draws no layer on the frame that it opens")
+    func summonComesIn() {
+        let state = ShellState(apps: sampleApps, summonIsOpen: true,
+                               canvas: Rect(x: 72, y: 8, width: 1200, height: 784))
+        let host = ViewHost()
+        host.now = 0
+        let first = host.displayList(for: RootView(state: state),
+                                     in: Rect(x: 0, y: 0, width: 1280, height: 800))
+        host.now = 1
+        let later = host.displayList(for: RootView(state: state),
+                                     in: Rect(x: 0, y: 0, width: 1280, height: 800))
+        #expect(later.count > first.count)
+    }
+}

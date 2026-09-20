@@ -167,6 +167,9 @@ public struct SummonView: View {
     @State private var query = ""
     /// Which line Enter takes.
     @State private var selection = 0
+    /// How far Summon has arrived, from 0 to 1. It starts at 0 and the body
+    /// gives it 1, so the surface comes in rather than appearing at once.
+    @Animated(.surface) private var appeared = 0.0
 
     public init(state: ShellState, actions: ShellActions = ShellActions()) {
         self.state = state
@@ -184,14 +187,19 @@ public struct SummonView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
+        // The first frame gives the move somewhere to go. Every frame after
+        // it names the same target, which starts nothing.
+        appeared = 1
+        return VStack(spacing: 0) {
             surface
                 .frame(width: SummonMetrics.width)
                 .padding(.top, SummonMetrics.topMargin)
+                // It comes down a little as it arrives.
+                .offset(y: (appeared - 1) * 12)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(white: 0, alpha: 0.66))
+        .background(Color(white: 0, alpha: Appearance(state.mode).dim * appeared))
         // Summon is the surface in front, so it reads every key. Nothing
         // under it may read the keyboard while it is open.
         .onKey { key in
@@ -251,7 +259,7 @@ public struct SummonView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: SummonMetrics.radius)
-                .stroke(Palette.divider, lineWidth: 1)
+                .stroke(Palette.divider, lineWidth: Appearance(state.mode).surfaceLine)
         )
     }
 

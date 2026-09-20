@@ -146,3 +146,55 @@ struct AnimatedViewTests {
         #expect(asked.frames == 0)
     }
 }
+
+@Suite("A value that changes while the tree is laid out")
+struct LayoutTimeChangeTests {
+    /// A view that gives an animated value a target in its body, which is
+    /// what an animation that starts on its own does.
+    private struct Arriving: View {
+        @Animated(Animation(duration: 1, curve: .linear)) var amount = 0.0
+
+        var body: some View {
+            amount = 1
+            return Color.white.frame(width: 10 + amount * 10, height: 4)
+        }
+    }
+
+    @Test("The tree survives a value that changes while it is laid out")
+    func theTreeSurvives() {
+        // Setting a value during layout asks for a frame. The renderer must
+        // finish its pass first: it keeps the path to the view it is in, and
+        // starting again in the middle of that loses the place.
+        let host = ViewHost()
+        let box = Rect(x: 0, y: 0, width: 100, height: 20)
+        host.needsUpdate = {}
+        host.now = 0
+        _ = host.displayList(for: Arriving(), in: box)
+        host.now = 0.5
+        let middle = host.displayList(for: Arriving(), in: box)
+        host.now = 1
+        let end = host.displayList(for: Arriving(), in: box)
+
+        func width(_ list: DisplayList) -> Int? {
+            for item in list {
+                if case .fill(let rect, _) = item { return rect.width }
+            }
+            return nil
+        }
+        // The value went from 10 to 20 over the second, and the state of the
+        // view carried it across the frames.
+        #expect(width(middle) == 15)
+        #expect(width(end) == 20)
+    }
+
+    @Test("A value that changed during layout still gets its frame")
+    func theFrameStillComes() {
+        final class Count: @unchecked Sendable { var frames = 0 }
+        let asked = Count()
+        let host = ViewHost()
+        host.needsUpdate = { asked.frames += 1 }
+        host.now = 0
+        _ = host.displayList(for: Arriving(), in: Rect(x: 0, y: 0, width: 100, height: 20))
+        #expect(asked.frames == 1)
+    }
+}
