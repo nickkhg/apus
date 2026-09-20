@@ -24,19 +24,23 @@ import Virtualization
 final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked Sendable {
     private let width: UInt32
     private let height: UInt32
+    /// The bytes of the Venus capset, when the renderer has one. The guest
+    /// reads it with GET_CAPSET and gives it to Mesa.
+    private let venusCapset: Data
     private var device: VZCustomVirtioDevice?
 
     /// What the guest asked for, for the log. The first stage is about
     /// whether the guest binds at all, so it counts the commands.
     private var counts: [UInt32: Int] = [:]
 
-    init(width: Int, height: Int) {
+    init(width: Int, height: Int, venusCapset: Data) {
         self.width = UInt32(width)
         self.height = UInt32(height)
+        self.venusCapset = venusCapset
     }
 
     /// The configuration that makes the framework create the device.
-    static func configuration(width: Int, height: Int)
+    static func configuration(width: Int, height: Int, venusCapset: Data)
         -> (VZCustomVirtioDeviceConfiguration, VirtioGPUDevice, Provider)
     {
         let configuration = VZCustomVirtioDeviceConfiguration()
@@ -44,10 +48,21 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
         configuration.pciClassID = VirtioGPU.pciClass
         configuration.pciSubclassID = VirtioGPU.pciSubclass
         configuration.virtioQueueCount = VirtioGPU.queueCount
-        configuration.deviceSpecificConfiguration = VZVirtioDeviceSpecificConfiguration(
-            configurationData: VirtioGPU.configuration(scanouts: 1, capsets: 0))
 
-        let delegate = VirtioGPUDevice(width: width, height: height)
+        // One capset, the Venus one, when the renderer gave us its bytes.
+        let capsets: UInt32 = venusCapset.isEmpty ? 0 : 1
+        configuration.deviceSpecificConfiguration = VZVirtioDeviceSpecificConfiguration(
+            configurationData: VirtioGPU.configuration(scanouts: 1, capsets: capsets))
+
+        // CONTEXT_INIT lets the guest say which capset a context is for.
+        // Mesa's Venus driver looks for it, and takes the device only when
+        // the device offers it. It is optional: a guest that does not want
+        // 3D still binds.
+        if capsets > 0 {
+            configuration.optionalFeatures.subset0 |= 1 << VirtioGPU.Feature.contextInit.rawValue
+        }
+
+        let delegate = VirtioGPUDevice(width: width, height: height, venusCapset: venusCapset)
         let provider = Provider(delegate: delegate)
         // The provider holds its delegate weakly, so the caller keeps both.
         configuration.provider = VZCustomVirtioDeviceDelegateProvider(
@@ -123,6 +138,19 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
             log("VIRTIO-GPU-DISPLAY-INFO the guest asked for the size of the screen")
             write(VirtioGPU.displayInfo(header: header, width: width, height: height), to: element)
 
+        case .getCapsetInfo:
+            // The command holds the index of the capset that the guest asks
+            // about. We have one, and it is Venus.
+            log("VIRTIO-GPU-CAPSET-INFO the guest asked which capsets there are")
+            write(VirtioGPU.capsetInfo(header: header, id: 4, version: 0,
+                                       size: UInt32(venusCapset.count)), to: element)
+
+        case .getCapset:
+            log("VIRTIO-GPU-CAPSET the guest read the Venus capset, \(venusCapset.count) bytes")
+            var answer = header.answer(.okCapset)
+            answer.append(venusCapset)
+            write(answer, to: element)
+
         // The first stage answers the rest without doing the work, so that
         // the driver keeps going and we can see how far it gets.
         default:
@@ -152,8 +180,30 @@ func makeCustomGPU(
         log("VM_CUSTOM_GPU needs macOS 27; the framework has no custom Virtio device before it")
         return []
     }
+
+    // The renderer of this side. Without it the device carries no 3D, and
+    // the guest sees a plain 2D device.
+    var venusCapset = Data()
+    #if VIRGL
+    do {
+        try VirglRenderer.start()
+        // Venus answers with a version of 0 always; the size is the sign.
+        let venus = VirglRenderer.capset(.venus)
+        if venus.size > 0 {
+            venusCapset = VirglRenderer.capsetData(.venus, version: venus.version,
+                                                   size: venus.size)
+            log("VIRGL-VENUS the renderer offers Venus, \(venusCapset.count) bytes of capset")
+        } else {
+            log("VIRGL-NO-VENUS the renderer answered with no Venus capset")
+        }
+    } catch {
+        log("virglrenderer: \(error)")
+    }
+    #else
+    log("built with no renderer; run build/make-virglrenderer.sh for a guest with a GPU")
+    #endif
     let (deviceConfiguration, delegate, provider) = VirtioGPUDevice.configuration(
-        width: options.screen.width, height: options.screen.height)
+        width: options.screen.width, height: options.screen.height, venusCapset: venusCapset)
     configuration.customVirtioDevices = [deviceConfiguration]
     log("a virtio-gpu device of our own is on the machine (VM_CUSTOM_GPU=1)")
     return [delegate, provider]

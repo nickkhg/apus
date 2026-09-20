@@ -12,6 +12,19 @@ enum VirtioGPU {
     static let pciClass: UInt8 = 0x03
     static let pciSubclass: UInt8 = 0x80
 
+    /// The feature bits of virtio-gpu, from the specification.
+    enum Feature: UInt32 {
+        /// The device can draw 3D, with the virgl protocol.
+        case virgl = 0
+        case edid = 1
+        case resourceUUID = 2
+        /// Resources that are memory, and can be mapped.
+        case resourceBlob = 3
+        /// A context says which capset it is for when it is made. Venus
+        /// needs this one.
+        case contextInit = 4
+    }
+
     /// The queues: commands, then the cursor.
     static let controlQueue: UInt16 = 0
     static let cursorQueue: UInt16 = 1
@@ -95,6 +108,17 @@ enum VirtioGPU {
         data.append(UInt32(0))   // events_clear
         data.append(scanouts)    // num_scanouts
         data.append(capsets)     // num_capsets
+        return data
+    }
+
+    /// `struct virtio_gpu_resp_capset_info`: which capset an index holds,
+    /// and how big it is.
+    static func capsetInfo(header: Header, id: UInt32, version: UInt32, size: UInt32) -> Data {
+        var data = header.answer(.okCapsetInfo)
+        data.append(id)
+        data.append(version)
+        data.append(size)
+        data.append(UInt32(0))   // padding
         return data
     }
 

@@ -42,7 +42,19 @@ SWIFT_BUILD       = MYDISTRO_CROSS=1 $(SWIFT_MAC)/usr/bin/swift build --package-
 # because Virtualization and AppKit are frameworks of the platform. The
 # program needs the com.apple.security.virtualization entitlement, and a
 # local (ad hoc) signature carries it.
-VM_BUILD = xcrun swift build --package-path vm -c release
+# The renderer of the host side of the GPU, when build/make-virglrenderer.sh
+# has built it. Without it the program builds and runs as before, and the
+# GPU device of our own is not in it.
+VIRGL_DIR  := build/cache/virglrenderer
+VIRGL_LIB  := $(VIRGL_DIR)/build/src/libvirglrenderer.dylib
+VIRGL_FLAGS = $(if $(wildcard $(VIRGL_LIB)),\
+	-Xswiftc -DVIRGL \
+	-Xcc -I$(CURDIR)/$(VIRGL_DIR)/src \
+	-Xcc -I$(CURDIR)/$(VIRGL_DIR)/build/src \
+	-Xlinker -L$(CURDIR)/$(VIRGL_DIR)/build/src \
+	-Xlinker -rpath -Xlinker $(CURDIR)/$(VIRGL_DIR)/build/src,)
+
+VM_BUILD = xcrun swift build --package-path vm -c release $(VIRGL_FLAGS)
 VM       = $(shell xcrun swift build --package-path vm -c release --show-bin-path)/mydistro-vm
 # The expect scripts in tests/ and vm/ start the machine through this.
 export MYDISTRO_VM := $(VM)
