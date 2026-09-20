@@ -41,3 +41,32 @@ enum Cursor {
         return Bitmap(width: width, height: shape.count, isOpaque: false, pixels: pixels)
     }()
 }
+
+extension Cursor {
+    /// The pointer at `scale` pixels to the point. A whole number of pixels
+    /// for each one keeps the edges sharp, which a smooth scale would not.
+    /// The result is kept, because the scale rarely changes.
+    static func bitmap(scale: Int) -> Bitmap {
+        guard scale > 1 else { return bitmap }
+        if let cached = cache.value, cached.scale == scale { return cached.bitmap }
+        let source = bitmap
+        let width = source.width * scale
+        let height = source.height * scale
+        var pixels = [UInt32](repeating: 0, count: width * height)
+        for row in 0..<height {
+            let sourceRow = (row / scale) * source.width
+            for column in 0..<width {
+                pixels[row * width + column] = source.pixels[sourceRow + column / scale]
+            }
+        }
+        let scaled = Bitmap(width: width, height: height, isOpaque: false, pixels: pixels)
+        cache.value = (scale, scaled)
+        return scaled
+    }
+
+    private final class Cache: @unchecked Sendable {
+        var value: (scale: Int, bitmap: Bitmap)?
+    }
+
+    nonisolated(unsafe) private static let cache = Cache()
+}

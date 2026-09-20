@@ -11,14 +11,27 @@ public final class Compositor {
     public struct Options {
         /// Screen background, 0xRRGGBB.
         public var background: UInt32 = 0x2B2340
+        /// How many pixels there are to the point.
+        ///
+        /// The whole user interface works in points, so it is the same size
+        /// on every screen. A screen with small pixels takes a scale of 2,
+        /// and everything is then drawn with four times as many pixels.
+        ///
+        /// MYDISTRO_SCALE sets it. Without it the scale comes from the size
+        /// of the screen in millimetres, when the display reports one that
+        /// makes sense. A virtual display often reports none, and the scale
+        /// is then 1.
+        public var scale: Double?
         public init() {}
     }
 
     /// A mapped toplevel and where it is on screen.
     private final class Window {
         let surface: Surface
-        var x: Int, y: Int
-        init(surface: Surface, x: Int, y: Int) { (self.surface, self.x, self.y) = (surface, x, y) }
+        /// Where the layout put the window. A window with no frame waits in
+        /// the rail: it stays open and keeps its state, and it is not drawn.
+        var frame: Rect?
+        init(surface: Surface, frame: Rect?) { (self.surface, self.frame) = (surface, frame) }
     }
 
     private let options: Options
@@ -26,6 +39,8 @@ public final class Compositor {
     private let drm: DRMDevice
     private let screen: Screen
     private let input: Input
+    /// Watches for a change of the display, so that the screen can follow it.
+    private let display: DisplayMonitor?
     private let server: WaylandServer
     private let loop: EventLoop
 
@@ -41,14 +56,24 @@ public final class Compositor {
     private let host = ViewHost()
     /// What the shell can ask the compositor to do.
     private var shellActions = ShellActions()
+    /// The layout that owns the canvas. A window never floats: this is the
+    /// only thing that gives a window a frame.
+    private var layoutKind = WindowLayoutKind.principal
     /// The apps in /Applications. The dock shows one icon for each.
     private let apps: [AppBundle]
     /// The same apps, as the shell gets them. They do not change, so the
     /// compositor makes them once and not for each frame.
     private let appEntries: [AppEntry]
 
+    /// How many pixels there are to the point. See Options.scale.
+    private var scale: Double = 1
+
     public var socketName: String { server.socketName }
     public var screenSize: (width: Int, height: Int) { (screen.width, screen.height) }
+    /// The size of the screen in points: what the user interface works in.
+    public var screenPoints: (width: Int, height: Int) {
+        (screenRect.width, screenRect.height)
+    }
 
     public init(options: Options = Options()) throws {
         self.options = options
@@ -57,10 +82,13 @@ public final class Compositor {
         debug("seat \(seat.name) active; opening display")
         drm = try Compositor.openDisplayDevice(seat: seat)
         screen = try Screen(device: drm)
-        debug("screen \(drm.path) \(screen.output); starting input")
+        scale = Compositor.chosenScale(options: options, screen: screen)
+        debug("screen \(drm.path) \(screen.output) scale \(scale); starting input")
         input = try Input(seat: seat)
         debug("input ready; starting Wayland server")
         loop = try EventLoop()
+        display = DisplayMonitor()
+        if display == nil { log("compositor: no display monitor; the screen keeps its size") }
         server = try WaylandServer(loop: loop)
         pointer = (Double(screen.width) / 2, Double(screen.height) / 2)
         apps = AppCatalog.bundles()
@@ -75,10 +103,15 @@ public final class Compositor {
         loop.watch(fd: seat.fd) { [unowned self] in seat.dispatch() }
         loop.watch(fd: drm.fd) { [unowned self] in drm.handleEvents() }
         loop.watch(fd: input.fd) { [unowned self] in input.dispatch() }
+        if let display, display.fd >= 0 {
+            display.changed = { [unowned self] in screen.displayChanged() }
+            loop.watch(fd: display.fd) { [unowned self] in display.dispatch() }
+        }
         try loop.onSignal(SIGINT) { [unowned self] in running = false }
         try loop.onSignal(SIGTERM) { [unowned self] in running = false }
 
         screen.draw = { [unowned self] canvas in SoftwareRenderer.render(displayList(), into: canvas) }
+        screen.sizeChanged = { [unowned self] in screenSizeChanged() }
         screen.frameShown = { [unowned self] in
             let now = monotonicMilliseconds()
             for window in windows { window.surface.sendFrameDone(time: now) }
@@ -94,10 +127,12 @@ public final class Compositor {
         // without a frame between minutes.
         try loop.onTimer(milliseconds: 1000) { [unowned self] in updateClock() }
         server.keymap = input.keymapText
-        server.windowArea = { [unowned self] in windowArea }
+        server.screenChanged(to: screenInfo)
+        server.sizeForNewWindow = { [unowned self] surface in sizeForNewWindow(surface) }
         server.surfaceCommitted = { [unowned self] surface in surfaceCommitted(surface) }
         server.surfaceDestroyed = { [unowned self] surface in
             windows.removeAll { $0.surface === surface }
+            arrange()
             updateFocus()
             screen.setNeedsFrame()
         }
@@ -132,12 +167,23 @@ public final class Compositor {
     // MARK: - Drawing
 
     private func displayList() -> DisplayList {
+        // The option is 0xRRGGBB. The renderer wants an alpha byte, and the
+        // desktop is always opaque. This one rectangle is in pixels, because
+        // it covers the whole screen whatever the scale is.
         var list: DisplayList = [.fill(Rect(x: 0, y: 0, width: screen.width, height: screen.height),
-                                       color: options.background)]
+                                       color: options.background | 0xFF00_0000)]
         for window in windows {
-            if let content = window.surface.content {
-                list.append(.bitmap(content, x: window.x, y: window.y))
-            }
+            guard let points = window.frame, let content = window.surface.content else { continue }
+            // The frame is in points and the buffer is in pixels, because an
+            // app draws at the scale of the screen. The frame is the
+            // layout's, not the app's: an app that drew a larger buffer is
+            // cut to its frame, and a smaller one sits in the middle of it.
+            let frame = Compositor.inPixels(points, scale: scale)
+            let x = frame.x + max(0, (frame.width - content.width) / 2)
+            let y = frame.y + max(0, (frame.height - content.height) / 2)
+            list.append(.pushClip(frame))
+            list.append(.bitmap(content, x: x, y: y))
+            list.append(.popClip)
         }
         // The shell goes over the windows, and the pointer over both. The
         // host keeps the state of the shell views from frame to frame.
@@ -145,18 +191,139 @@ public final class Compositor {
         state.apps = appEntries
         state.runningApps = Set(windows.compactMap { $0.surface.toplevel?.appID })
         state.windowTitles = windows.map { $0.surface.toplevel?.title ?? "" }
-        list += host.displayList(for: RootView(state: state, actions: shellActions), in: screenRect)
-        list.append(.bitmap(Cursor.bitmap, x: Int(pointer.x), y: Int(pointer.y)))
+        list += host.displayList(for: RootView(state: state, actions: shellActions),
+                                 in: screenRect, scale: scale)
+        // The pointer is kept in pixels, because that is what the mouse and
+        // the screen work in.
+        list.append(.bitmap(Cursor.bitmap(scale: Int(scale.rounded())),
+                            x: Int(pointer.x), y: Int(pointer.y)))
         return list
     }
 
+    /// A rectangle of points, as pixels.
+    private static func inPixels(_ rect: Rect, scale: Double) -> Rect {
+        guard scale != 1 else { return rect }
+        let left = Int((Double(rect.x) * scale).rounded())
+        let top = Int((Double(rect.y) * scale).rounded())
+        return Rect(x: left, y: top,
+                    width: Int((Double(rect.x + rect.width) * scale).rounded()) - left,
+                    height: Int((Double(rect.y + rect.height) * scale).rounded()) - top)
+    }
+
+    /// The screen in points. Every layout works in this space.
     private var screenRect: Rect {
-        Rect(x: 0, y: 0, width: screen.width, height: screen.height)
+        Rect(x: 0, y: 0,
+             width: Int((Double(screen.width) / scale).rounded(.down)),
+             height: Int((Double(screen.height) / scale).rounded(.down)))
+    }
+
+    /// How many pixels there are to the point.
+    ///
+    /// The setting wins. Without it, the size of the screen in millimetres
+    /// gives the density, and a dense screen takes a scale of 2. A display
+    /// that reports no size at all, as a virtual one often does, keeps 1.
+    private static func chosenScale(options: Options, screen: Screen) -> Double {
+        if let scale = options.scale, scale > 0 { return scale }
+        if let text = getenv("MYDISTRO_SCALE").map({ String(cString: $0) }),
+           let scale = Double(text), scale > 0 {
+            return scale
+        }
+        guard let millimetres = screen.widthInMillimetres, millimetres > 0 else { return 1 }
+        let perInch = Double(screen.width) / (Double(millimetres) / 25.4)
+        return perInch >= 180 ? 2 : 1
     }
 
     /// The part of the screen that windows use. The shell says where it is.
     private var windowArea: Rect {
         RootView.windowArea(screen: screenRect)
+    }
+
+    // MARK: - The layout
+
+    /// The canvas that the layout fills, as the layout wants it.
+    private var canvas: Frame {
+        let area = windowArea
+        return Frame(x: Double(area.x), y: Double(area.y),
+                     width: Double(area.width), height: Double(area.height))
+    }
+
+    /// The windows from the front to the back. The layout puts the first one
+    /// in the principal cell, so the front window is the principal.
+    private var frontFirst: [Window] {
+        windows.reversed()
+    }
+
+    /// One child of the layout, for a window that may not exist yet.
+    private func subview(id: AnyHashable, minimum: (width: Double, height: Double)?,
+                         content: Bitmap?) -> LayoutSubview {
+        LayoutSubview(id: id) { proposal in
+            WindowAnswer.size(minimum: minimum, content: content, to: proposal)
+        }
+    }
+
+    private func subview(for window: Window) -> LayoutSubview {
+        subview(id: ObjectIdentifier(window),
+                minimum: window.surface.toplevel?.minSize,
+                content: window.surface.content)
+    }
+
+    /// Runs the layout and gives every window its frame. A window whose size
+    /// changed is asked for the new one, because the layout owns the size.
+    private func arrange() {
+        let ordered = frontFirst
+        let frames = layoutKind.layout.frames(
+            in: canvas, subviews: LayoutSubviews(ordered.map { subview(for: $0) }))
+        for (window, frame) in zip(ordered, frames) {
+            let rect = frame?.pixels
+            window.frame = rect
+            let title = window.surface.toplevel?.title ?? ""
+            guard let rect else {
+                log("WINDOW-IN-RAIL \"\(title)\"")
+                continue
+            }
+            let asked = window.surface.toplevel?.configuredSize
+            guard asked?.width != rect.width || asked?.height != rect.height else {
+                log("WINDOW-KEPT \"\(title)\" \(rect.width)x\(rect.height)")
+                continue
+            }
+            log("WINDOW-CONFIGURED \"\(title)\" \(rect.width)x\(rect.height)"
+                + " was \(asked.map { "\($0.width)x\($0.height)" } ?? "new")")
+            server.configure(window.surface, width: rect.width, height: rect.height,
+                             activated: window === ordered.first)
+        }
+    }
+
+    /// The screen took a new size. Every window gets a frame of the new
+    /// canvas, and the pointer stays on the screen.
+    /// What the apps are told about the screen.
+    private var screenInfo: WaylandServer.ScreenInfo {
+        WaylandServer.ScreenInfo(
+            width: screen.width, height: screen.height,
+            refreshRate: screen.output.mode.refreshRate,
+            scale: Int(scale.rounded()),
+            widthInMillimetres: screen.output.widthInMillimetres,
+            heightInMillimetres: screen.output.heightInMillimetres)
+    }
+
+    private func screenSizeChanged() {
+        pointer.x = min(pointer.x, Double(max(0, screen.width - 1)))
+        pointer.y = min(pointer.y, Double(max(0, screen.height - 1)))
+        host.pointerMoved(to: pointer.x / scale, y: pointer.y / scale)
+        server.screenChanged(to: screenInfo)
+        arrange()
+    }
+
+    /// Where a window that is about to appear will go. The new window goes
+    /// to the front, so the layout is run with it there.
+    private func sizeForNewWindow(_ surface: Surface) -> Rect {
+        var subviews = [subview(id: ObjectIdentifier(surface),
+                                minimum: surface.toplevel?.minSize, content: nil)]
+        subviews += frontFirst.map { subview(for: $0) }
+        let frames = layoutKind.layout.frames(in: canvas, subviews: LayoutSubviews(subviews))
+        // A window that the layout does not place still needs a size to draw
+        // at, so it gets a tile.
+        return (frames.first ?? nil)?.pixels
+            ?? Rect(x: 0, y: 0, width: Int(WindowMetrics.tile), height: Int(WindowMetrics.tile))
     }
 
     /// "14:05" from the system clock, in local time.
@@ -182,16 +349,15 @@ public final class Compositor {
     private func surfaceCommitted(_ surface: Surface) {
         if surface.isMapped, !windows.contains(where: { $0.surface === surface }),
            let content = surface.content {
-            // A window gets the app area: the space between the panel and
-            // the dock. The configure event asked the app for that size. An
-            // app that takes another size goes in the middle of the area.
-            let area = windowArea
-            let x = area.x + max(0, (area.width - content.width) / 2)
-            let y = area.y + max(0, (area.height - content.height) / 2)
-            windows.append(Window(surface: surface, x: x, y: y))
+            // The newest window goes to the front, and the layout then gives
+            // every window a frame.
+            windows.append(Window(surface: surface, frame: nil))
+            arrange()
             updateFocus()
             let title = surface.toplevel?.title ?? ""
-            log("WINDOW-MAPPED \"\(title)\" \(content.width)x\(content.height) at \(x),\(y)")
+            let frame = windows.last?.frame
+            let place = frame.map { "\($0.width)x\($0.height) at \($0.x),\($0.y)" } ?? "in the rail"
+            log("WINDOW-MAPPED \"\(title)\" \(place) drew \(content.width)x\(content.height)")
         }
         screen.setNeedsFrame()
     }
@@ -223,8 +389,13 @@ public final class Compositor {
     /// already. A dock icon does this.
     private func openApp(_ id: String) {
         if let index = windows.lastIndex(where: { $0.surface.toplevel?.appID == id }) {
+            // The window goes to the front, which makes it the principal.
+            // The layout must run again: the front window and the principal
+            // cell are the same thing, so the keys and the large cell never
+            // belong to two different windows.
             let window = windows.remove(at: index)
             windows.append(window)
+            arrange()
             updateFocus()
             log("APP-RAISED \(id)")
             screen.setNeedsFrame()
@@ -255,7 +426,7 @@ public final class Compositor {
                    min(max(position.y, 0), Double(screen.height - 1)))
         // The shell views that watch the pointer hear it here. A view that
         // changes because of it asks for a frame itself.
-        host.pointerMoved(to: pointer.x, y: pointer.y)
+        host.pointerMoved(to: pointer.x / scale, y: pointer.y / scale)
         screen.setNeedsFrame()
     }
 }

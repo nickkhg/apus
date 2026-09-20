@@ -29,12 +29,27 @@ public struct Frame: Equatable, Sendable {
 
     public var size: Size { Size(width: width, height: height) }
 
+    /// The part that this frame and `other` have in common. An empty result
+    /// has a width or a height of zero.
+    public func intersection(_ other: Frame) -> Frame {
+        let x0 = Swift.max(x, other.x), y0 = Swift.max(y, other.y)
+        let x1 = Swift.min(x + width, other.x + other.width)
+        let y1 = Swift.min(y + height, other.y + other.height)
+        return Frame(x: x0, y: y0, width: Swift.max(0, x1 - x0), height: Swift.max(0, y1 - y0))
+    }
+
     /// The whole pixels that this frame covers. The renderer needs integers.
-    public var pixels: Rect {
-        let left = Int(x.rounded()), top = Int(y.rounded())
+    public var pixels: Rect { pixels(scale: 1) }
+
+    /// The whole pixels that this frame covers on a screen with `scale`
+    /// pixels to the point. The layout works in points, and only the
+    /// drawing items are in pixels, so one point is the same size on every
+    /// screen.
+    public func pixels(scale: Double) -> Rect {
+        let left = Int((x * scale).rounded()), top = Int((y * scale).rounded())
         return Rect(x: left, y: top,
-                    width: Int((x + width).rounded()) - left,
-                    height: Int((y + height).rounded()) - top)
+                    width: Int(((x + width) * scale).rounded()) - left,
+                    height: Int(((y + height) * scale).rounded()) - top)
     }
 }
 

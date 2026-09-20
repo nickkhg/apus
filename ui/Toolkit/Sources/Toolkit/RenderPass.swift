@@ -5,6 +5,9 @@ import Render
 public struct RenderPass {
     /// The drawing items, back to front.
     public var list: DisplayList = []
+    /// How many pixels there are to the point. Every frame is in points, and
+    /// a node makes its items in pixels with this.
+    public var scale: Double = 1
     /// Where the views that watch the pointer are, in the order that they
     /// were drawn.
     public internal(set) var hoverRegions: [HoverRegion] = []
@@ -20,7 +23,7 @@ public struct HoverRegion {
     /// The place of the view in the tree. It is the same in the next frame,
     /// so the host knows that the pointer stays over the same view.
     let id: Int
-    let frame: Frame
+    var frame: Frame
     let action: (Bool) -> Void
 
     public func contains(x: Double, y: Double) -> Bool {
@@ -31,7 +34,7 @@ public struct HoverRegion {
 /// A view that answers a click of the pointer.
 public struct TapRegion {
     let id: Int
-    let frame: Frame
+    var frame: Frame
     /// The button went down over the view, or it went up, or the pointer
     /// left the view while the button was down.
     let onPress: (Bool) -> Void

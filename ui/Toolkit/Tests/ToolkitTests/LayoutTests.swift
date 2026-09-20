@@ -25,22 +25,20 @@ struct ColorTests {
         let items = fills(red, width: 100, height: 50)
         #expect(items.count == 1)
         #expect(items[0].0 == Rect(x: 0, y: 0, width: 100, height: 50))
-        #expect(items[0].1 == 0xFF0000)
+        #expect(items[0].1 == 0xFF00_0000 | 0xFF0000)
     }
 
-    @Test("A translucent colour becomes a bitmap, because fills do not blend")
-    func translucentColorBecomesBitmap() {
+    @Test("A translucent colour keeps its alpha in the fill")
+    func translucentColorKeepsItsAlpha() {
         let list = ViewRenderer.displayList(for: red.opacity(0.5),
                                             in: Rect(x: 0, y: 0, width: 4, height: 2))
-        guard case .bitmap(let bitmap, let x, let y) = list.first else {
-            Issue.record("expected a bitmap, got \(list)")
+        guard case .fill(let rect, let color) = list.first else {
+            Issue.record("expected a fill, got \(list)")
             return
         }
-        #expect((x, y) == (0, 0))
-        #expect(bitmap.width == 4 && bitmap.height == 2)
-        #expect(bitmap.isOpaque == false)
+        #expect(rect == Rect(x: 0, y: 0, width: 4, height: 2))
         // Premultiplied: alpha 128, red 128.
-        #expect(bitmap.pixels.allSatisfy { $0 == 0x80800000 })
+        #expect(color == 0x80800000)
     }
 
     @Test("A clear colour draws nothing")
@@ -134,7 +132,7 @@ struct StackTests {
             green.frame(width: 10, height: 10)
         }
         let items = fills(view, width: 50, height: 50)
-        #expect(items.map(\.1) == [0xFF0000, 0x00FF00])
+        #expect(items.map(\.1) == [0xFF00_0000 | 0xFF0000, 0xFF00_0000 | 0x00FF00])
         #expect(items[1].0 == Rect(x: 20, y: 20, width: 10, height: 10))
     }
 
@@ -192,7 +190,7 @@ struct ModifierTests {
     func backgroundIsDrawnFirst() {
         let view = red.frame(width: 20, height: 20).background(blue)
         let items = fills(view, width: 20, height: 20)
-        #expect(items.map(\.1) == [0x0000FF, 0xFF0000])
+        #expect(items.map(\.1) == [0xFF00_0000 | 0x0000FF, 0xFF00_0000 | 0xFF0000])
         #expect(items[0].0 == items[1].0)
     }
 
@@ -206,7 +204,7 @@ struct ModifierTests {
     @Test("A rectangle uses the foreground colour")
     func rectangleUsesForegroundColor() {
         let items = fills(Rectangle().foregroundColor(green), width: 10, height: 10)
-        #expect(items[0].1 == 0x00FF00)
+        #expect(items[0].1 == 0xFF00_0000 | 0x00FF00)
     }
 }
 

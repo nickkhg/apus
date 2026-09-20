@@ -46,7 +46,7 @@ measure("draw the items") {
     SoftwareRenderer.render(list, into: canvas)
 }
 measure("background fill only") {
-    SoftwareRenderer.render([.fill(screen, color: 0x2B2340)], into: canvas)
+    SoftwareRenderer.render([.fill(screen, color: 0xFF2B2340)], into: canvas)
 }
 // Which item costs what.
 print("--- each item")
@@ -55,6 +55,8 @@ for (index, item) in list.enumerated() {
     switch item {
     case .fill(let rect, _): name = "\(index) fill \(rect.width)x\(rect.height)"
     case .bitmap(let bitmap, _, _): name = "\(index) bitmap \(bitmap.width)x\(bitmap.height)"
+    case .pushClip(let rect): name = "\(index) clip \(rect.width)x\(rect.height)"
+    case .popClip: name = "\(index) clip ends"
     case .path(let path, _):
         var xs: [Double] = [], ys: [Double] = []
         for element in path.elements {

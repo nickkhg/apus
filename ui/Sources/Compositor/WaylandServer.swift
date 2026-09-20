@@ -22,6 +22,10 @@ final class Surface {
     private(set) var content: Bitmap?
     /// Set once the app committed a buffer after its first configure.
     var isMapped = false
+    /// How many pixels of the buffer make one point
+    /// (wl_surface.set_buffer_scale). An app that draws for a screen with
+    /// small pixels sets 2 and commits a buffer of twice the size.
+    var bufferScale = 1
     fileprivate(set) var toplevel: Toplevel?
 
     fileprivate enum PendingBuffer {
@@ -77,6 +81,13 @@ final class Toplevel {
     unowned let surface: Surface
     var title = ""
     var appID = ""
+    /// The smallest size that the app accepts (xdg_toplevel.set_min_size).
+    /// A layout reads it as the app's answer to a proposal, because the
+    /// compositor cannot ask another process for a size.
+    var minSize: (width: Double, height: Double)?
+    /// The size that the last configure asked for. The compositor sends a
+    /// new one only when the size changes.
+    var configuredSize: (width: Int, height: Int)?
     fileprivate var configured = false
 
     init(xdgSurface: Resource<XdgSurface>, resource: Resource<XdgToplevel>, surface: Surface) {
@@ -89,9 +100,9 @@ final class WaylandServer {
     private let shm: Shm
     var socketName: String { display.socketName }
 
-    /// The space that a window gets: the app area of the screen. The first
-    /// configure asks the app for that size.
-    var windowArea: () -> Rect = { Rect(x: 0, y: 0, width: 0, height: 0) }
+    /// The size that a window gets when it first appears. The compositor
+    /// runs the layout and answers with the frame that the new window got.
+    var sizeForNewWindow: (Surface) -> Rect = { _ in Rect(x: 0, y: 0, width: 0, height: 0) }
     /// A toplevel's surface got new content (or was mapped for the first time).
     var surfaceCommitted: (Surface) -> Void = { _ in }
     /// A surface went away.
@@ -102,6 +113,24 @@ final class WaylandServer {
 
     /// The wl_keyboard objects of the apps.
     private var keyboards: [Resource<WlKeyboard>] = []
+    /// What the screen is now: its size in pixels, how many pixels there
+    /// are to a point, and how large the picture is in millimetres. An app
+    /// reads this from wl_output, and it needs the scale to draw sharply.
+    struct ScreenInfo {
+        var width = 0
+        var height = 0
+        var refreshRate = 0
+        var scale = 1
+        var widthInMillimetres = 0
+        var heightInMillimetres = 0
+    }
+
+    /// The screen, as the apps are told about it.
+    private(set) var screenInfo = ScreenInfo()
+    /// The wl_output objects that apps hold. They are told again when the
+    /// screen changes.
+    private var outputs: [Resource<WlOutput>] = []
+
     /// The surface that gets the keys, if there is one.
     private weak var focus: Surface?
     /// The modifiers that the apps heard last.
@@ -120,6 +149,13 @@ final class WaylandServer {
                 handle(request, of: wmBase)
             }
         }
+        display.addGlobal(WlOutput.self, version: 4) { [unowned self] output in
+            outputs.append(output)
+            send(screenInfo, to: output)
+            output.onDestroy { [unowned self] in
+                outputs.removeAll { $0 === output }
+            }
+        }
         display.addGlobal(WlSeat.self, version: 7) { [unowned self] seat in
             // The seat has a keyboard only. The shell answers the pointer,
             // and an app gets no pointer events yet.
@@ -133,6 +169,38 @@ final class WaylandServer {
 
     /// Sends queued events to clients. Call before waiting for new events.
     func flush() { display.flushClients() }
+
+    // MARK: - wl_output
+
+    /// The screen changed. Every app that holds a wl_output is told.
+    func screenChanged(to info: ScreenInfo) {
+        screenInfo = info
+        for output in outputs { send(info, to: output) }
+    }
+
+    /// Tells one app what the screen is. wl_output sends a set of events and
+    /// then `done`, so that an app sees one complete description.
+    private func send(_ info: ScreenInfo, to output: Resource<WlOutput>) {
+        output.sendGeometry(x: 0, y: 0,
+                            physicalWidth: Int32(info.widthInMillimetres),
+                            physicalHeight: Int32(info.heightInMillimetres),
+                            subpixel: Int32(WlOutput.Subpixel.unknown.rawValue),
+                            make: "mydistro", model: "screen",
+                            transform: Int32(WlOutput.Transform.normal.rawValue))
+        output.sendMode(flags: WlOutput.Mode.current.rawValue,
+                        width: Int32(info.width), height: Int32(info.height),
+                        refresh: Int32(info.refreshRate * 1000))
+        if output.version >= 2 {
+            output.sendScale(factor: Int32(info.scale))
+        }
+        if output.version >= 4 {
+            output.sendName(name: "mydistro-0")
+            output.sendDescription(description: "mydistro screen")
+        }
+        if output.version >= 2 {
+            output.sendDone()
+        }
+    }
 
     // MARK: - wl_seat and wl_keyboard
 
@@ -263,9 +331,12 @@ final class WaylandServer {
             commit(surface)
         case .getRelease(let id):
             _ = resource.create(id)   // wl_surface 7; we advertise 6
+        case .setBufferScale(let scale):
+            // The app says how many pixels of its buffer make one point.
+            surface.bufferScale = max(1, Int(scale))
         case .destroy, .damage, .damageBuffer, .setOpaqueRegion, .setInputRegion,
-             .setBufferTransform, .setBufferScale, .offset:
-            break   // every frame is drawn in full, at scale 1, for now
+             .setBufferTransform, .offset:
+            break   // every frame is drawn in full
         }
     }
 
@@ -277,16 +348,27 @@ final class WaylandServer {
             // the app area, and the states of a window that fills its space.
             // An app that keeps another size still opens, in the middle of
             // the area.
-            let area = windowArea()
-            toplevel.resource?.sendConfigure(
-                width: Int32(area.width), height: Int32(area.height),
-                states: WaylandServer.states(.maximized, .activated))
-            toplevel.xdgSurface?.sendConfigure(serial: display.nextSerial())
+            let area = sizeForNewWindow(surface)
+            configure(surface, width: area.width, height: area.height, activated: true)
             toplevel.configured = true
             return
         }
         if surface.content != nil { surface.isMapped = true }
         surfaceCommitted(surface)
+    }
+
+    /// Asks a window for a size. The layout owns the size, so this is the
+    /// proposal of the negotiation: the app answers by committing a buffer,
+    /// which may be a different size.
+    func configure(_ surface: Surface, width: Int, height: Int, activated: Bool) {
+        guard let toplevel = surface.toplevel else { return }
+        toplevel.configuredSize = (width, height)
+        toplevel.resource?.sendConfigure(
+            width: Int32(width), height: Int32(height),
+            states: activated
+                ? WaylandServer.states(.maximized, .activated)
+                : WaylandServer.states(.maximized))
+        toplevel.xdgSurface?.sendConfigure(serial: display.nextSerial())
     }
 
     /// Window states, as the array of 32-bit values that xdg_toplevel wants.
@@ -328,6 +410,10 @@ final class WaylandServer {
                 switch request {
                 case .setTitle(let title): toplevel.title = title
                 case .setAppId(let appID): toplevel.appID = appID
+                case .setMinSize(let width, let height):
+                    toplevel.minSize = width > 0 || height > 0
+                        ? (Double(width), Double(height))
+                        : nil
                 default: break
                 }
             }

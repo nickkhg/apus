@@ -46,13 +46,19 @@ public struct Mask {
 }
 
 public enum DisplayItem {
-    /// A solid colour, 0xRRGGBB.
+    /// A rectangle of one colour, 0xAARRGGBB with the colour multiplied by
+    /// alpha. An alpha of 255 writes the pixels; a smaller alpha blends.
     case fill(Rect, color: UInt32)
     /// A bitmap with its top-left corner at (x, y).
     case bitmap(Bitmap, x: Int, y: Int)
     /// An outline filled with a colour, 0xAARRGGBB with the colour
     /// multiplied by alpha. The edges are smooth.
     case path(Path, color: UInt32)
+    /// Cuts every item after this one to `Rect`, until the `popClip` that
+    /// goes with it. Clips inside clips give the common part of the two.
+    case pushClip(Rect)
+    /// Ends the last `pushClip`.
+    case popClip
 }
 
 public typealias DisplayList = [DisplayItem]
@@ -72,32 +78,60 @@ public struct Canvas {
 /// Draws display lists with the CPU.
 public enum SoftwareRenderer {
     public static func render(_ list: DisplayList, into canvas: Canvas) {
+        let whole = Rect(x: 0, y: 0, width: canvas.width, height: canvas.height)
+        // Every item is cut to `clip`. A pushClip keeps the clip that it
+        // replaces, so that the popClip can put it back.
+        var clip = whole
+        var stack: [Rect] = []
         for item in list {
             switch item {
             case .fill(let rect, let color):
-                fill(rect, color: color, canvas)
+                fill(intersection(rect, clip), color: color, canvas)
             case .bitmap(let bitmap, let x, let y):
-                draw(bitmap, x: x, y: y, canvas)
+                draw(bitmap, x: x, y: y, clip: clip, canvas)
             case .path(let path, let color):
-                fill(path, color: color, canvas)
+                fill(path, color: color, clip: clip, canvas)
+            case .pushClip(let rect):
+                stack.append(clip)
+                clip = intersection(clip, rect)
+            case .popClip:
+                clip = stack.popLast() ?? whole
             }
         }
+    }
+
+    /// The part that two rectangles have in common. An empty result has a
+    /// width or a height of zero, and every drawing function skips it.
+    static func intersection(_ a: Rect, _ b: Rect) -> Rect {
+        let x0 = max(a.x, b.x), y0 = max(a.y, b.y)
+        let x1 = min(a.x + a.width, b.x + b.width)
+        let y1 = min(a.y + a.height, b.y + b.height)
+        return Rect(x: x0, y: y0, width: max(0, x1 - x0), height: max(0, y1 - y0))
     }
 
     private static func fill(_ rect: Rect, color: UInt32, _ canvas: Canvas) {
         let x0 = max(0, rect.x), x1 = min(canvas.width, rect.x + rect.width)
         let y0 = max(0, rect.y), y1 = min(canvas.height, rect.y + rect.height)
         guard x0 < x1, y0 < y1 else { return }
+        let alpha = color >> 24
+        guard alpha != 0 else { return }
         for row in y0..<y1 {
-            UnsafeMutableBufferPointer(start: canvas.pixels + row * canvas.stride + x0, count: x1 - x0)
-                .update(repeating: color)
+            let line = UnsafeMutableBufferPointer(
+                start: canvas.pixels + row * canvas.stride + x0, count: x1 - x0)
+            if alpha == 0xFF {
+                line.update(repeating: color)
+            } else {
+                for index in line.indices { line[index] = blend(color, over: line[index]) }
+            }
         }
     }
 
-    private static func draw(_ bitmap: Bitmap, x: Int, y: Int, _ canvas: Canvas) {
-        // Visible part, in bitmap coordinates.
-        let left = max(0, -x), right = min(bitmap.width, canvas.width - x)
-        let top = max(0, -y), bottom = min(bitmap.height, canvas.height - y)
+    private static func draw(_ bitmap: Bitmap, x: Int, y: Int, clip: Rect, _ canvas: Canvas) {
+        // Visible part, in bitmap coordinates. The clip is in canvas
+        // coordinates, so it moves by the corner of the bitmap.
+        let box = intersection(clip, Rect(x: 0, y: 0, width: canvas.width, height: canvas.height))
+        let left = max(box.x - x, 0), right = min(bitmap.width, box.x + box.width - x)
+        let top = max(box.y - y, 0), bottom = min(bitmap.height, box.y + box.height - y)
         guard left < right, top < bottom else { return }
         let count = right - left
 
@@ -116,9 +150,10 @@ public enum SoftwareRenderer {
 
     // MARK: - Paths
 
-    private static func fill(_ path: Path, color: UInt32, _ canvas: Canvas) {
-        let clip = Rect(x: 0, y: 0, width: canvas.width, height: canvas.height)
-        rasterize(path, clippedTo: clip) { row, left, coverage, width in
+    private static func fill(_ path: Path, color: UInt32, clip: Rect, _ canvas: Canvas) {
+        let box = intersection(clip, Rect(x: 0, y: 0, width: canvas.width, height: canvas.height))
+        guard box.width > 0, box.height > 0 else { return }
+        rasterize(path, clippedTo: box) { row, left, coverage, width in
             write(coverage, width: width, color: color, row: row, left: left, canvas)
         }
     }

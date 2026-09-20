@@ -34,6 +34,11 @@ public struct Output: Sendable, CustomStringConvertible {
     public let connectorID: UInt32
     public let crtcID: UInt32
     public let mode: Mode
+    /// The size of the picture on the monitor, in millimetres, as the
+    /// display reports it. A virtual display often reports zero. With the
+    /// mode it gives the density, which says how large a point is.
+    public let widthInMillimetres: Int
+    public let heightInMillimetres: Int
     public var description: String { "\(name) \(mode)" }
 }
 
@@ -93,7 +98,9 @@ public final class DRMDevice {
             }
             usedCRTCs.insert(crtc)
             outputs.append(Output(name: name, connectorID: conn.connector_id, crtcID: crtc,
-                                  mode: Mode(info: preferred)))
+                                  mode: Mode(info: preferred),
+                                  widthInMillimetres: Int(conn.mmWidth),
+                                  heightInMillimetres: Int(conn.mmHeight)))
         }
         return outputs
     }

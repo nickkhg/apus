@@ -16,7 +16,8 @@ public struct Text: View {
 
     public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
         nodes.append(TextNode(string: string, font: environment.font,
-                              color: environment.foregroundColor))
+                              color: environment.foregroundColor,
+                              scale: environment.scale))
     }
 }
 
@@ -24,21 +25,31 @@ public struct Text: View {
 /// one bitmap with the text in it, because the renderer draws bitmaps.
 final class TextNode: LayoutNode {
     let string: String
+    /// The font at the size that the glyphs are made at: the size in points
+    /// multiplied by the scale of the screen.
     let font: Font
     let color: Color
+    let scale: Double
     private let shaped: ShapedText
 
-    init(string: String, font: Font, color: Color) {
+    init(string: String, font: Font, color: Color, scale: Double = 1) {
         self.string = string
-        self.font = font
+        // The glyphs are made at the size that they are drawn at, so that
+        // the text is sharp on a screen with more than one pixel to the
+        // point. The layout below then works in points again.
+        self.font = Font(size: font.size * scale, weight: font.weight,
+                         monospaced: font.isMonospaced)
         self.color = color
-        shaped = FontCache.shared.shape(string, font: font)
+        self.scale = scale
+        shaped = FontCache.shared.shape(string, font: self.font)
     }
 
     override func computeSize(fitting proposal: Proposal) -> Size {
         // The text is as wide as its glyphs, whatever the parent proposes.
-        // Only the height of a line comes from the font.
-        Size(width: shaped.width.rounded(.up), height: shaped.height.rounded(.up))
+        // Only the height of a line comes from the font. The glyphs are in
+        // pixels, and a layout is in points.
+        Size(width: (shaped.width / scale).rounded(.up),
+             height: (shaped.height / scale).rounded(.up))
     }
 
     override func render(in frame: Frame, into pass: inout RenderPass) {
@@ -56,8 +67,10 @@ final class TextNode: LayoutNode {
         }
         let bitmap = Bitmap(width: width, height: height, isOpaque: false, pixels: pixels)
         // The text sits at the top-left of its frame; a frame or a stack has
-        // already put the frame where the alignment wants it.
-        pass.list.append(.bitmap(bitmap, x: Int(frame.x.rounded()), y: Int(frame.y.rounded())))
+        // already put the frame where the alignment wants it. The frame is in
+        // points and the bitmap is in pixels.
+        pass.list.append(.bitmap(bitmap, x: Int((frame.x * pass.scale).rounded()),
+                                 y: Int((frame.y * pass.scale).rounded())))
     }
 
     /// Multiplies the glyph's coverage by the colour and puts it in the image.

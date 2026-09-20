@@ -327,6 +327,21 @@ Use `make bench` after a change that touches the layout or the renderer. A
 frame that becomes 10 times slower is usually a layout error: a view that
 takes the whole screen makes the renderer fill the whole screen.
 
+## Points and pixels
+
+A layout works in points. A point is one pixel on most screens and two on a
+screen with small pixels, and `ViewRenderer` takes the scale. Only the
+drawing items that come out of a layout are in pixels, so a view is the same
+size on every screen.
+
+A text view makes its glyphs at the size that it draws them at, so they are
+sharp, and it reports its size in points, so a line breaks in the same place
+whatever the screen is. A shape is a path, so it scales without steps.
+
+The places that answer the pointer stay in points. The compositor divides the
+position of the mouse by the scale before it gives it to the host.
+
+
 ## Limits
 
 - `Text` does not wrap and does not cut a long line.

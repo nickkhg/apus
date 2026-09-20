@@ -26,7 +26,18 @@ log_user 1
 source [file dirname [info script]]/lib.exp
 
 set bin ""
-if {[info exists env(MYDISTRO_UI_DIR)]} { set bin "$env(MYDISTRO_UI_DIR)/" }
+set uienv ""
+if {[info exists env(MYDISTRO_UI_DIR)]} {
+    set bin "$env(MYDISTRO_UI_DIR)/"
+    # The compositor starts the apps of /Applications, so it needs the
+    # directory in its own environment. Without this the compositor is the
+    # new build and every app it starts is the one in the image.
+    set uienv "MYDISTRO_UI_DIR=$env(MYDISTRO_UI_DIR) "
+}
+# How many pixels there are to a point. A screen with small pixels wants 2.
+if {[info exists env(MYDISTRO_SCALE)]} {
+    append uienv "MYDISTRO_SCALE=$env(MYDISTRO_SCALE) "
+}
 
 # Moves the pointer, clicks or types, in the guest.
 #
@@ -78,7 +89,7 @@ spawn env VM_GPU=headless $env(MYDISTRO_VM) installed
 login
 
 # Root on the serial console has no seat session: libseat opens devices directly.
-send "LIBSEAT_BACKEND=noop MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock ${bin}mydistro-compositor &\r"
+send "LIBSEAT_BACKEND=noop MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock ${uienv}${bin}mydistro-compositor &\r"
 expect {
     "COMPOSITOR-READY"     {}
     "mydistro-compositor:" { fail "compositor reported an error" }
@@ -137,11 +148,19 @@ expect {
     timeout    { fail "the shell in the terminal did not get the keys" }
 }
 
-# A second app opens over the first one, and it gets the app area too.
+# A second app opens. It becomes the principal window and takes the large
+# cell, which is the app area less the band of tiles: 1280 - 256 - 8 = 1016.
+# The window of the terminal answers 675 for a tile that holds 384 at most,
+# so it cannot use one and it waits in the rail.
 act_start --pointer 613,750 --click
+# The layout runs before the window is mapped, so the rail comes first.
 expect {
-    -re {WINDOW-MAPPED "Hello from Swift" 1280x675 at 0,28} {}
-    timeout { fail "the second window did not fill the app area" }
+    -re {WINDOW-IN-RAIL "Terminal"} {}
+    timeout { fail "the first window did not go to the rail" }
+}
+expect {
+    -re {WINDOW-MAPPED "Hello from Swift" 1016x675 at 0,28} {}
+    timeout { fail "the second window did not take the principal cell" }
 }
 act_done
 screen open-hello 640,400=3070F0 4,32=FFFFFF

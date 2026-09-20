@@ -102,3 +102,24 @@ extension View {
         OffsetView(content: self, dx: x, dy: y)
     }
 }
+
+/// A view cut to its frame.
+public struct ClippedView<Content: View>: View {
+    public typealias Body = Never
+    let content: Content
+
+    public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
+        var children: [LayoutNode] = []
+        content.makeNodes(into: &children, environment: environment)
+        nodes.append(ClipNode(child: children.count == 1 ? children[0]
+                                                         : ZStackNode(alignment: .center, children: children)))
+    }
+}
+
+extension View {
+    /// Draws nothing outside the frame of this view. A list that is longer
+    /// than its space, or a window in a cell, needs it.
+    public func clipped() -> ClippedView<Self> {
+        ClippedView(content: self)
+    }
+}

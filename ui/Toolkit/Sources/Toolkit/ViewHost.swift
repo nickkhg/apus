@@ -37,8 +37,10 @@ public final class ViewHost {
 
     /// Lays out `view` and gives the items to draw. It also collects the
     /// views that watch the pointer.
-    public func displayList(for view: some View, in rect: Rect) -> DisplayList {
-        let pass = ViewRenderer.render(view, in: rect, state: state)
+    /// `rect` is in points, and `scale` says how many pixels there are to a
+    /// point. The pointer positions that this host takes are in points too.
+    public func displayList(for view: some View, in rect: Rect, scale: Double = 1) -> DisplayList {
+        let pass = ViewRenderer.render(view, in: rect, state: state, scale: scale)
         hoverRegions = pass.hoverRegions
         tapRegions = pass.tapRegions
         // The frames moved, so the pointer can now be over other views.

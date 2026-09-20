@@ -10,15 +10,28 @@ public struct CellSize: Sendable {
     public let width: Double
     public let height: Double
 
-    /// Measures the font. A monospaced face gives every character the same
-    /// width, so the width of ten of them, divided by ten, is exact.
+    /// Measures the font.
+    ///
+    /// The measured width of a piece of text is the advances of its
+    /// characters plus a small constant. Dividing one measurement by the
+    /// number of characters therefore gives a width that is a little too
+    /// large, and the grid then steps further than the glyphs do: the text
+    /// drifts to the left of its cells, one part of a pixel for each
+    /// character, and the cursor ends up to the right of the character that
+    /// it marks.
+    ///
+    /// Two measurements that differ by a known number of characters cancel
+    /// the constant and give the advance exactly. The width keeps its
+    /// fraction, because a whole number would bring the same drift back.
     public init(font: Font) {
         self.font = font
-        let sample = "MMMMMMMMMM"
-        let size = ViewRenderer.size(of: Text(sample).font(font), fitting: .unspecified)
-        width = max(1, (size.width / Double(sample.count)).rounded(.up))
+        let steps = 20
+        let one = ViewRenderer.size(of: Text("M").font(font), fitting: .unspecified)
+        let many = ViewRenderer.size(of: Text(String(repeating: "M", count: steps + 1)).font(font),
+                                     fitting: .unspecified)
+        width = max(1, (many.width - one.width) / Double(steps))
         // A line has a little space over and under the characters.
-        height = max(1, (size.height + 2).rounded(.up))
+        height = max(1, (one.height + 2).rounded(.up))
     }
 
     /// How many characters fit in this many pixels.
@@ -34,9 +47,13 @@ private struct Run {
 }
 
 public enum Grid {
+    /// A colour of the terminal, as the renderer wants it. Every colour of a
+    /// terminal is opaque, so the alpha byte is always 255.
+    private static func opaque(_ rgb: UInt32) -> UInt32 { rgb | 0xFF00_0000 }
+
     /// The items that draw `screen` in `frame`.
     public static func displayList(for screen: Screen, cell: CellSize, in frame: Rect) -> DisplayList {
-        var list: DisplayList = [.fill(frame, color: Palette.background)]
+        var list: DisplayList = [.fill(frame, color: opaque(Palette.background))]
         for (row, line) in screen.lines.enumerated() {
             let y = Double(frame.y) + Double(row) * cell.height
             for run in runs(of: line) {
@@ -46,7 +63,7 @@ public enum Grid {
                 if colors.background != Palette.background {
                     list.append(.fill(Rect(x: Int(x), y: Int(y),
                                            width: Int(width.rounded(.up)), height: Int(cell.height)),
-                                      color: colors.background))
+                                      color: opaque(colors.background)))
                 }
                 guard run.text.contains(where: { $0 != " " }) else { continue }
                 let font = Font(size: cell.font.size, weight: run.style.bold ? .bold : .regular,

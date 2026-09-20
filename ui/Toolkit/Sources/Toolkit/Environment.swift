@@ -4,6 +4,10 @@
 public struct EnvironmentValues: Sendable {
     public var foregroundColor: Color = .white
     public var font: Font = .body
+    /// How many pixels there are to the point. Text is shaped at the size
+    /// that it is drawn at, so that the glyphs are sharp on a screen with
+    /// more than one pixel to the point. Every layout stays in points.
+    public var scale: Double = 1
 
     /// Where the `@State` values of the view tree are. The renderer puts it
     /// here, so that a view needs no global. See State.swift.

@@ -36,11 +36,20 @@ final class App {
     /// The pixels of the window, and how many bytes are mapped.
     var pixels: UnsafeMutablePointer<UInt32>?
     var mappedBytes = 0
+    /// The size of the window in points. A point is `scale` pixels.
     var width = 800
     var height = 500
     /// The size that the last configure asked for.
     var newWidth = 0
     var newHeight = 0
+    /// How many pixels of the buffer make one point. wl_output says it, and
+    /// the window draws that many times more pixels so that the text is
+    /// sharp.
+    var scale = 1
+    /// The size of the buffer, in pixels.
+    var pixelWidth: Int { width * scale }
+    var pixelHeight: Int { height * scale }
+    var output: OpaquePointer?
 
     /// The compositor is drawing the last buffer: wait for the frame event.
     var framePending = false
@@ -48,7 +57,11 @@ final class App {
 
     var command = "/bin/bash"
     let keyboard = Keyboard()
-    let cell = CellSize(font: .monospaced(size: 15))
+    /// The size of one character, in pixels. It follows the scale, because
+    /// the grid is drawn in the pixels of the buffer.
+    var cell = CellSize(font: .monospaced(size: 15))
+    /// The size of the text in points. The cell is this at `scale`.
+    let fontSize: Double = 15
     var screen = Screen(columns: 80, rows: 24)
     var pty: PTY?
 }
@@ -71,8 +84,11 @@ func fail(_ message: String) -> Never {
 /// Makes a buffer of the size of the window, and tells the shell how many
 /// characters fit in it.
 func applySize(_ app: App) {
-    let stride = app.width * 4
-    let size = stride * app.height
+    // The buffer is in pixels: a window of `width` points on a screen with
+    // `scale` pixels to the point needs `width * scale` of them.
+    app.cell = CellSize(font: .monospaced(size: app.fontSize * Double(app.scale)))
+    let stride = app.pixelWidth * 4
+    let size = stride * app.pixelHeight
     if let buffer = app.buffer { wl_buffer_destroy(buffer) }
     if let pool = app.pool { wl_shm_pool_destroy(pool) }
     if let pixels = app.pixels, app.mappedBytes > 0 { munmap(pixels, app.mappedBytes) }
@@ -94,21 +110,24 @@ func applySize(_ app: App) {
     app.pixels = memory.assumingMemoryBound(to: UInt32.self)
     app.mappedBytes = size
     app.pool = wl_shm_create_pool(app.shm, fd, Int32(size))
-    app.buffer = wl_shm_pool_create_buffer(app.pool, 0, Int32(app.width), Int32(app.height),
+    app.buffer = wl_shm_pool_create_buffer(app.pool, 0, Int32(app.pixelWidth), Int32(app.pixelHeight),
                                            Int32(stride), WL_SHM_FORMAT_XRGB8888.rawValue)
+    // The compositor needs to know that the buffer is at this scale.
+    wl_surface_set_buffer_scale(app.surface, Int32(app.scale))
 
-    let columns = app.cell.columns(in: Double(app.width))
-    let rows = app.cell.rows(in: Double(app.height))
+    let columns = app.cell.columns(in: Double(app.pixelWidth))
+    let rows = app.cell.rows(in: Double(app.pixelHeight))
     app.screen.resize(columns: columns, rows: rows)
-    app.pty?.setSize(columns: columns, rows: rows, width: app.width, height: app.height)
+    app.pty?.setSize(columns: columns, rows: rows, width: app.pixelWidth, height: app.pixelHeight)
 }
 
 /// Draws the grid into the buffer and gives the buffer to the compositor.
 func draw(_ app: App) {
     guard let pixels = app.pixels, let surface = app.surface, let buffer = app.buffer else { return }
-    let canvas = Canvas(pixels: pixels, width: app.width, height: app.height, stride: app.width)
+    let canvas = Canvas(pixels: pixels, width: app.pixelWidth, height: app.pixelHeight,
+                        stride: app.pixelWidth)
     let list = Grid.displayList(for: app.screen, cell: app.cell,
-                                in: Rect(x: 0, y: 0, width: app.width, height: app.height))
+                                in: Rect(x: 0, y: 0, width: app.pixelWidth, height: app.pixelHeight))
     SoftwareRenderer.render(list, into: canvas)
     app.screen.hasChanged = false
 
@@ -130,6 +149,27 @@ func draw(_ app: App) {
 // stay at the same address for as long as the app runs.
 
 enum Listeners {
+    /// The screen. Only the scale matters here: it says how many pixels the
+    /// window draws for each point that the compositor gives it.
+    nonisolated(unsafe) static let output = permanent(wl_output_listener(
+        geometry: { _, _, _, _, _, _, _, _, _, _ in },
+        mode: { _, _, _, _, _, _ in },
+        done: { _, _ in },
+        scale: { data, _, factor in
+            let app = appState(data)
+            let scale = max(1, Int(factor))
+            guard scale != app.scale else { return }
+            app.scale = scale
+            // The window keeps its size in points and draws more pixels.
+            if app.pixels != nil {
+                applySize(app)
+                draw(app)
+            }
+        },
+        name: { _, _, _ in },
+        description: { _, _, _ in }
+    ))
+
     nonisolated(unsafe) static let registry = permanent(wl_registry_listener(
         global: { data, registry, name, interface, _ in
             let app = appState(data)
@@ -145,6 +185,10 @@ enum Listeners {
             case "wl_seat":
                 app.seat = OpaquePointer(wl_registry_bind(registry, name, wl_seat_interface_ptr(), 5))
                 wl_seat_add_listener(app.seat, Listeners.seat, data)
+            case "wl_output":
+                app.output = OpaquePointer(
+                    wl_registry_bind(registry, name, wl_output_interface_ptr(), 2))
+                wl_output_add_listener(app.output, Listeners.output, data)
             default:
                 break
             }
