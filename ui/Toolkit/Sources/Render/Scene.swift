@@ -28,6 +28,23 @@ public final class Bitmap {
     }
 }
 
+/// How much of each pixel a filled path covers: 0 is none, 255 is all.
+/// `x` and `y` are where the mask sits on screen.
+///
+/// A GPU renderer puts this in a texture and colours it there. The CPU
+/// renderer needs no mask, because it blends each row as it makes it.
+public struct Mask {
+    public let x: Int, y: Int, width: Int, height: Int
+    /// `width` × `height` values, row by row.
+    public let coverage: [UInt8]
+
+    public init(x: Int, y: Int, width: Int, height: Int, coverage: [UInt8]) {
+        precondition(coverage.count == width * height)
+        (self.x, self.y, self.width, self.height) = (x, y, width, height)
+        self.coverage = coverage
+    }
+}
+
 public enum DisplayItem {
     /// A solid colour, 0xRRGGBB.
     case fill(Rect, color: UInt32)
@@ -99,16 +116,18 @@ public enum SoftwareRenderer {
 
     // MARK: - Paths
 
-    /// Fills a path with the non-zero winding rule. Each pixel row is
-    /// sampled on 4 lines, and the ends of a span add a part of a pixel, so
-    /// the edges are smooth.
-    ///
-    /// The coverage of a row is in memory that this function owns, not in an
-    /// array: an array checks its bounds and its owner for each pixel, and
-    /// that is most of the work in the inner loop.
     private static func fill(_ path: Path, color: UInt32, _ canvas: Canvas) {
+        let clip = Rect(x: 0, y: 0, width: canvas.width, height: canvas.height)
+        rasterize(path, clippedTo: clip) { row, left, coverage, width in
+            write(coverage, width: width, color: color, row: row, left: left, canvas)
+        }
+    }
+
+    /// The pixels that a filled path can touch, inside `clip`. Nil when the
+    /// path touches none of them.
+    public static func bounds(of path: Path, clippedTo clip: Rect) -> Rect? {
         let segments = path.segments().filter { $0.y0 != $0.y1 }
-        guard !segments.isEmpty else { return }
+        guard !segments.isEmpty else { return nil }
 
         var minimum = (x: segments[0].x0, y: segments[0].y0)
         var maximum = minimum
@@ -116,15 +135,56 @@ public enum SoftwareRenderer {
             minimum = (min(minimum.x, segment.x0, segment.x1), min(minimum.y, segment.y0, segment.y1))
             maximum = (max(maximum.x, segment.x0, segment.x1), max(maximum.y, segment.y0, segment.y1))
         }
-        let top = max(0, Int(minimum.y.rounded(.down)))
-        let bottom = min(canvas.height, Int(maximum.y.rounded(.up)) + 1)
-        let left = max(0, Int(minimum.x.rounded(.down)))
-        let right = min(canvas.width, Int(maximum.x.rounded(.up)) + 1)
-        guard top < bottom, left < right else { return }
+        let top = max(clip.y, Int(minimum.y.rounded(.down)))
+        let bottom = min(clip.y + clip.height, Int(maximum.y.rounded(.up)) + 1)
+        let left = max(clip.x, Int(minimum.x.rounded(.down)))
+        let right = min(clip.x + clip.width, Int(maximum.x.rounded(.up)) + 1)
+        guard top < bottom, left < right else { return nil }
+        return Rect(x: left, y: top, width: right - left, height: bottom - top)
+    }
+
+    /// The coverage of a filled path, for a GPU texture.
+    ///
+    /// This is the same rasterizer that the CPU renderer uses, so a shape
+    /// has the same smooth edges on the GPU as on the CPU.
+    public static func mask(for path: Path, clippedTo clip: Rect) -> Mask? {
+        guard let box = bounds(of: path, clippedTo: clip) else { return nil }
+        var coverage = [UInt8](repeating: 0, count: box.width * box.height)
+        coverage.withUnsafeMutableBufferPointer { output in
+            rasterize(path, clippedTo: clip) { row, left, values, width in
+                let start = (row - box.y) * box.width + (left - box.x)
+                for index in 0..<width {
+                    let amount = values[index]
+                    guard amount > 0 else { continue }
+                    output[start + index] = UInt8((min(amount, 1) * 255).rounded())
+                }
+            }
+        }
+        return Mask(x: box.x, y: box.y, width: box.width, height: box.height, coverage: coverage)
+    }
+
+    /// Fills a path with the non-zero winding rule and gives the coverage of
+    /// each row that it touches. `handle` gets the row, the first pixel, the
+    /// coverage from 0 to 1 for each pixel, and how many pixels there are.
+    ///
+    /// Each pixel row is sampled on 4 lines, and the ends of a span add a
+    /// part of a pixel, so the edges are smooth.
+    ///
+    /// The coverage of a row is in memory that this function owns, not in an
+    /// array: an array checks its bounds and its owner for each pixel, and
+    /// that is most of the work in the inner loop.
+    static func rasterize(_ path: Path, clippedTo clip: Rect,
+                          row handle: (_ row: Int, _ left: Int,
+                                       _ coverage: UnsafeMutablePointer<Double>,
+                                       _ width: Int) -> Void) {
+        let segments = path.segments().filter { $0.y0 != $0.y1 }
+        guard !segments.isEmpty, let box = bounds(of: path, clippedTo: clip) else { return }
+        let (top, bottom) = (box.y, box.y + box.height)
+        let left = box.x
 
         let samples = 4
         let share = 1.0 / Double(samples)
-        let width = right - left
+        let width = box.width
         let coverage = UnsafeMutablePointer<Double>.allocate(capacity: width)
         defer { coverage.deallocate() }
         // The crossings of one sample line. There are never more of them
@@ -158,7 +218,7 @@ public enum SoftwareRenderer {
                             share: share, left: left, width: width, into: coverage)
                     }
                 }
-                write(coverage, width: width, color: color, row: row, left: left, canvas)
+                handle(row, left, coverage, width)
             }
         }
     }
