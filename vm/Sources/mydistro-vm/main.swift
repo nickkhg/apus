@@ -47,6 +47,10 @@ do {
 Terminal.onQuit = { Runner.requestStop() }
 Terminal.start()
 
+// The custom device is held here: the framework's provider keeps only a
+// weak reference to its delegate.
+let customGPU = makeCustomGPU(options, configuration)
+
 let runner = Runner(configuration: configuration)
 runner.start()
 

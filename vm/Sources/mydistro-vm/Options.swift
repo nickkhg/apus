@@ -27,6 +27,9 @@ struct Options {
     var screen: (width: Int, height: Int)
     /// Whether a resize of the window resizes the screen of the guest.
     var followsWindow: Bool
+    /// Whether to add a virtio-gpu device of our own, beside the one the
+    /// framework gives. See VirtioGPUDevice.
+    var customGPU: Bool
 
     static let usage = """
         usage: mydistro-vm live|installed
@@ -41,6 +44,9 @@ struct Options {
         VM_RESIZE=off keeps that size when the window changes size. The
         default follows the window, and a Mac with small pixels then gives
         the guest twice the pixels in each direction.
+        VM_CUSTOM_GPU=1 adds a virtio-gpu device that this program is the
+        implementation of, beside the one the framework gives. It is the way
+        to a guest that has a GPU; the framework's own device has none.
         """
 
     static func parse(
@@ -71,9 +77,10 @@ struct Options {
         // the pixels, which the CPU renderer feels. VM_RESIZE=off keeps the
         // size that VM_SCREEN asked for.
         let followsWindow = (environment["VM_RESIZE"] ?? "on") != "off"
+        let customGPU = environment["VM_CUSTOM_GPU"] == "1"
 
         return Options(mode: mode, display: display, targetSize: targetSize,
-                       screen: screen, followsWindow: followsWindow)
+                       screen: screen, followsWindow: followsWindow, customGPU: customGPU)
     }
 
     /// A size as WIDTHxHEIGHT.

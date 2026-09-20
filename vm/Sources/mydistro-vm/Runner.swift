@@ -1,6 +1,12 @@
 import Foundation
 import Virtualization
 
+/// Writes a line to standard error. The guest console owns standard output,
+/// so anything of the tool's own goes to the other one.
+func log(_ message: String) {
+    FileHandle.standardError.write(Data("mydistro-vm: \(message)\n".utf8))
+}
+
 /// Stops the tool with a message on standard error, after putting the
 /// terminal back as it was.
 func die(_ message: String) -> Never {
