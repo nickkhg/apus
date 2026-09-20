@@ -15,11 +15,18 @@
 # preferred mode of the virtual display, and the compositor takes that mode.
 # The tests use the default, because they look at pixels at known places.
 #
-# The window mode scales the picture to the window, so the macOS window can be
-# dragged to any size. The screen of the guest keeps the size of VM_RES: the
-# compositor reads the mode when it starts and does not follow a change. On a
-# screen with two pixels to the point, a guest screen of 1280x800 fills half
-# of the window that macOS gives it, so a larger VM_RES makes a sharper
+# VM_ZOOM=off fixes the macOS window to the size of the screen of the guest,
+# so the window cannot be dragged. The default, on, scales the picture to the
+# window, so the window can be any size.
+#
+# Neither setting changes the size of the screen of the guest while it runs:
+# the cocoa display of QEMU does not tell the guest that its window changed.
+# The compositor follows a change of the mode when the display reports one
+# (see DisplayMonitor), which a real monitor does and which another virtual
+# machine may do.
+#
+# On a screen with two pixels to the point, a guest screen of 1280x800 fills
+# half of the window that macOS gives it, so a larger screen makes a sharper
 # picture and a smaller user interface, because one point is still one pixel.
 #
 # The serial console is always on stdio. Quit QEMU with Ctrl-A X.
@@ -59,10 +66,7 @@ case "${VM_GPU:-}" in
     "")
         set -- "$@" -nographic ;;
     window)
-        # zoom-to-fit lets the macOS window be dragged to any size: QEMU
-        # scales the picture. The screen of the guest keeps the size that
-        # VM_RES set, so the compositor never sees the mode change.
-        set -- "$@" -serial mon:stdio -display cocoa,zoom-to-fit=on \
+        set -- "$@" -serial mon:stdio -display "cocoa,zoom-to-fit=${VM_ZOOM:-on}" \
             -device "$gpu" -device virtio-keyboard-pci -device virtio-tablet-pci ;;
     headless)
         rm -f out/vm/monitor.sock out/vm/qmp.sock

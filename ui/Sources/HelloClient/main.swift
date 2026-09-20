@@ -27,6 +27,11 @@ final class Client {
     var width = 400
     var height = 300
     var sizeIsFixed = false
+    /// How many pixels of the buffer make one point. wl_output says it. The
+    /// window keeps its size in points and draws that many times more
+    /// pixels, so that it is sharp on a screen with small pixels.
+    var scale = 1
+    var output: OpaquePointer?
     var compositor: OpaquePointer?
     var shm: OpaquePointer?
     var wmBase: OpaquePointer?
@@ -76,7 +81,10 @@ while let argument = arguments.popFirst() {
 /// Makes a shared-memory buffer of the current size, with the window drawn
 /// in it: a colour with a white border.
 func makeBuffer(_ client: Client) {
-    let (width, height) = (client.width, client.height)
+    // Points become pixels here: the buffer is the window at the scale of
+    // the screen.
+    let (width, height) = (client.width * client.scale, client.height * client.scale)
+    let border = border * client.scale
     let stride = width * 4
     let size = stride * height
     // The compositor copies the pixels and gives the buffer back at once, so
@@ -106,6 +114,8 @@ func makeBuffer(_ client: Client) {
                                               WL_SHM_FORMAT_XRGB8888.rawValue)
     wl_shm_pool_destroy(pool)
     close(fd)
+    // The compositor needs to know that the buffer is at this scale.
+    wl_surface_set_buffer_scale(client.surface, Int32(client.scale))
 }
 
 // MARK: - Listeners
@@ -120,11 +130,37 @@ let registryListener = permanent(wl_registry_listener(
             client.shm = OpaquePointer(wl_registry_bind(registry, name, wl_shm_interface_ptr(), 1))
         case "xdg_wm_base":
             client.wmBase = OpaquePointer(wl_registry_bind(registry, name, xdg_wm_base_interface_ptr(), 1))
+        case "wl_output":
+            client.output = OpaquePointer(
+                wl_registry_bind(registry, name, wl_output_interface_ptr(), 2))
+            wl_output_add_listener(client.output, outputListener, clientPointer)
         default:
             break
         }
     },
     global_remove: { _, _, _ in }
+))
+
+/// The screen. Only the scale matters: it says how many pixels the window
+/// draws for each point that the compositor gives it.
+let outputListener = permanent(wl_output_listener(
+    geometry: { _, _, _, _, _, _, _, _, _, _ in },
+    mode: { _, _, _, _, _, _ in },
+    done: { _, _ in },
+    scale: { data, _, factor in
+        let client = state(data)
+        let scale = max(1, Int(factor))
+        guard scale != client.scale else { return }
+        client.scale = scale
+        guard client.drawnSize != nil, client.surface != nil else { return }
+        makeBuffer(client)
+        wl_surface_attach(client.surface, client.buffer, 0, 0)
+        wl_surface_damage_buffer(client.surface, 0, 0, Int32.max, Int32.max)
+        wl_surface_commit(client.surface)
+        client.drawnSize = (width: client.width * scale, height: client.height * scale)
+    },
+    name: { _, _, _ in },
+    description: { _, _, _ in }
 ))
 
 let wmBaseListener = permanent(xdg_wm_base_listener(
@@ -138,7 +174,7 @@ let xdgSurfaceListener = permanent(xdg_surface_listener(
         // Draw for the first configure, and again whenever the compositor
         // asks for a different size. A window that keeps an old size is cut
         // to the frame that the layout gave it.
-        let wanted = (width: client.width, height: client.height)
+        let wanted = (width: client.width * client.scale, height: client.height * client.scale)
         guard client.drawnSize == nil || client.drawnSize! != wanted else { return }
         makeBuffer(client)
         wl_surface_attach(client.surface, client.buffer, 0, 0)

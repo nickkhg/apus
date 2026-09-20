@@ -5,6 +5,9 @@ import Render
 public struct RenderPass {
     /// The drawing items, back to front.
     public var list: DisplayList = []
+    /// How many pixels there are to the point. Every frame is in points, and
+    /// a node makes its items in pixels with this.
+    public var scale: Double = 1
     /// Where the views that watch the pointer are, in the order that they
     /// were drawn.
     public internal(set) var hoverRegions: [HoverRegion] = []

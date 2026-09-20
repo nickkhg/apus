@@ -19,6 +19,10 @@ if {[info exists env(MYDISTRO_UI_DIR)]} {
     # new build and every app it starts is the one in the image.
     set uienv "MYDISTRO_UI_DIR=$env(MYDISTRO_UI_DIR) "
 }
+# How many pixels there are to a point. A screen with small pixels wants 2.
+if {[info exists env(MYDISTRO_SCALE)]} {
+    append uienv "MYDISTRO_SCALE=$env(MYDISTRO_SCALE) "
+}
 
 spawn env VM_GPU=window vm/run.sh installed
 login

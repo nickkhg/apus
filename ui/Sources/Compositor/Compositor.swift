@@ -11,6 +11,17 @@ public final class Compositor {
     public struct Options {
         /// Screen background, 0xRRGGBB.
         public var background: UInt32 = 0x2B2340
+        /// How many pixels there are to the point.
+        ///
+        /// The whole user interface works in points, so it is the same size
+        /// on every screen. A screen with small pixels takes a scale of 2,
+        /// and everything is then drawn with four times as many pixels.
+        ///
+        /// MYDISTRO_SCALE sets it. Without it the scale comes from the size
+        /// of the screen in millimetres, when the display reports one that
+        /// makes sense. A virtual display often reports none, and the scale
+        /// is then 1.
+        public var scale: Double?
         public init() {}
     }
 
@@ -28,6 +39,8 @@ public final class Compositor {
     private let drm: DRMDevice
     private let screen: Screen
     private let input: Input
+    /// Watches for a change of the display, so that the screen can follow it.
+    private let display: DisplayMonitor?
     private let server: WaylandServer
     private let loop: EventLoop
 
@@ -49,8 +62,15 @@ public final class Compositor {
     /// compositor makes them once and not for each frame.
     private let appEntries: [AppEntry]
 
+    /// How many pixels there are to the point. See Options.scale.
+    private var scale: Double = 1
+
     public var socketName: String { server.socketName }
     public var screenSize: (width: Int, height: Int) { (screen.width, screen.height) }
+    /// The size of the screen in points: what the user interface works in.
+    public var screenPoints: (width: Int, height: Int) {
+        (screenRect.width, screenRect.height)
+    }
 
     public init(options: Options = Options()) throws {
         self.options = options
@@ -59,10 +79,13 @@ public final class Compositor {
         debug("seat \(seat.name) active; opening display")
         drm = try Compositor.openDisplayDevice(seat: seat)
         screen = try Screen(device: drm)
-        debug("screen \(drm.path) \(screen.output); starting input")
+        scale = Compositor.chosenScale(options: options, screen: screen)
+        debug("screen \(drm.path) \(screen.output) scale \(scale); starting input")
         input = try Input(seat: seat)
         debug("input ready; starting Wayland server")
         loop = try EventLoop()
+        display = DisplayMonitor()
+        if display == nil { log("compositor: no display monitor; the screen keeps its size") }
         server = try WaylandServer(loop: loop)
         pointer = (Double(screen.width) / 2, Double(screen.height) / 2)
         apps = AppCatalog.bundles()
@@ -77,10 +100,15 @@ public final class Compositor {
         loop.watch(fd: seat.fd) { [unowned self] in seat.dispatch() }
         loop.watch(fd: drm.fd) { [unowned self] in drm.handleEvents() }
         loop.watch(fd: input.fd) { [unowned self] in input.dispatch() }
+        if let display, display.fd >= 0 {
+            display.changed = { [unowned self] in screen.displayChanged() }
+            loop.watch(fd: display.fd) { [unowned self] in display.dispatch() }
+        }
         try loop.onSignal(SIGINT) { [unowned self] in running = false }
         try loop.onSignal(SIGTERM) { [unowned self] in running = false }
 
         screen.draw = { [unowned self] canvas in SoftwareRenderer.render(displayList(), into: canvas) }
+        screen.sizeChanged = { [unowned self] in screenSizeChanged() }
         screen.frameShown = { [unowned self] in
             let now = monotonicMilliseconds()
             for window in windows { window.surface.sendFrameDone(time: now) }
@@ -96,6 +124,7 @@ public final class Compositor {
         // without a frame between minutes.
         try loop.onTimer(milliseconds: 1000) { [unowned self] in updateClock() }
         server.keymap = input.keymapText
+        server.screenChanged(to: screenInfo)
         server.sizeForNewWindow = { [unowned self] surface in sizeForNewWindow(surface) }
         server.surfaceCommitted = { [unowned self] surface in surfaceCommitted(surface) }
         server.surfaceDestroyed = { [unowned self] surface in
@@ -133,14 +162,17 @@ public final class Compositor {
 
     private func displayList() -> DisplayList {
         // The option is 0xRRGGBB. The renderer wants an alpha byte, and the
-        // desktop is always opaque.
+        // desktop is always opaque. This one rectangle is in pixels, because
+        // it covers the whole screen whatever the scale is.
         var list: DisplayList = [.fill(Rect(x: 0, y: 0, width: screen.width, height: screen.height),
                                        color: options.background | 0xFF00_0000)]
         for window in windows {
-            guard let frame = window.frame, let content = window.surface.content else { continue }
-            // The frame is the layout's, not the app's. An app that drew a
-            // larger buffer is cut to its frame; a smaller one sits in the
-            // middle of it and the desktop shows around it.
+            guard let points = window.frame, let content = window.surface.content else { continue }
+            // The frame is in points and the buffer is in pixels, because an
+            // app draws at the scale of the screen. The frame is the
+            // layout's, not the app's: an app that drew a larger buffer is
+            // cut to its frame, and a smaller one sits in the middle of it.
+            let frame = Compositor.inPixels(points, scale: scale)
             let x = frame.x + max(0, (frame.width - content.width) / 2)
             let y = frame.y + max(0, (frame.height - content.height) / 2)
             list.append(.pushClip(frame))
@@ -153,13 +185,46 @@ public final class Compositor {
         state.apps = appEntries
         state.runningApps = Set(windows.compactMap { $0.surface.toplevel?.appID })
         state.windowTitles = windows.map { $0.surface.toplevel?.title ?? "" }
-        list += host.displayList(for: RootView(state: state, actions: shellActions), in: screenRect)
-        list.append(.bitmap(Cursor.bitmap, x: Int(pointer.x), y: Int(pointer.y)))
+        list += host.displayList(for: RootView(state: state, actions: shellActions),
+                                 in: screenRect, scale: scale)
+        // The pointer is kept in pixels, because that is what the mouse and
+        // the screen work in.
+        list.append(.bitmap(Cursor.bitmap(scale: Int(scale.rounded())),
+                            x: Int(pointer.x), y: Int(pointer.y)))
         return list
     }
 
+    /// A rectangle of points, as pixels.
+    private static func inPixels(_ rect: Rect, scale: Double) -> Rect {
+        guard scale != 1 else { return rect }
+        let left = Int((Double(rect.x) * scale).rounded())
+        let top = Int((Double(rect.y) * scale).rounded())
+        return Rect(x: left, y: top,
+                    width: Int((Double(rect.x + rect.width) * scale).rounded()) - left,
+                    height: Int((Double(rect.y + rect.height) * scale).rounded()) - top)
+    }
+
+    /// The screen in points. Every layout works in this space.
     private var screenRect: Rect {
-        Rect(x: 0, y: 0, width: screen.width, height: screen.height)
+        Rect(x: 0, y: 0,
+             width: Int((Double(screen.width) / scale).rounded(.down)),
+             height: Int((Double(screen.height) / scale).rounded(.down)))
+    }
+
+    /// How many pixels there are to the point.
+    ///
+    /// The setting wins. Without it, the size of the screen in millimetres
+    /// gives the density, and a dense screen takes a scale of 2. A display
+    /// that reports no size at all, as a virtual one often does, keeps 1.
+    private static func chosenScale(options: Options, screen: Screen) -> Double {
+        if let scale = options.scale, scale > 0 { return scale }
+        if let text = getenv("MYDISTRO_SCALE").map({ String(cString: $0) }),
+           let scale = Double(text), scale > 0 {
+            return scale
+        }
+        guard let millimetres = screen.widthInMillimetres, millimetres > 0 else { return 1 }
+        let perInch = Double(screen.width) / (Double(millimetres) / 25.4)
+        return perInch >= 180 ? 2 : 1
     }
 
     /// The part of the screen that windows use. The shell says where it is.
@@ -220,6 +285,26 @@ public final class Compositor {
             server.configure(window.surface, width: rect.width, height: rect.height,
                              activated: window === ordered.first)
         }
+    }
+
+    /// The screen took a new size. Every window gets a frame of the new
+    /// canvas, and the pointer stays on the screen.
+    /// What the apps are told about the screen.
+    private var screenInfo: WaylandServer.ScreenInfo {
+        WaylandServer.ScreenInfo(
+            width: screen.width, height: screen.height,
+            refreshRate: screen.output.mode.refreshRate,
+            scale: Int(scale.rounded()),
+            widthInMillimetres: screen.output.widthInMillimetres,
+            heightInMillimetres: screen.output.heightInMillimetres)
+    }
+
+    private func screenSizeChanged() {
+        pointer.x = min(pointer.x, Double(max(0, screen.width - 1)))
+        pointer.y = min(pointer.y, Double(max(0, screen.height - 1)))
+        host.pointerMoved(to: pointer.x / scale, y: pointer.y / scale)
+        server.screenChanged(to: screenInfo)
+        arrange()
     }
 
     /// Where a window that is about to appear will go. The new window goes
@@ -335,7 +420,7 @@ public final class Compositor {
                    min(max(position.y, 0), Double(screen.height - 1)))
         // The shell views that watch the pointer hear it here. A view that
         // changes because of it asks for a frame itself.
-        host.pointerMoved(to: pointer.x, y: pointer.y)
+        host.pointerMoved(to: pointer.x / scale, y: pointer.y / scale)
         screen.setNeedsFrame()
     }
 }

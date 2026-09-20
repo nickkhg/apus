@@ -28,6 +28,10 @@ if {[info exists env(MYDISTRO_UI_DIR)]} {
     # new build and every app it starts is the one in the image.
     set uienv "MYDISTRO_UI_DIR=$env(MYDISTRO_UI_DIR) "
 }
+# How many pixels there are to a point. A screen with small pixels wants 2.
+if {[info exists env(MYDISTRO_SCALE)]} {
+    append uienv "MYDISTRO_SCALE=$env(MYDISTRO_SCALE) "
+}
 
 proc screen {name args} {
     if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/$name.ppm {*}$args} result]} {
@@ -95,11 +99,19 @@ expect {
     timeout    { fail "the shell in the terminal did not get the keys" }
 }
 
-# A second app opens over the first one, and it gets the app area too.
+# A second app opens. It becomes the principal window and takes the large
+# cell, which is the app area less the band of tiles: 1280 - 256 - 8 = 1016.
+# The window of the terminal answers 675 for a tile that holds 384 at most,
+# so it cannot use one and it waits in the rail.
 screen open-hello --pointer 613,750 --click 640,400=3070F0 4,32=FFFFFF
+# The layout runs before the window is mapped, so the rail comes first.
 expect {
-    -re {WINDOW-MAPPED "Hello from Swift" 1280x675 at 0,28} {}
-    timeout { fail "the second window did not fill the app area" }
+    -re {WINDOW-IN-RAIL "Terminal"} {}
+    timeout { fail "the first window did not go to the rail" }
+}
+expect {
+    -re {WINDOW-MAPPED "Hello from Swift" 1016x675 at 0,28} {}
+    timeout { fail "the second window did not take the principal cell" }
 }
 
 # The Close button of the panel closes the window in front. The window of the

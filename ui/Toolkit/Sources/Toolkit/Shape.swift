@@ -134,7 +134,7 @@ final class ShapeNode: LayoutNode {
 
     override func render(in frame: Frame, into pass: inout RenderPass) {
         guard color.alpha > 0, frame.width > 0, frame.height > 0 else { return }
-        pass.list.append(.path(makePath(frame), color: color.premultiplied))
+        pass.list.append(.path(makePath(frame).scaled(by: pass.scale), color: color.premultiplied))
     }
 }
 
@@ -177,6 +177,6 @@ final class StrokeNode: LayoutNode {
         var path = outer(frame)
         // The inner outline goes the other way round, so the middle stays empty.
         path.add(inner(frame).reversed())
-        pass.list.append(.path(path, color: color.premultiplied))
+        pass.list.append(.path(path.scaled(by: pass.scale), color: color.premultiplied))
     }
 }

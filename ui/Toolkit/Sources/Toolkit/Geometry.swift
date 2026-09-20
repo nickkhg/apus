@@ -39,11 +39,17 @@ public struct Frame: Equatable, Sendable {
     }
 
     /// The whole pixels that this frame covers. The renderer needs integers.
-    public var pixels: Rect {
-        let left = Int(x.rounded()), top = Int(y.rounded())
+    public var pixels: Rect { pixels(scale: 1) }
+
+    /// The whole pixels that this frame covers on a screen with `scale`
+    /// pixels to the point. The layout works in points, and only the
+    /// drawing items are in pixels, so one point is the same size on every
+    /// screen.
+    public func pixels(scale: Double) -> Rect {
+        let left = Int((x * scale).rounded()), top = Int((y * scale).rounded())
         return Rect(x: left, y: top,
-                    width: Int((x + width).rounded()) - left,
-                    height: Int((y + height).rounded()) - top)
+                    width: Int(((x + width) * scale).rounded()) - left,
+                    height: Int(((y + height) * scale).rounded()) - top)
     }
 }
 

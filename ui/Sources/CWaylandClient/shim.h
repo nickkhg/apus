@@ -7,3 +7,4 @@
 static inline const struct wl_interface *wl_compositor_interface_ptr(void) { return &wl_compositor_interface; }
 static inline const struct wl_interface *wl_shm_interface_ptr(void) { return &wl_shm_interface; }
 static inline const struct wl_interface *wl_seat_interface_ptr(void) { return &wl_seat_interface; }
+static inline const struct wl_interface *wl_output_interface_ptr(void) { return &wl_output_interface; }

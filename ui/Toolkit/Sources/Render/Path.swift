@@ -91,6 +91,27 @@ public struct Path: Equatable, Sendable {
         close()
     }
 
+    /// The same outline, with every point multiplied by `scale`. A shape is
+    /// made in points and drawn in pixels.
+    public func scaled(by scale: Double) -> Path {
+        guard scale != 1 else { return self }
+        return Path(elements: elements.map { element in
+            switch element {
+            case .move(let x, let y):
+                .move(x: x * scale, y: y * scale)
+            case .line(let x, let y):
+                .line(x: x * scale, y: y * scale)
+            case .quadratic(let cx, let cy, let x, let y):
+                .quadratic(cx: cx * scale, cy: cy * scale, x: x * scale, y: y * scale)
+            case .cubic(let c1x, let c1y, let c2x, let c2y, let x, let y):
+                .cubic(c1x: c1x * scale, c1y: c1y * scale, c2x: c2x * scale, c2y: c2y * scale,
+                       x: x * scale, y: y * scale)
+            case .close:
+                .close
+            }
+        })
+    }
+
     /// Adds the parts of another path to this one.
     public mutating func add(_ other: Path) {
         elements += other.elements

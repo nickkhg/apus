@@ -56,7 +56,7 @@ final class FillNode: LayoutNode {
 
     override func render(in frame: Frame, into pass: inout RenderPass) {
         guard color.alpha > 0 else { return }
-        let rect = frame.pixels
+        let rect = frame.pixels(scale: pass.scale)
         guard rect.width > 0, rect.height > 0 else { return }
         pass.list.append(.fill(rect, color: color.premultiplied))
     }
@@ -374,7 +374,7 @@ final class ClipNode: LayoutNode {
     }
 
     override func render(in frame: Frame, into pass: inout RenderPass) {
-        let rect = frame.pixels
+        let rect = frame.pixels(scale: pass.scale)
         guard rect.width > 0, rect.height > 0 else { return }
         // The regions that the child adds are cut to the same frame, so a
         // button that the clip hides cannot be hovered or clicked.
