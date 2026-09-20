@@ -10,7 +10,7 @@ In the VM, log in as `root` on the serial console and run these commands:
 LIBSEAT_BACKEND=noop mydistro-compositor &
 ```
 
-Then click an icon in the dock to open an app. `make demo` does these steps for you in a window.
+Then press Super to open Summon, and type a name to open an app. `make demo` does these steps for you in a window.
 
 | Item | Details |
 |---|---|
@@ -44,7 +44,7 @@ The `Wayland` library (`ui/Sources/Wayland/`) is the Wayland server and the main
 1. Something changes: an app commits a buffer, the pointer moves, or a window closes.
 2. The compositor calls `Screen.setNeedsFrame()`.
 3. If no page flip is pending, `Screen` draws a frame in the back buffer and asks DRM for a page flip at the next vertical blank. If a page flip is pending, `Screen` draws the frame after the flip.
-4. To draw, the compositor makes a display list: the background, each window, the shell panel, and the pointer. `SoftwareRenderer` draws the list.
+4. To draw, the compositor makes a display list: the background, each window, the shell, and the pointer. `SoftwareRenderer` draws the list.
 5. After the page flip, the compositor sends `wl_callback.done` to each window. The apps can then draw their next frame.
 
 If the driver cannot do page flips, `Screen` uses a mode set for each frame.
@@ -63,13 +63,13 @@ The display list is the interface between the UI layer and the pixels. The toolk
 
 ## The shell
 
-The top 28 pixels of the screen are the shell panel. The compositor draws it with the toolkit, over the windows and under the pointer. It has the name of the system, the title of the front window, a Close button, and the time in it.
+The rail is the chrome of the shell. It is 56 points wide, on the left edge, and the compositor draws it with the toolkit, over the windows and under the pointer. It holds the Summon button, the layout button, a bar for each open window, and the time.
 
-The compositor draws `RootView` from the `Shell` library over the whole screen. `RootView` puts the panel at the top, the dock at the bottom, and the app area between them. `RootView.windowArea(screen:)` tells the compositor where the windows go, so the shell decides how much space it takes.
+The compositor draws `RootView` from the `Shell` library over the whole screen. `RootView` puts the rail on the left, and the canvas beside it. `RootView.windowArea(screen:)` tells the compositor where the canvas is, so the shell decides how much space it takes. A layout then puts the windows in the canvas. See [layouts.md](layouts.md).
 
 The compositor gives the shell a `ShellState` for each frame. In it are the apps of `/Applications` and the ids of the apps that have a window. In it are also the window titles from the Wayland toplevels, and the time from `localtime_r`. A timer in the event loop reads the clock every second and asks for a frame when the minute changes.
 
-A `ViewHost` keeps the shell between frames: the `@State` values of the shell views, and which view the pointer is over. When the pointer moves or a button goes down, the compositor gives it to the host. The host then calls the handler of the view: `onHover` for a view that the pointer entered or left, and `onPress` and `onTapGesture` for a click. A handler that changes a state value asks for a frame. This is how the dock icons become brighter under the pointer.
+A `ViewHost` keeps the shell between frames: the `@State` values of the shell views, and which view the pointer is over. When the pointer moves or a button goes down, the compositor gives it to the host. The host then calls the handler of the view: `onHover` for a view that the pointer entered or left, and `onPress` and `onTapGesture` for a click. A handler that changes a state value asks for a frame. This is how a bar of the rail becomes brighter under the pointer.
 
 The shell asks the compositor for two things (`ShellActions`):
 
@@ -84,7 +84,7 @@ The shell is a view, so its tests need no screen. See [toolkit.md](toolkit.md).
 
 ## The keyboard and the focus
 
-The window in front has the focus, and it gets the keys. Three things change which window is in front. An app opens a window. A dock icon brings a window forward. A window closes.
+The window in front has the focus, and it gets the keys. Three things change which window is in front. An app opens a window. Summon or the rail brings a window forward. A window closes.
 
 1. `Input` reads the key from libinput. It gives the code of the kernel, the keysym from the keymap, and the modifiers.
 2. Ctrl+Alt+Backspace stops the compositor. Every other key goes to the app.
@@ -166,7 +166,7 @@ These rules apply:
 ## Current limits
 
 - Apps get no pointer input. The seat has a keyboard only.
-- A window cannot move and cannot change its size. The window in front is the window that opened last, or the window that a dock icon brought to the front.
+- A person cannot move a window or change its size by hand. The layout owns every frame, and Summon or the rail chooses which window is in front.
 - The compositor draws the full screen for each frame. It ignores damage.
 - Apps can use only `wl_shm` buffers, not GPU buffers (`linux-dmabuf`).
 - There is no `wl_output`, no popups, and no window decorations.

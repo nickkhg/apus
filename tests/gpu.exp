@@ -1,17 +1,19 @@
 #!/usr/bin/expect -f
-# GPU renderer test: boot the installed disk with a (headless) GPU, start
-# mydistro-compositor with MYDISTRO_RENDERER=gpu, and check what it drew.
+# GPU renderer test: boot the installed disk with a (headless) GPU, draw the
+# same screen with each renderer, and check that the two agree.
 # Run after tests/install.exp.
 #
-# The GPU renderer draws the same display list as the CPU renderer, through
-# GBM, EGL and GLES. In a VM there is no GPU, so Mesa renders with the CPU
-# (llvmpipe); the code path is the same, which is what this test covers.
+# The GPU renderer draws the display list through GBM, EGL and GLES, and the
+# CPU renderer draws it into a dumb buffer. Both take the same list, so both
+# must make the same picture. tests/renderers.py holds that.
 #
-# The checks are the solid colours only: the background of the desktop, the
-# background of the panel, and the dock over it. Those must be exact in both
-# renderers. Text and the smooth edges of a shape are not checked here,
-# because a GPU rounds them its own way. tests/compositor.exp checks those,
-# with the CPU renderer, where the pixels are the same on every run.
+# In a VM there is no GPU, so Mesa renders with the CPU (llvmpipe). The code
+# path is the same, which is what this test covers: EGL on GBM, the shaders,
+# the textures, the page flip of a GBM buffer, and giving the buffers back.
+#
+# The test reads no part of the shell, so a change to the shell needs no
+# change here. tests/compositor.exp checks what the shell draws, with the CPU
+# renderer, where the pixels are the same on every run.
 
 set timeout 180
 log_user 1
@@ -24,53 +26,55 @@ if {[info exists env(MYDISTRO_UI_DIR)]} {
     set uienv "MYDISTRO_UI_DIR=$env(MYDISTRO_UI_DIR) "
 }
 
-proc screen {name args} {
-    global bin
+# Runs the compositor with one renderer, writes the screen, and stops it.
+proc drawWith {renderer name} {
+    global bin uienv
+    send "LIBSEAT_BACKEND=noop MYDISTRO_RENDERER=$renderer MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock ${uienv}${bin}mydistro-compositor &\r"
+    if {$renderer eq "gpu"} {
+        # The renderer says which GL it got. In a VM that is llvmpipe.
+        expect {
+            -re {GPU-RENDERER [^\r\n]*} { send_user "\n$expect_out(0,string)\n" }
+            "mydistro-compositor:"      { fail "the compositor reported an error" }
+            timeout                     { fail "the GPU renderer did not start" }
+        }
+    }
+    expect {
+        "COMPOSITOR-READY"     {}
+        "mydistro-compositor:" { fail "$renderer: the compositor reported an error" }
+        timeout                { fail "$renderer: the compositor did not start" }
+    }
+    after 1500
+
     send "${bin}mydistro-screen shot /mnt/screens/$name.ppm\r"
     expect {
-        "mydistro-screen:" { fail "$name: the compositor gave no picture" }
+        "mydistro-screen:"     { fail "$renderer: the compositor gave no picture" }
         -re {ok [0-9]+ [0-9]+} {}
-        timeout            { fail "$name: no picture" }
+        timeout                { fail "$renderer: no picture" }
     }
     expect -re {# $}
-    if {[catch {exec python3 tests/screen.py out/vm/screens/$name.ppm {*}$args} result]} {
-        fail "$name check: $result"
+
+    # Stopping matters: a GBM surface with a buffer still lent to the display
+    # never goes away, and the compositor would not stop.
+    send "kill %1\r"
+    expect {
+        "COMPOSITOR-EXIT" {}
+        timeout           { fail "$renderer: the compositor did not stop" }
     }
-    send_user "\n$result\n"
+    expect -re {# $}
 }
 
 spawn env VM_GPU=headless $env(MYDISTRO_VM) installed
 login
 
-send "LIBSEAT_BACKEND=noop MYDISTRO_RENDERER=gpu MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock ${uienv}${bin}mydistro-compositor &\r"
+drawWith cpu renderer-cpu
+drawWith gpu renderer-gpu
 
-# The renderer says which GL it got. In a VM that is llvmpipe.
-expect {
-    -re {GPU-RENDERER [^\r\n]*} { send_user "\n$expect_out(0,string)\n" }
-    "mydistro-compositor:"      { fail "the compositor reported an error" }
-    timeout                     { fail "the GPU renderer did not start" }
+if {[catch {exec python3 tests/renderers.py \
+        out/vm/screens/renderer-cpu.ppm out/vm/screens/renderer-gpu.ppm} result]} {
+    fail "the renderers disagree: $result"
 }
-expect {
-    "COMPOSITOR-READY"     {}
-    "mydistro-compositor:" { fail "the compositor reported an error" }
-    timeout                { fail "the compositor did not start" }
-}
-after 1000
+send_user "\n$result\n"
 
-# The desktop and the panel are solid fills, and the dock is a filled path
-# over the desktop. All three must reach the screen.
-screen gpu-start 128,80=2B2340 2,14=1B1626 \
-    591,721-635,765!2B2340 645,721-689,765!2B2340
-
-send "\r"
-expect -re "# $"
-send "kill %1\r"
-expect {
-    "COMPOSITOR-EXIT" {}
-    timeout           { fail "the compositor did not stop" }
-}
-send "\r"
-expect -re "# $"
 send "poweroff\r"
 expect eof
 wait

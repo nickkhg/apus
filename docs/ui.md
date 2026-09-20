@@ -157,7 +157,7 @@ It must run as root, when no other program uses the display.
 
 ## Tests
 
-`make test-ui` runs the unit tests of the toolkit and the shell on the Mac. They test the layout, the text, and the panel. They need no screen, no VM and no container. `make test-ui-linux` runs the same tests on mydistro, in the builder container. See [toolkit.md](toolkit.md#tests).
+`make test-ui` runs the unit tests of the toolkit and the shell on the Mac. They test the layout, the text, the rail and Summon. They need no screen, no VM and no container. `make test-ui-linux` runs the same tests on mydistro, in the builder container. See [toolkit.md](toolkit.md#tests).
 
 The tests that need a screen run in the VM. See [testing.md](testing.md).
 
@@ -189,9 +189,9 @@ Both take the same display list, so nothing above the renderer changes. The chai
 3. GLES draws the display list (`GLRenderer`). Each item becomes one quad: a colour for a `fill`, a texture for a `bitmap`, and the coverage of the outline for a `path`.
 4. `eglSwapBuffers` finishes a buffer. The buffer becomes a KMS framebuffer, and a page flip puts it on the display.
 
-A `path` becomes a texture because the GPU has no rule for filling an outline. The coverage comes from `SoftwareRenderer.mask`, which is the rasterizer that the CPU renderer uses, so the edges are the same in both. `TextureCache` keeps the masks, so a shape that does not change is rasterized one time.
+A `path` becomes a texture because the GPU has no rule for filling an outline. The coverage comes from `SoftwareRenderer.mask`, which is the rasterizer that the CPU renderer uses, so the edges are the same in both. `TextureCache` keeps the masks. The CPU therefore rasterizes a shape that does not change one time only.
 
-The tests use the CPU renderer, because its pixels are the same on every run and the tests check exact colours. `tests/gpu.exp` runs the GPU renderer and checks the solid colours, which both renderers must get exactly right. The two renderers agree to 3 of 255 in a colour channel; the difference is rounding, because the CPU divides by 256 and the GPU by 255.
+The tests use the CPU renderer. Its pixels are the same on every run, and the tests check exact colours. `tests/gpu.exp` draws one screen with each renderer and compares the two pictures. They agree to 3 of 255 in a colour channel. The difference is rounding: the CPU divides by 256, and the GPU divides by 255.
 
 ## Graphics in the VM
 

@@ -1,6 +1,6 @@
 # mydistro
 
-mydistro is a Linux distribution for aarch64, based on Arch Linux ARM. It uses systemd and pacman. A live image boots in a VM and installs the system to a disk. The user interface is a Wayland compositor in Swift 6.4, with a declarative toolkit of its own, a dock, and a terminal.
+mydistro is a Linux distribution for aarch64, based on Arch Linux ARM. It uses systemd and pacman. A live image boots in a VM and installs the system to a disk. The user interface is a Wayland compositor in Swift 6.4, with a declarative toolkit of its own, a tiling shell, and a terminal.
 
 ## Requirements
 
@@ -23,7 +23,7 @@ mydistro is a Linux distribution for aarch64, based on Arch Linux ARM. It uses s
    make test
    ```
 
-3. Boot the installed system in a window, with the compositor. Click an icon in the dock to open an app: `T` is the terminal.
+3. Boot the installed system in a window, with the compositor. Press Super to open Summon, then type a name and press Enter to start an app.
 
    ```sh
    make demo
@@ -59,7 +59,8 @@ To install software on a running system, use pacman. For example: `pacman -S hto
 | [User interface](docs/ui.md) | The Swift toolchains, the Swift SDK, Xcode, the Swift package, and the development loop |
 | [Compositor](docs/compositor.md) | The design of `mydistro-compositor` and of its Wayland server in Swift |
 | [Toolkit](docs/toolkit.md) | The declarative UI layer: views, layout, and text |
-| [Applications](docs/applications.md) | The app bundles in `/Applications`, the dock, and the terminal |
+| [Applications](docs/applications.md) | The app bundles in `/Applications`, Summon, and the terminal |
+| [Layouts](docs/layouts.md) | How a layout and a window agree on a size, and the four layouts |
 | [Testing](docs/testing.md) | The VM, the tests, and the screenshot checks |
 | [Decisions](docs/decisions.md) | The main decisions, with the reasons and the evidence |
 | [Troubleshooting](docs/troubleshooting.md) | Problems that occurred, and their solutions |

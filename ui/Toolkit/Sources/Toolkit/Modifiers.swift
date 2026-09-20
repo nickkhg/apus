@@ -103,6 +103,32 @@ extension View {
     }
 }
 
+/// A view drawn over another view, with the same frame. A ring around a
+/// control is an overlay.
+public struct OverlayView<Content: View, Over: View>: View {
+    public typealias Body = Never
+    let content: Content
+    let over: Over
+
+    public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
+        var children: [LayoutNode] = []
+        content.makeNodes(into: &children, environment: environment)
+        var above: [LayoutNode] = []
+        over.makeNodes(into: &above, environment: environment)
+        nodes.append(OverlayNode(child: children.count == 1 ? children[0]
+                                     : ZStackNode(alignment: .center, children: children),
+                                 over: above.count == 1 ? above[0]
+                                     : ZStackNode(alignment: .center, children: above)))
+    }
+}
+
+extension View {
+    /// Draws `over` on top of this view, in the same frame.
+    public func overlay<Over: View>(_ over: Over) -> OverlayView<Self, Over> {
+        OverlayView(content: self, over: over)
+    }
+}
+
 /// A view cut to its frame.
 public struct ClippedView<Content: View>: View {
     public typealias Body = Never

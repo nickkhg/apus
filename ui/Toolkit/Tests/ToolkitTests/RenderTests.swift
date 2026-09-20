@@ -132,6 +132,24 @@ struct AlphaFillTests {
         #expect(red >= 126 && red <= 130)
     }
 
+    @Test("What is under a fill reaches the result")
+    func whatIsUnderTheFillCounts() {
+        // Black at two thirds over a colour: the colour keeps a third of
+        // itself. Over black every blend looks the same whether or not the
+        // colour under it is used at all, so this test uses a colour.
+        let buffer = pixels([.fill(Rect(x: 0, y: 0, width: 1, height: 1), color: 0xA8000000)],
+                            width: 1, height: 1, background: 0xFF12161A)
+        #expect(buffer[0] & 0xFFFFFF == 0x060708)
+    }
+
+    @Test("A colour under a translucent bitmap reaches the result")
+    func whatIsUnderABitmapCounts() {
+        let bitmap = Bitmap(width: 1, height: 1, isOpaque: false, pixels: [0xA8000000])
+        let buffer = pixels([.bitmap(bitmap, x: 0, y: 0)],
+                            width: 1, height: 1, background: 0xFF12161A)
+        #expect(buffer[0] & 0xFFFFFF == 0x060708)
+    }
+
     @Test("A fill with no alpha draws nothing")
     func anEmptyFillDrawsNothing() {
         let buffer = pixels([.fill(Rect(x: 0, y: 0, width: 1, height: 1), color: 0x00FF0000)],

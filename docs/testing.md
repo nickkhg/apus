@@ -60,7 +60,7 @@ The tests are `expect` scripts. They use the serial console of the VM. `tests/li
 |---|---|
 | `tests/install.exp` | Removes the target disk. Boots the live image and runs `mydistro-install -y /dev/vdb`. Boots the installed disk and checks it (see below). |
 | `tests/display.exp` | Boots the installed disk with `VM_GPU=headless`. Checks `/mnt/host`. Runs `mydistro-ui-check` and `mydistro-display-probe`. Checks a screenshot. |
-| `tests/compositor.exp` | Boots the installed disk with `VM_GPU=headless`. Starts `mydistro-compositor`. Opens the apps from the dock, types in the terminal, and checks screenshots. Stops the compositor with SIGTERM. |
+| `tests/compositor.exp` | Boots the installed disk with `VM_GPU=headless`. Starts `mydistro-compositor`. Opens the apps with Summon, types in the terminal, and checks screenshots. Stops the compositor with SIGTERM. |
 
 `tests/display.exp` and `tests/compositor.exp` use the disk that `tests/install.exp` made. Run the tests in this sequence. `make test` does this.
 
@@ -88,8 +88,11 @@ The programs print these markers:
 | `PROBE-READY`, `PROBE-DONE` | `mydistro-display-probe` |
 | `COMPOSITOR-READY`, `COMPOSITOR-EXIT` | `mydistro-compositor` |
 | `WINDOW-MAPPED` | `mydistro-compositor`, when a window opens |
-| `WINDOW-CLOSE-SENT` | `mydistro-compositor`, when the Close button of the panel asks a window to close |
-| `APP-STARTED`, `APP-RAISED` | `mydistro-compositor`, when a dock icon starts an app or brings its window forward |
+| `WINDOW-CLOSE-SENT` | `mydistro-compositor`, when a command of Summon asks a window to close |
+| `WINDOW-CONFIGURED`, `WINDOW-KEPT` | `mydistro-compositor`, when a layout gives a window a new size or keeps the one it had |
+| `WINDOW-IN-RAIL` | `mydistro-compositor`, when a layout places no window and it waits in the rail |
+| `LAYOUT` | `mydistro-compositor`, when a person picks another layout |
+| `APP-STARTED`, `APP-RAISED` | `mydistro-compositor`, when Summon starts an app or brings its window forward |
 | `CLIENT-DRAWN` | `mydistro-hello-client` |
 | `TERMINAL-READY` | `mydistro-terminal`, with the size of the grid |
 
@@ -99,7 +102,7 @@ Apple's Virtualization framework cannot make a picture of the screen of a guest,
 
 | Command | Result |
 |---|---|
-| `mydistro-screen shot PATH` | Asks the compositor for the pixels that it shows, and writes them to `PATH` as a PPM. |
+| `mydistro-screen shot PATH` | Asks the compositor for the pixels that it put on the screen, and writes them to `PATH` as a PPM. |
 | `mydistro-screen input [OPTIONS]` | Moves the pointer, clicks, and types. |
 | `mydistro-screen size` | Prints the size of the screen. |
 
@@ -109,7 +112,7 @@ Apple's Virtualization framework cannot make a picture of the screen of a guest,
 | `--click` | Presses the left button and releases it, where the pointer is. |
 | `--type TEXT` | Types the text. It knows the small letters, the capitals, the digits, some punctuation, and `\n` for the Enter key. |
 
-The options run in this sequence: `--pointer`, `--click`, `--type`. The compositor test uses them for the dock, for the Close button, and for the shell in the terminal.
+The tool runs the options in the order of the command line. A test can therefore say `--key super --type terminal --key enter`, which opens Summon, narrows the list, and then chooses. `--key` presses a key that writes no character. The names are `escape`, `backspace`, `tab`, `enter`, `up`, `down`, `left`, `right`, `super` and `space`.
 
 `mydistro-screen input` makes a pointer and a keyboard with uinput. The pointer reports where it is, from 0 to 32767 on each axis, which is what QEMU's virtio-tablet also did. The events therefore go through evdev, libinput and xkbcommon, in the same way as the events of a real mouse and a real keyboard. The compositor needs no test code for input.
 
@@ -134,15 +137,15 @@ The second kind tests drawing that is correct but not exact, for example text. T
 
 X and Y are pixels. If a value contains a dot, it is a fraction of the screen size (`0.5,0.5` is the centre).
 
-The compositor test checks these places on the 1280×800 screen. The dock has two icons: Hello at x 591, and Terminal at x 645, both from y 721 to y 765.
+The compositor test checks these places on the 1280×800 screen. The rail is 56 points wide, 8 from every edge, so it covers x 8 to 64. The canvas is beside it, at 72, 8.
 
 | Place | Expected | What it is |
 |---|---|---|
-| (128, 80) | `2B2340` | The desktop background |
-| (2, 14) | `1B1626` | The background of the shell panel |
-| (12, 4) to (100, 24) | Not `1B1626` | The name "mydistro" on the panel |
-| (591, 721) to (635, 765) | Not `2B2340` | The first dock icon |
-| (645, 721) to (689, 765) | Not `2B2340` | The second dock icon |
+| (128, 80) | `07080A` | The desktop background |
+| (36, 400) | `12161A` | The background of the rail |
+| (22, 44) | `1D2A12` | The Summon button at the top of the rail |
+| (640, 120) | `12161A` | The surface of Summon, when it is open |
+| (150, 400) | `020203` | The desktop under the layer that dims it |
 | (640, 400) | `000000` | The outline of the pointer |
 | (641, 402) | `FFFFFF` | The inside of the pointer |
 | (600, 730) | `3070F0` | The first icon in its full colour, with the pointer on it |

@@ -16,14 +16,18 @@ In this sequence:
 
 ## The toolkit and the shell
 
-The toolkit draws the panel and the dock, with `@State`, shapes and the pointer. The dock starts the apps of `/Applications`, and the terminal is one of them. See [toolkit.md](toolkit.md) and [applications.md](applications.md). Next, in this sequence:
+The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the pointer. A layout puts the windows on the canvas. Summon starts the apps of `/Applications`, and the terminal is one of them. See [toolkit.md](toolkit.md), [layouts.md](layouts.md) and [applications.md](applications.md). Next, in this sequence:
 
-1. The keyboard in the toolkit: which view has the focus, and how the keys reach it. The keys now go to the app in front only.
-2. An icon file in a bundle, and an image as a display item. An icon is now the first letter of the name.
-3. Text that is too long for its space. Cut it, and add "…".
-4. A pointer position in a handler, and a drag.
-5. Window title bars, with a close button of their own.
-6. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
+1. A stand-in for a window that waits in the rail. The band keeps the cell free, and the cell is empty now. The card must name the app, the title, the size that the window answered, and the time of the last change.
+2. A widget user interface for each app. An app draws one for a tile of 256 points across. A terminal as a tile is not a small terminal: it states the command that runs, and the last lines of it.
+3. A way for an app of the toolkit to say what length it wants at a given width. A window answers from its minimum size now, so an app that drew a large window cannot take a tile. This needs a request of our own, and a foreign app keeps `set_min_size` as its answer.
+4. The keyboard in the toolkit: which view has the focus, and how the keys reach it. The compositor sends the keys to Summon now, and every other key goes to the app in front.
+5. A clock and a value that changes over time. Nothing in the toolkit moves.
+6. An icon file in a bundle, and an image as a display item. Summon draws a colour mark now.
+7. Text that is too long for its space. Cut it, and add "…".
+8. A pointer position in a handler, and a drag.
+9. A renderer with a GPU behind it, and the second mode of the design. The display list gains a shadow, a blur and a gradient. `SoftwareRenderer` keeps the flat mode. See [layouts.md](layouts.md).
+10. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
 
 ## The terminal
 
@@ -58,11 +62,18 @@ The toolkit draws the panel and the dock, with `@State`, shapes and the pointer.
 - Xcode gives no code completion for the Linux modules (see [ui.md](ui.md#limits-of-xcode)). An editor with SourceKit-LSP gives it.
 - The Run action of the Xcode schemes (`make demo-dev`, `make demo`) was not tested in the Xcode window. A test with `xcodebuild` built the UI scheme.
 - Unit tests for the `Wayland` library (wire format and object rules), with `swift test` in the builder container. Now only the VM tests test it.
-- The VM must give the guest a GPU. The compositor can now render with one (see [ui.md](ui.md#the-two-renderers)), but Apple's Virtualization framework gives a Linux guest none. The choices are libkrun, which uses Hypervisor.framework and has virtio-gpu with Venus on Metal; a QEMU built with Venus; or a virtio-gpu device of our own on `VZCustomVirtioDevice` (macOS 26 or later), which means a Venus decoder on MoltenVK.
-- The GPU renderer draws a `path` from a coverage texture that the CPU rasterizes. The masks are kept, so a shape that does not change costs nothing after the first frame, but a shape that moves or changes size is rasterized again. Filling an outline on the GPU (a stencil pass and then a cover pass, with multiple samples for the smooth edges) would remove that.
-- The GPU renderer uploads the pixels of a window on every commit. A buffer that the GPU can read without a copy (`EGL_WL_bind_wayland_display`, or dma-buf) would remove the upload.
+- The VM must give the guest a GPU. The compositor can now render with one (see [ui.md](ui.md#the-two-renderers)). Apple's Virtualization framework gives a Linux guest none. There are three ways:
+
+  | Way | What it needs |
+  |---|---|
+  | libkrun | It uses Hypervisor.framework, not Virtualization. It has virtio-gpu with Venus on Metal. |
+  | QEMU with Venus | A build of our own. The QEMU of Homebrew does not have it. |
+  | A virtio-gpu device of our own | `VZCustomVirtioDevice`, on macOS 26 or later. We must then write a Venus decoder on MoltenVK. |
+
+- The GPU renderer draws a `path` from a coverage texture. The CPU makes that texture. `TextureCache` keeps it, so a shape that stays costs nothing after the first frame. A shape that moves or changes size goes to the CPU again. To fill an outline on the GPU, use a stencil pass and then a cover pass, with more than one sample for the smooth edges.
+- The GPU renderer sends the pixels of a window to the GPU at each commit. The GPU can read a buffer of the app directly, with `EGL_WL_bind_wayland_display` or with dma-buf. That removes the copy.
 - The GPU renderer draws one quad for each item. Items with the same texture and colour could go into one draw.
-- `make gui` and `make demo` open a window. The automated tests do not test them. `tests/display.exp` and `tests/compositor.exp` test the same display with no window. In a window, the keyboard and the pointer are USB devices of the framework, and the tests do not use them: the tests make their own devices with uinput.
+- `make gui` and `make demo` open a window. The automated tests do not test them. `tests/display.exp` and `tests/compositor.exp` test the same display with no window. In a window, the keyboard and the pointer are USB devices of the framework. The tests do not use those devices. They make their own with uinput.
 - The tests use one VM disk in sequence. `tests/display.exp` and `tests/compositor.exp` need the disk from `tests/install.exp`.
 - Old builder images use disk space. On 19 September, `container system df` reported 42 GB that `container image prune` can remove.
 

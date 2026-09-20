@@ -9,8 +9,8 @@ import Wayland
 /// window list and turns it into a display list for each frame.
 public final class Compositor {
     public struct Options {
-        /// Screen background, 0xRRGGBB.
-        public var background: UInt32 = 0x2B2340
+        /// Screen background, 0xRRGGBB. The desktop of the design.
+        public var background: UInt32 = 0x07080A
         /// How many pixels there are to the point.
         ///
         /// The whole user interface works in points, so it is the same size
@@ -27,11 +27,16 @@ public final class Compositor {
 
     /// A mapped toplevel and where it is on screen.
     private final class Window {
+        /// A name for the window that stays the same while it is open. The
+        /// rail and Summon use it to say which window a person chose.
+        let id: String
         let surface: Surface
         /// Where the layout put the window. A window with no frame waits in
         /// the rail: it stays open and keeps its state, and it is not drawn.
         var frame: Rect?
-        init(surface: Surface, frame: Rect?) { (self.surface, self.frame) = (surface, frame) }
+        init(id: String, surface: Surface, frame: Rect?) {
+            (self.id, self.surface, self.frame) = (id, surface, frame)
+        }
     }
 
     private let options: Options
@@ -59,6 +64,8 @@ public final class Compositor {
     /// The layout that owns the canvas. A window never floats: this is the
     /// only thing that gives a window a frame.
     private var layoutKind = WindowLayoutKind.principal
+    /// Counts the windows that have been opened, to name each one.
+    private var nextWindowID = 0
     /// The apps in /Applications. The dock shows one icon for each.
     private let apps: [AppBundle]
     /// The same apps, as the shell gets them. They do not change, so the
@@ -120,7 +127,18 @@ public final class Compositor {
         host.needsUpdate = { [unowned self] in screen.setNeedsFrame() }
         shellActions = ShellActions(
             openApp: { [unowned self] id in openApp(id) },
-            closeFrontWindow: { [unowned self] in closeFrontWindow() }
+            closeFrontWindow: { [unowned self] in closeFrontWindow() },
+            raiseWindow: { [unowned self] id in raiseWindow(id) },
+            toggleSummon: { [unowned self] in
+                shell.summonIsOpen.toggle()
+                screen.setNeedsFrame()
+            },
+            nextLayout: { [unowned self] in
+                let all = WindowLayoutKind.allCases
+                let next = (all.firstIndex(of: layoutKind).map { $0 + 1 } ?? 0) % all.count
+                setLayout(all[next])
+            },
+            setLayout: { [unowned self] kind in setLayout(kind) }
         )
         shell.clock = Compositor.clockText()
         // The clock changes once a minute. A one-second timer keeps it right
@@ -189,8 +207,8 @@ public final class Compositor {
         // host keeps the state of the shell views from frame to frame.
         var state = shell
         state.apps = appEntries
-        state.runningApps = Set(windows.compactMap { $0.surface.toplevel?.appID })
-        state.windowTitles = windows.map { $0.surface.toplevel?.title ?? "" }
+        state.layout = layoutKind
+        state.windows = windowEntries
         list += host.displayList(for: RootView(state: state, actions: shellActions),
                                  in: screenRect, scale: scale)
         // The pointer is kept in pixels, because that is what the mouse and
@@ -326,21 +344,64 @@ public final class Compositor {
             ?? Rect(x: 0, y: 0, width: Int(WindowMetrics.tile), height: Int(WindowMetrics.tile))
     }
 
-    /// "14:05" from the system clock, in local time.
-    private static func clockText() -> String {
+    /// The time from the system clock, in local time. The rail stacks the
+    /// hour over the minute over the day.
+    private static func clockText() -> Clock {
         var now = time_t(time(nil))
         var parts = tm()
         localtime_r(&now, &parts)
         func twoDigits(_ value: Int32) -> String {
             value < 10 ? "0\(value)" : "\(value)"
         }
-        return "\(twoDigits(parts.tm_hour)):\(twoDigits(parts.tm_min))"
+        let days = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
+        let day = days.indices.contains(Int(parts.tm_wday)) ? days[Int(parts.tm_wday)] : ""
+        return Clock(hour: twoDigits(parts.tm_hour), minute: twoDigits(parts.tm_min),
+                     weekday: day)
     }
 
     private func updateClock() {
         let text = Compositor.clockText()
         guard text != shell.clock else { return }
         shell.clock = text
+        screen.setNeedsFrame()
+    }
+
+    /// The open windows as the rail shows them, front first, so that the
+    /// track reads in the same order as the canvas.
+    private var windowEntries: [WindowEntry] {
+        let front = frontFirst
+        return front.enumerated().map { index, window in
+            let place: WindowEntry.Place = if window.frame == nil {
+                .rail
+            } else if index == 0 {
+                .principal
+            } else {
+                .widget
+            }
+            return WindowEntry(id: window.id,
+                               title: window.surface.toplevel?.title ?? "",
+                               appID: window.surface.toplevel?.appID ?? "",
+                               place: place,
+                               hasFocus: window === front.first)
+        }
+    }
+
+    /// Puts a window in front, which makes it the principal.
+    private func raiseWindow(_ id: String) {
+        guard let index = windows.firstIndex(where: { $0.id == id }) else { return }
+        let window = windows.remove(at: index)
+        windows.append(window)
+        arrange()
+        updateFocus()
+        screen.setNeedsFrame()
+    }
+
+    /// Gives the canvas to one layout.
+    private func setLayout(_ kind: WindowLayoutKind) {
+        guard kind != layoutKind else { return }
+        layoutKind = kind
+        log("LAYOUT \(kind.rawValue)")
+        arrange()
         screen.setNeedsFrame()
     }
 
@@ -351,7 +412,8 @@ public final class Compositor {
            let content = surface.content {
             // The newest window goes to the front, and the layout then gives
             // every window a frame.
-            windows.append(Window(surface: surface, frame: nil))
+            nextWindowID += 1
+            windows.append(Window(id: "w\(nextWindowID)", surface: surface, frame: nil))
             arrange()
             updateFocus()
             let title = surface.toplevel?.title ?? ""
@@ -375,13 +437,82 @@ public final class Compositor {
             // there is no input focus and no wl_seat.
             if code == 0x110 { host.pointerButton(pressed: pressed) }
         case .key(let key):
-            // Ctrl+Alt+Backspace (XKB_KEY_BackSpace = 0xff08) quits. Every
-            // other key goes to the window with the focus.
+            // Ctrl+Alt+Backspace (XKB_KEY_BackSpace = 0xff08) quits.
             if key.pressed, key.control, key.alt, key.keysym == 0xFF08 {
                 running = false
-            } else {
-                server.send(key: key)
+                return
             }
+            // The Super key opens Summon and closes it again.
+            if key.pressed, key.keysym == Keysym.superLeft || key.keysym == Keysym.superRight {
+                shell.summonIsOpen.toggle()
+                shell.summonQuery = ""
+                shell.summonSelection = 0
+                screen.setNeedsFrame()
+                return
+            }
+            // While Summon is open it takes every key: it is the one surface
+            // in front, so nothing under it may read the keyboard.
+            if shell.summonIsOpen {
+                if key.pressed { summonKey(key) }
+                return
+            }
+            server.send(key: key)
+        }
+    }
+
+    /// One key for Summon: it narrows the list, moves in it, or chooses.
+    private func summonKey(_ key: Input.Key) {
+        switch key.keysym {
+        case Keysym.escape:
+            shell.summonIsOpen = false
+        case Keysym.enter, Keysym.keypadEnter:
+            let chosen = SummonList.selected(in: shellStateForSummon)
+            shell.summonIsOpen = false
+            shell.summonQuery = ""
+            shell.summonSelection = 0
+            if let chosen { choose(chosen) }
+        case Keysym.tab, Keysym.down:
+            move(by: 1)
+        case Keysym.up:
+            move(by: -1)
+        case Keysym.backspace:
+            if !shell.summonQuery.isEmpty {
+                shell.summonQuery.removeLast()
+                shell.summonSelection = 0
+            }
+        default:
+            // A key that makes a character narrows the list.
+            guard let character = Keysym.character(of: key.keysym) else { return }
+            shell.summonQuery.append(character)
+            shell.summonSelection = 0
+        }
+        screen.setNeedsFrame()
+    }
+
+    /// Moves the selection, and stops at the ends of the list.
+    private func move(by step: Int) {
+        let count = SummonList.items(for: shellStateForSummon).count
+        guard count > 0 else { return }
+        shell.summonSelection = (shell.summonSelection + step + count) % count
+    }
+
+    /// The state that Summon reads. It needs the apps and the windows, which
+    /// the display list fills in for each frame.
+    private var shellStateForSummon: ShellState {
+        var state = shell
+        state.apps = appEntries
+        state.layout = layoutKind
+        state.windows = windowEntries
+        return state
+    }
+
+    /// Does what a line of Summon says.
+    private func choose(_ item: SummonItem) {
+        switch item.kind {
+        case .window(let id): raiseWindow(id)
+        case .app(let id): openApp(id)
+        case .command(.closeFrontWindow): closeFrontWindow()
+        case .command(.layout(let kind)): setLayout(kind)
         }
     }
 

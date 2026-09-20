@@ -99,13 +99,13 @@ An incremental dependency graph saves work in a large app. A shell is small: a c
 
 The compositor can now draw with the GPU: GBM makes the buffers, EGL draws into them, and GLES draws the display list. `MYDISTRO_RENDERER=gpu` chooses it. The CPU renderer stays, and it is the default.
 
-Both renderers take the same display list, which is what [Scene.swift](../ui/Toolkit/Sources/Render/Scene.swift) was written for. The compositor, the toolkit and the shell did not change.
+Both renderers take the same display list. [Scene.swift](../ui/Toolkit/Sources/Render/Scene.swift) says that from its first line. The compositor, the toolkit and the shell did not change.
 
 The tests keep the CPU renderer. Its pixels are the same on every run, and the tests check exact colours. A GPU rounds its own way, and a different driver would give different pixels. `tests/gpu.exp` runs the GPU renderer and checks only the solid colours, which both renderers must get exactly right.
 
 The two renderers agree to 3 of 255 in a colour channel. The difference is rounding: the CPU divides by 256 (a shift), and the GPU divides by 255.
 
-Filling an outline has no rule on a GPU. The GPU renderer therefore asks `SoftwareRenderer.mask` for the coverage of a path and puts it in a texture. That is the rasterizer of the CPU renderer, so the edges are the same in both. `TextureCache` keeps the masks: the shapes of a shell do not change from frame to frame, so each one is rasterized one time.
+Filling an outline has no rule on a GPU. The GPU renderer therefore asks `SoftwareRenderer.mask` for the coverage of a path and puts it in a texture. That is the rasterizer of the CPU renderer, so the edges are the same in both. `TextureCache` keeps the masks. The shapes of a shell do not change from frame to frame, so the CPU draws each one time only.
 
 This work does not give the guest a GPU. In a VM, Mesa still renders with the CPU (llvmpipe), because Apple's Virtualization framework offers a Linux guest no 3D. The gain is on real hardware, and the renderer is the piece that every way of giving a guest a GPU needs first.
 
@@ -121,9 +121,9 @@ let rb = ((dst & 0xFF00FF) * inverse >> 8) & 0xFF00FF
 
 This is the C idiom, and in C it means `((dst & mask) * inverse) >> 8`. In Swift a shift binds tighter than a multiplication, so it means `(dst & mask) * (inverse >> 8)`. `inverse` is `255 - alpha`, so it is always below 256, so `inverse >> 8` is always 0.
 
-Every partly transparent colour therefore covered what was under it instead of blending with it. The dock was darker than it should be, and the smooth edge of a shape went to black instead of to the colour behind it. `scale`, a few lines above, has the brackets and was right.
+Every partly transparent colour therefore covered what was under it instead of blending with it. The dock was darker than it should be. The smooth edge of a shape went to black, and not to the colour behind it. `scale`, a few lines above, has the brackets and was right.
 
-Two renderers that must agree found a bug that one renderer could not. The tests now hold the arithmetic; see `ui/Toolkit/Tests/RenderTests/BlendTests.swift`.
+Two renderers that must agree found a bug that one renderer could not. The tests now hold the arithmetic. See `ui/Toolkit/Tests/RenderTests/BlendTests.swift`.
 
 ## Software rendering in the VM (19 September)
 

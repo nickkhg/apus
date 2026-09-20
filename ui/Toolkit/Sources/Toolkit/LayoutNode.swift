@@ -393,3 +393,25 @@ final class ClipNode: LayoutNode {
         }
     }
 }
+
+
+/// Draws one view over another. The child says how big the pair is, and the
+/// view above gets the same frame.
+final class OverlayNode: LayoutNode {
+    let child: LayoutNode
+    let over: LayoutNode
+
+    init(child: LayoutNode, over: LayoutNode) {
+        self.child = child
+        self.over = over
+    }
+
+    override func computeSize(fitting proposal: Proposal) -> Size {
+        child.size(fitting: proposal)
+    }
+
+    override func render(in frame: Frame, into pass: inout RenderPass) {
+        child.render(in: frame, into: &pass)
+        over.render(in: frame, into: &pass)
+    }
+}

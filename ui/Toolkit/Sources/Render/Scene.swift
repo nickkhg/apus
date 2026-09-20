@@ -332,12 +332,9 @@ public enum SoftwareRenderer {
         let inverse = 255 - alpha
         // Red and blue together, then green, 8 bits of headroom each.
         //
-        // The brackets around the multiplication are necessary. In C, `*`
-        // binds tighter than `>>`, and this line is the C idiom. In Swift a
-        // shift binds tighter than a multiplication, so without the
-        // brackets this reads `dst * (inverse >> 8)`. `inverse` is always
-        // below 256, so `inverse >> 8` is 0, and every partly transparent
-        // colour then covered the destination instead of blending with it.
+        // The brackets around the multiply matter: Swift shifts before it
+        // multiplies, so `a * b >> 8` is `a * (b >> 8)`, which is a * 0 for
+        // every inverse below 256.
         let rb = (((dst & 0xFF00FF) * inverse) >> 8) & 0xFF00FF
         let g = (((dst & 0x00FF00) * inverse) >> 8) & 0x00FF00
         return (src & 0xFFFFFF) &+ rb &+ g
