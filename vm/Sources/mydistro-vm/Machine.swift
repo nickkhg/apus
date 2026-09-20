@@ -34,11 +34,6 @@ enum MachineError: Error, CustomStringConvertible {
     }
 }
 
-/// The size of the screen. The compositor tests read pixels at fixed
-/// positions, so this matches the screen that tests/compositor.exp describes.
-let screenWidth = 1280
-let screenHeight = 800
-
 func makeConfiguration(_ options: Options, _ layout: Layout) throws -> VZVirtualMachineConfiguration {
     let files = FileManager.default
     try files.createDirectory(at: layout.vm, withIntermediateDirectories: true)
@@ -66,7 +61,7 @@ func makeConfiguration(_ options: Options, _ layout: Layout) throws -> VZVirtual
     if options.display != .none {
         let graphics = VZVirtioGraphicsDeviceConfiguration()
         graphics.scanouts = [VZVirtioGraphicsScanoutConfiguration(
-            widthInPixels: screenWidth, heightInPixels: screenHeight)]
+            widthInPixels: options.screen.width, heightInPixels: options.screen.height)]
         configuration.graphicsDevices = [graphics]
         configuration.keyboards = [VZUSBKeyboardConfiguration()]
         configuration.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]

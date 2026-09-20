@@ -8,10 +8,12 @@ import Virtualization
 @MainActor
 final class Window: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let runner: Runner
+    private let size: (width: Int, height: Int)
     private var window: NSWindow?
 
-    init(runner: Runner) {
+    init(runner: Runner, size: (width: Int, height: Int)) {
         self.runner = runner
+        self.size = size
     }
 
     /// Opens the window and runs until the guest or the window stops.
@@ -25,18 +27,19 @@ final class Window: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let view = VZVirtualMachineView(
-            frame: NSRect(x: 0, y: 0, width: screenWidth, height: screenHeight))
+            frame: NSRect(x: 0, y: 0, width: size.width, height: size.height))
         view.virtualMachine = runner.machine
         // Without this, macOS takes Cmd-Tab and the other system keys, and
         // the guest never sees them.
         view.capturesSystemKeys = true
-        // The tests read pixels at fixed positions, so the screen of the
-        // guest keeps the size it was configured with.
-        view.automaticallyReconfiguresDisplay = false
+        // A resize of the window resizes the screen of the guest, and the
+        // compositor lays out again for the new size. The pixel tests are
+        // not affected: they run headless, with no window and no view.
+        view.automaticallyReconfiguresDisplay = true
 
         let window = NSWindow(
             contentRect: view.frame,
-            styleMask: [.titled, .closable, .miniaturizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
         window.title = "mydistro"
         window.contentView = view
