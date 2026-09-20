@@ -52,6 +52,12 @@ public final class Compositor {
     private var windows: [Window] = []   // back to front
     private var pointer: (x: Double, y: Double)
     private var running = true
+    /// How the shell draws depth. It follows the renderer, because the two
+    /// modes are for different costs, and MYDISTRO_SHELL_MODE overrides it.
+    /// A test that compares the two renderers pins this, so that the only
+    /// difference between the two pictures is the renderer.
+    private let shellMode: RenderMode
+
     /// What the shell shows. The clock updates it every minute.
     private var shell = ShellState()
     /// Writes the screen to a file for the tests, when
@@ -90,6 +96,7 @@ public final class Compositor {
         drm = try Compositor.openDisplayDevice(seat: seat)
         screen = try makeScreen(device: drm)
         scale = Compositor.chosenScale(options: options, screen: screen)
+        shellMode = Compositor.chosenShellMode(usesGPU: screen.usesGPU)
         debug("screen \(drm.path) \(screen.output) scale \(scale); starting input")
         input = try Input(seat: seat)
         debug("input ready; starting Wayland server")
@@ -207,6 +214,7 @@ public final class Compositor {
         // host keeps the state of the shell views from frame to frame.
         var state = shell
         state.apps = appEntries
+        state.mode = shellMode
         state.layout = layoutKind
         state.windows = windowEntries
         list += host.displayList(for: RootView(state: state, actions: shellActions),
@@ -240,6 +248,20 @@ public final class Compositor {
     /// The setting wins. Without it, the size of the screen in millimetres
     /// gives the density, and a dense screen takes a scale of 2. A display
     /// that reports no size at all, as a virtual one often does, keeps 1.
+    /// The mode of the shell: the renderer chooses, and
+    /// MYDISTRO_SHELL_MODE overrides.
+    private static func chosenShellMode(usesGPU: Bool) -> RenderMode {
+        guard let text = getenv("MYDISTRO_SHELL_MODE").map({ String(cString: $0) }),
+              !text.isEmpty else {
+            return usesGPU ? .gpu : .cpu
+        }
+        guard let mode = RenderMode(rawValue: text) else {
+            log("compositor: MYDISTRO_SHELL_MODE must be 'cpu' or 'gpu', not '\(text)'")
+            return usesGPU ? .gpu : .cpu
+        }
+        return mode
+    }
+
     private static func chosenScale(options: Options, screen: Screen) -> Double {
         if let scale = options.scale, scale > 0 { return scale }
         if let text = getenv("MYDISTRO_SCALE").map({ String(cString: $0) }),
@@ -501,6 +523,7 @@ public final class Compositor {
     private var shellStateForSummon: ShellState {
         var state = shell
         state.apps = appEntries
+        state.mode = shellMode
         state.layout = layoutKind
         state.windows = windowEntries
         return state

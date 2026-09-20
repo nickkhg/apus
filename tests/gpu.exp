@@ -29,7 +29,10 @@ if {[info exists env(MYDISTRO_UI_DIR)]} {
 # Runs the compositor with one renderer, writes the screen, and stops it.
 proc drawWith {renderer name} {
     global bin uienv
-    send "LIBSEAT_BACKEND=noop MYDISTRO_RENDERER=$renderer MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock ${uienv}${bin}mydistro-compositor &\r"
+    # MYDISTRO_SHELL_MODE pins how the shell draws depth. Without it the
+    # shell follows the renderer, and the two pictures would differ because
+    # the shell chose to draw differently, not because the renderer did.
+    send "LIBSEAT_BACKEND=noop MYDISTRO_RENDERER=$renderer MYDISTRO_SHELL_MODE=cpu MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock ${uienv}${bin}mydistro-compositor &\r"
     if {$renderer eq "gpu"} {
         # The renderer says which GL it got. In a VM that is llvmpipe.
         expect {

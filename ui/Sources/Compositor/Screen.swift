@@ -12,6 +12,9 @@ protocol Screen: AnyObject {
     var width: Int { get }
     var height: Int { get }
     var widthInMillimetres: Int? { get }
+    /// Whether a GPU draws the frames. The shell asks, because it holds
+    /// different values for depth in each mode (see Theme.swift).
+    var usesGPU: Bool { get }
 
     /// The items to draw. The screen asks for them when it draws a frame.
     var displayList: () -> DisplayList { get set }
@@ -54,6 +57,8 @@ func makeScreen(device: DRMDevice) throws -> any Screen {
 /// back buffer and flip it to the front at the next vertical blank. Frames
 /// are drawn only when something changed.
 final class SoftwareScreen: Screen, PageFlipHandler {
+    let usesGPU = false
+
     let device: DRMDevice
     private(set) var output: Output
     var width: Int { output.mode.width }

@@ -20,6 +20,7 @@ import Render
 /// In a VM there is no GPU, so Mesa renders with the CPU (llvmpipe). The
 /// code path is the same, which is why the tests can run it.
 final class GPUScreen: Screen, PageFlipHandler {
+    let usesGPU = true
     let device: DRMDevice
     private(set) var output: Output
     var width: Int { output.mode.width }
