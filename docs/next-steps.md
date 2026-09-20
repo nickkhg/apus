@@ -16,14 +16,18 @@ In this sequence:
 
 ## The toolkit and the shell
 
-The toolkit draws the panel and the dock, with `@State`, shapes and the pointer. The dock starts the apps of `/Applications`, and the terminal is one of them. See [toolkit.md](toolkit.md) and [applications.md](applications.md). Next, in this sequence:
+The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the pointer. A layout puts the windows on the canvas. Summon starts the apps of `/Applications`, and the terminal is one of them. See [toolkit.md](toolkit.md), [layouts.md](layouts.md) and [applications.md](applications.md). Next, in this sequence:
 
-1. The keyboard in the toolkit: which view has the focus, and how the keys reach it. The keys now go to the app in front only.
-2. An icon file in a bundle, and an image as a display item. An icon is now the first letter of the name.
-3. Text that is too long for its space. Cut it, and add "…".
-4. A pointer position in a handler, and a drag.
-5. Window title bars, with a close button of their own.
-6. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
+1. A stand-in for a window that waits in the rail. The band keeps the cell free, and the cell is empty now. The card must name the app, the title, the size that the window answered, and the time of the last change.
+2. A widget user interface for each app. An app draws one for a tile of 256 points across. A terminal as a tile is not a small terminal: it states the command that runs, and the last lines of it.
+3. A way for an app of the toolkit to say what length it wants at a given width. A window answers from its minimum size now, so an app that drew a large window cannot take a tile. This needs a request of our own, and a foreign app keeps `set_min_size` as its answer.
+4. The keyboard in the toolkit: which view has the focus, and how the keys reach it. The compositor sends the keys to Summon now, and every other key goes to the app in front.
+5. A clock and a value that changes over time. Nothing in the toolkit moves.
+6. An icon file in a bundle, and an image as a display item. Summon draws a colour mark now.
+7. Text that is too long for its space. Cut it, and add "…".
+8. A pointer position in a handler, and a drag.
+9. A renderer with a GPU behind it, and the second mode of the design. The display list gains a shadow, a blur and a gradient. `SoftwareRenderer` keeps the flat mode. See [layouts.md](layouts.md).
+10. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
 
 ## The terminal
 

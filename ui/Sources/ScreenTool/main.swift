@@ -108,6 +108,14 @@ let keys: [Character: (UInt16, Bool)] = {
 
 let keyLeftShift: UInt16 = 42
 
+/// The keys that write nothing: a test names them instead of typing them.
+/// The numbers are the evdev keys of linux/input-event-codes.h.
+let namedKeys: [String: UInt16] = [
+    "escape": 1, "backspace": 14, "tab": 15, "enter": 28,
+    "up": 103, "down": 108, "left": 105, "right": 106,
+    "super": 125, "space": 57,
+]
+
 /// Turns the two-character forms \n and \t into the characters they name,
 /// so that a test can ask for the Enter key on a command line.
 func unescape(_ text: String) -> String {
@@ -185,6 +193,19 @@ final class Devices {
         usleep(1_000_000)
     }
 
+    /// Presses one key by name and lets it go again.
+    func press(_ name: String) {
+        guard let code = namedKeys[name] else {
+            fail("\(name) is not a key; try \(namedKeys.keys.sorted().joined(separator: ", "))")
+        }
+        send(keyboard, mydistro_ev_key, code, 1)
+        report(keyboard)
+        usleep(20_000)
+        send(keyboard, mydistro_ev_key, code, 0)
+        report(keyboard)
+        usleep(20_000)
+    }
+
     func type(_ text: String) {
         for character in text {
             guard let (code, shifted) = keys[character] else {
@@ -205,7 +226,10 @@ final class Devices {
 
 var arguments = Array(CommandLine.arguments.dropFirst())
 guard let command = arguments.first else {
-    fail("usage: mydistro-screen shot PATH | input [--pointer X,Y] [--click] [--type TEXT] | size")
+    fail("""
+        usage: mydistro-screen shot PATH | size
+               mydistro-screen input [--pointer X,Y] [--click] [--type TEXT] [--key NAME]
+        """)
 }
 arguments.removeFirst()
 
@@ -219,9 +243,15 @@ case "shot":
     print(ask(path))
 
 case "input":
-    var pointerAt: (Int, Int)?
-    var clicking = false
-    var text: String?
+    // The options happen in the order that they are written, because a test
+    // says things like "open Summon, type a name, then press Enter".
+    enum Action {
+        case point(Int, Int)
+        case click
+        case type(String)
+        case press(String)
+    }
+    var actions: [Action] = []
     while !arguments.isEmpty {
         let option = arguments.removeFirst()
         switch option {
@@ -231,21 +261,37 @@ case "input":
             guard parts.count == 2, let x = Int(parts[0]), let y = Int(parts[1]) else {
                 fail("--pointer needs X,Y")
             }
-            pointerAt = (x, y)
+            actions.append(.point(x, y))
         case "--click":
-            clicking = true
+            actions.append(.click)
         case "--type":
             guard !arguments.isEmpty else { fail("--type needs text") }
-            text = unescape(arguments.removeFirst())
+            actions.append(.type(unescape(arguments.removeFirst())))
+        case "--key":
+            guard !arguments.isEmpty else { fail("--key needs the name of a key") }
+            actions.append(.press(arguments.removeFirst()))
         default:
             fail("\(option) is not an option")
         }
     }
     let screen = screenSize()
     let devices = Devices()
-    if let (x, y) = pointerAt { devices.move(toPixel: x, y, on: screen); print("pointer at \(x),\(y)") }
-    if clicking { devices.click(); print("clicked") }
-    if let text { devices.type(text); print("typed \(text.debugDescription)") }
+    for action in actions {
+        switch action {
+        case .point(let x, let y):
+            devices.move(toPixel: x, y, on: screen)
+            print("pointer at \(x),\(y)")
+        case .click:
+            devices.click()
+            print("clicked")
+        case .type(let text):
+            devices.type(text)
+            print("typed \(text.debugDescription)")
+        case .press(let name):
+            devices.press(name)
+            print("pressed \(name)")
+        }
+    }
 
 default:
     fail("\(command) is not a command")

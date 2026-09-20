@@ -46,7 +46,7 @@ The builder container mounts the repository at the same path as on the Mac. Thus
 | `image/esp/` | systemd-boot configuration of the live image. |
 | `packages/` | Source of the mydistro packages (one `PKGBUILD` in each directory). |
 | `ui/` | The display server: the compositor, the Wayland server, the apps, the tools, and the C library modules. |
-| `ui/Apps/` | The app bundles. The package copies them to `/Applications`, and each one becomes an icon in the dock. See [applications.md](applications.md). |
+| `ui/Apps/` | The app bundles. The package copies them to `/Applications`, and Summon lists each one. See [applications.md](applications.md). |
 | `ui/Toolkit/` | A Swift package of its own: the toolkit (`Render`, `Toolkit`), the shell UI (`Shell`), and the grid of the terminal (`Terminal`), with their tests. It also builds for macOS. |
 | `ui/Protocols/` | The Wayland protocol XML files. |
 | `ui/Tools/WaylandScanner/` | The generator of the Swift protocol code. |

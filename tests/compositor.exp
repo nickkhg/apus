@@ -1,8 +1,8 @@
 #!/usr/bin/expect -f
 # Compositor test: boot the installed disk with a (headless) GPU, start
-# mydistro-compositor, then use the dock to open the apps of /Applications.
-# The test moves the pointer, clicks, types on the keyboard, and checks the
-# pixels of the screen. Run after tests/install.exp.
+# mydistro-compositor, then use Summon to open the apps of /Applications.
+# The test moves the pointer, presses keys, types, and checks the pixels of
+# the screen. Run after tests/install.exp.
 #
 # The guest does the seeing and the touching, with mydistro-screen: it asks
 # the compositor for the pixels it is showing, and makes a pointer and a
@@ -13,13 +13,16 @@
 # With MYDISTRO_UI_DIR set (for example /mnt/host/ui, `make test-dev`), the
 # VM runs the programs from that directory, not the installed ones.
 #
-# The screen is 1280x800:
+# The screen is 1280x800. There is no dock and no panel: the rail is the
+# only chrome, and Summon starts an app and moves to a window.
 #
-#   the panel        the top 28 lines
-#   the app area     y 28 to 702; a window of an app fills it
-#   the dock         73 high, 16 over the bottom: y 711 to 784
-#   the icons        44 wide, 10 apart, in the middle: Hello at x 591,
-#                    Terminal at x 645, both from y 721 to 765
+#   the desktop      07080A
+#   the rail         56 wide, 8 from every edge: x 8 to 64, y 8 to 792
+#   the Summon key   the button at the top of the rail: x 16 to 56, y 24 to 64
+#   the canvas       x 72 to 1272, y 8 to 792: 1200 x 784
+#   one window       the whole canvas: 1200x784 at 72,8
+#   two windows      the large cell is the canvas less a band of tiles:
+#                    1200 - 256 - 8 = 936, so 936x784 at 72,8
 
 set timeout 180
 log_user 1
@@ -47,7 +50,10 @@ if {[info exists env(MYDISTRO_SCALE)]} {
 # while the input happens, use `act_start`, then the expects for those
 # messages, then `act_done`.
 proc act_start {args} {
-    set command "mydistro-screen input"
+    # With MYDISTRO_UI_DIR the tool comes from that directory too, so that a
+    # test can use an option that the installed tool does not have yet.
+    global bin
+    set command "${bin}mydistro-screen input"
     foreach argument $args {
         # The text of --type has spaces and shell characters (">"), so each
         # argument goes to the guest shell in single quotes. Without them the
@@ -72,7 +78,8 @@ proc act {args} {
 
 # Writes the screen in the guest, then checks the pixels on the Mac.
 proc screen {name args} {
-    send "mydistro-screen shot /mnt/screens/$name.ppm\r"
+    global bin
+    send "${bin}mydistro-screen shot /mnt/screens/$name.ppm\r"
     expect {
         "mydistro-screen:" { fail "$name: the compositor gave no picture" }
         -re {ok [0-9]+ [0-9]+} {}
@@ -97,30 +104,28 @@ expect {
 }
 after 1000
 
-# The desktop, the panel with the name of the system, the dock with an icon
-# for each app, and the pointer in the middle of the screen.
-screen start 128,80=2B2340 2,14=1B1626 12,4-100,24!1B1626 \
-    591,721-635,765!2B2340 645,721-689,765!2B2340 \
+# The desktop, the rail on the left edge, and the Summon button at the top
+# of it. The pointer is in the middle of the screen.
+screen start 128,80=07080A 36,400=12161A 22,44=1D2A12 \
     640,400=000000 641,402=FFFFFF
 
-# The icons answer the pointer: the first one takes its full colour (3070F0)
-# when the pointer is over it. The pointer goes below and right of the pixel
-# that the test reads, so that the pointer image does not cover it.
-act --pointer 620,755
-screen hover 600,730=3070F0
+# The pointer is parked out of the way, so that it covers no pixel that the
+# checks below read.
+act --pointer 1200,740
 
-# The pointer leaves the icon, and the compositor keeps running: a handler
-# that asks for a new frame must not bring the compositor into that handler
-# again.
-act --pointer 300,400
-screen leave 600,730-601,731!3070F0
+# The Super key opens Summon. The surface is 720 wide and in the middle, so
+# it covers the middle of the screen, and what is under it is dimmed.
+act --key super
+# The surface is 720 wide and in the middle of the screen, so x 280 to 1000.
+# A point to the left of it shows the desktop with the dim layer over it.
+screen summon 640,120=12161A 150,400=020203
 
-# A click on the Terminal icon starts the app. The compositor gives the
-# window the app area, and the app draws the shell in it.
-act_start --pointer 667,750 --click
+# The query narrows the list to one line, and Enter starts that app. The
+# compositor gives the window the whole canvas, because it is the only one.
+act_start --type "terminal" --key enter
 expect {
     "APP-STARTED org.mydistro.terminal" {}
-    timeout { fail "the dock did not start the terminal" }
+    timeout { fail "Summon did not start the terminal" }
 }
 expect {
     "TERMINAL-READY"      {}
@@ -128,20 +133,20 @@ expect {
     timeout               { fail "the terminal did not open a pseudo terminal" }
 }
 expect {
-    -re {WINDOW-MAPPED "Terminal" 1280x675 at 0,28} {}
-    timeout { fail "the terminal window did not fill the app area" }
+    -re {WINDOW-MAPPED "Terminal" 1200x784 at 72,8} {}
+    timeout { fail "the terminal window did not fill the canvas" }
 }
 act_done
 after 1000
 
-# The window of the terminal: its background, the prompt of the shell in the
-# first line, and the dot under the icon of the app that is open.
-screen terminal 640,400=14111E 0,28-500,52!14111E 667,771=FFFFFF
+# The window of the terminal: its background, and the prompt of the shell in
+# the first line of it.
+screen terminal 400,400=14111E 80,16-500,40!14111E
 
 # The keyboard reaches the app: the compositor sends the keys to the window
 # in front. The shell in the terminal runs what the test types.
 act --type "echo typed-ok > /tmp/typed\\n"
-screen typing 0,28-700,120!14111E
+screen typing 80,16-700,120!14111E
 send "cat /tmp/typed\r"
 expect {
     "typed-ok" {}
@@ -149,44 +154,49 @@ expect {
 }
 
 # A second app opens. It becomes the principal window and takes the large
-# cell, which is the app area less the band of tiles: 1280 - 256 - 8 = 1016.
-# The window of the terminal answers 675 for a tile that holds 384 at most,
-# so it cannot use one and it waits in the rail.
-act_start --pointer 613,750 --click
+# cell. The window of the terminal answers 784 for a tile that holds 384 at
+# most, so it cannot use one and it waits in the rail.
+act_start --key super --type "hello" --key enter
 # The layout runs before the window is mapped, so the rail comes first.
 expect {
     -re {WINDOW-IN-RAIL "Terminal"} {}
     timeout { fail "the first window did not go to the rail" }
 }
 expect {
-    -re {WINDOW-MAPPED "Hello from Swift" 1016x675 at 0,28} {}
+    -re {WINDOW-MAPPED "Hello from Swift" 936x784 at 72,8} {}
     timeout { fail "the second window did not take the principal cell" }
 }
 act_done
-screen open-hello 640,400=3070F0 4,32=FFFFFF
+screen open-hello 400,400=3070F0 76,12=FFFFFF
 
-# The Close button of the panel closes the window in front. The window of the
-# terminal is then in front again, and it gets the keys again.
-act_start --pointer 1200,14 --click
+# A command of Summon closes the window in front. The window of the terminal
+# is then in front again, and it gets the keys again.
+act_start --key super --type "close" --key enter
 expect {
     "WINDOW-CLOSE-SENT" {}
     timeout             { fail "the compositor sent no close to the window" }
 }
 act_done
-screen close-hello 640,400=14111E
+after 1000
+screen close-hello 400,400=14111E
 act --type "echo again-ok > /tmp/again\\n"
-screen typing-again 0,28-700,160!14111E
+screen typing-again 80,16-700,160!14111E
 send "cat /tmp/again\r"
 expect {
     "again-ok" {}
     timeout    { fail "the keys did not come back to the terminal" }
 }
 
-# Closing the last window gives the desktop back, and the dot under the icon
-# goes away: that pixel is the background of the dock again (1B1626 at 0.85
-# over the desktop is 171320).
-act --pointer 1200,14 --click
-screen close-terminal 640,400=2B2340 667,771=171320
+# Closing the last window gives the desktop back. The rail stays, because it
+# is there whether a window is open or not.
+act_start --key super --type "close" --key enter
+expect {
+    "WINDOW-CLOSE-SENT" {}
+    timeout             { fail "the compositor sent no close to the last window" }
+}
+act_done
+after 1000
+screen close-terminal 400,400=07080A 36,400=12161A
 
 send "\r"
 expect -re "# $"

@@ -23,15 +23,19 @@ func measure(_ name: String, _ body: () -> Void) {
     print(String(format: "%-28s %7.3f ms", (name as NSString).utf8String!, each))
 }
 
-// The same shell as on the screen: three apps in the dock, one open window.
+// The same shell as on the screen: three apps, and two open windows.
 let state = ShellState(
     apps: [
         AppEntry(id: "org.mydistro.files", name: "Files", color: Color(hex: 0x4C8DF6)),
         AppEntry(id: "org.mydistro.terminal", name: "Terminal", color: Color(hex: 0x3BB273)),
         AppEntry(id: "org.mydistro.settings", name: "Settings", color: Color(hex: 0xE0A458)),
     ],
-    runningApps: ["org.mydistro.terminal"],
-    windowTitles: ["Hello from Swift"], clock: "14:05")
+    windows: [
+        WindowEntry(id: "1", title: "Hello from Swift", appID: "org.mydistro.terminal",
+                    place: .principal, hasFocus: true),
+        WindowEntry(id: "2", title: "Files", appID: "org.mydistro.files", place: .widget),
+    ],
+    clock: Clock(hour: "14", minute: "05", weekday: "TUE"))
 let host = ViewHost()
 let pixels = UnsafeMutablePointer<UInt32>.allocate(capacity: width * height)
 let canvas = Canvas(pixels: pixels, width: width, height: height, stride: width)

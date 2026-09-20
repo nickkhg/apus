@@ -1,6 +1,6 @@
 # Applications
 
-An app of mydistro is a bundle in `/Applications`. The compositor reads the bundles when it starts. The dock shows one icon for each bundle. A click on an icon starts the app, and the app gets the space between the panel and the dock.
+An app of mydistro is a bundle in `/Applications`. The compositor reads the bundles when it starts. Summon lists one line for each bundle. A person chooses a line to start the app, and the layout gives the app a cell of the canvas.
 
 ## A bundle
 
@@ -17,7 +17,7 @@ The manifest is a list of `key = value` lines. A line that starts with `#` is a 
 | Key | Content |
 |---|---|
 | `id` | The id of the app, for example `org.mydistro.terminal`. A window of the app gives the same id in `xdg_toplevel.set_app_id`, so the shell knows which app the window belongs to. |
-| `name` | The name in the dock. The icon shows its first letter. |
+| `name` | The name that Summon shows. |
 | `exec` | The program: a path in the bundle, or an absolute path. |
 | `color` | The colour of the icon, as `RRGGBB`. |
 
@@ -28,7 +28,7 @@ exec = bin/mydistro-terminal
 color = 3BB273
 ```
 
-A bundle needs an `id`, a `name`, and a program that exists. The compositor drops a bundle without them, and writes a line about it on the console. The dock shows the other bundles by name.
+A bundle needs an `id`, a `name`, and a program that exists. The compositor drops a bundle without them, and writes a line about it on the console. Summon lists the other bundles by name.
 
 ## The bundles in the image
 
@@ -49,24 +49,25 @@ To add an app:
 
 ## How an app starts
 
-1. The pointer clicks an icon in the dock.
-2. The dock asks the compositor: `ShellActions.openApp(id)`.
+1. The Super key opens Summon. A person types to narrow the list, and presses Enter.
+2. Summon asks the compositor: `ShellActions.openApp(id)`.
 3. If a window of that app is open, it comes to the front and gets the keyboard.
 4. If no window is open, `posix_spawn` starts the program of the bundle. The child gets the environment of the compositor, which has `WAYLAND_DISPLAY` in it, and a session of its own. The compositor does not wait for the child.
-5. The app connects, and it opens a window. The compositor puts the window in the app area and gives it the keyboard. A dot under the icon says that the app is open.
+5. The app connects, and it opens a window. The layout gives the window a cell, and the window gets the keyboard.
 
 The compositor writes `APP-STARTED <id> pid <number>` on the console, and `WINDOW-MAPPED` when the window comes.
 
-`MYDISTRO_UI_DIR` changes which program starts: a program of that directory takes the place of the program of a bundle with the same name. `make demo-dev` and `make test-dev` set it, so that a click in the dock starts the new build.
+`MYDISTRO_UI_DIR` changes which program starts: a program of that directory takes the place of the program of a bundle with the same name. `make demo-dev` and `make test-dev` set it, so that Summon starts the new build.
 
-## The app area
+## The canvas
 
-The app area is the space between the panel and the dock. On a screen of 1280 × 800 pixels it is 1280 × 675, at y 28.
+The canvas is the screen without the rail. On a screen of 1280 × 800 pixels it is 1200 × 784, at 72, 8.
 
-- `RootView.windowArea(screen:)` gives the area. The shell computes it from the height of the panel, the height of the dock, and the space under the dock. Thus the shell decides how much space it keeps, and the compositor asks.
-- The first configure event of a window gives that size, with the states `maximized` and `activated`. An app that answers with the size draws exactly the area.
-- An app can keep another size. The compositor then puts the window in the middle of the area.
-- The windows are behind the shell. The panel and the dock stay visible, because the compositor draws them after the windows.
+- `RootView.windowArea(screen:)` gives the canvas. The shell computes it from the width of the rail and the gaps around it. Thus the shell decides how much space it keeps, and the compositor asks.
+- A layout owns every point of the canvas. A window never floats, and a window never covers another window. See [layouts.md](layouts.md).
+- The first configure event of a window gives the size of its cell, with the states `maximized` and `activated`.
+- An app can commit a buffer of another size. The compositor then puts the buffer in the middle of the cell and cuts it to the cell.
+- The windows are behind the shell. The rail stays visible, because the compositor draws it after the windows.
 
 ## The terminal
 

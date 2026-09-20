@@ -272,8 +272,12 @@ public enum SoftwareRenderer {
         if alpha == 0 { return dst }
         let inverse = 255 - alpha
         // Red and blue together, then green, 8 bits of headroom each.
-        let rb = ((dst & 0xFF00FF) * inverse >> 8) & 0xFF00FF
-        let g = ((dst & 0x00FF00) * inverse >> 8) & 0x00FF00
+        //
+        // The brackets around the multiply matter: Swift shifts before it
+        // multiplies, so `a * b >> 8` is `a * (b >> 8)`, which is a * 0 for
+        // every inverse below 256.
+        let rb = (((dst & 0xFF00FF) * inverse) >> 8) & 0xFF00FF
+        let g = (((dst & 0x00FF00) * inverse) >> 8) & 0x00FF00
         return (src & 0xFFFFFF) &+ rb &+ g
     }
 }

@@ -5,27 +5,46 @@ import Toolkit
 // the windows of the apps. RootView is the whole screen. The compositor draws
 // it for each frame and gives it the state.
 //
-// Write your UI here. A new part of the interface is a View in this
-// directory, and RootView puts it on the screen.
+// The rail on the left edge is the only chrome that is always there. The rest
+// of the screen is the canvas, and a layout owns every point of it: a window
+// never floats and never covers another window.
 
 /// What the shell shows. The compositor fills it in for each frame.
 public struct ShellState: Equatable, Sendable {
-    /// The apps in /Applications, in the order that the dock shows them.
+    /// The apps in /Applications.
     public var apps: [AppEntry]
-    /// The ids of the apps that have a window now. The dock puts a dot under
-    /// each of them.
-    public var runningApps: Set<String>
-    /// The titles of the open windows, back to front.
-    public var windowTitles: [String]
-    /// The time, as "14:05".
-    public var clock: String
+    /// The open windows, in the order that the canvas shows them.
+    public var windows: [WindowEntry]
+    /// The layout that owns the canvas.
+    public var layout: WindowLayoutKind
+    /// The time, as the rail stacks it.
+    public var clock: Clock
+    /// How the shell draws depth. The compositor picks it from the hardware.
+    public var mode: RenderMode
+    /// Summon is over the canvas.
+    public var summonIsOpen: Bool
+    /// What a person typed into Summon.
+    public var summonQuery: String
+    /// Which line of Summon Enter chooses.
+    public var summonSelection: Int
 
-    public init(apps: [AppEntry] = [], runningApps: Set<String> = [],
-                windowTitles: [String] = [], clock: String = "") {
+    public init(apps: [AppEntry] = [], windows: [WindowEntry] = [],
+                layout: WindowLayoutKind = .principal, clock: Clock = Clock(),
+                mode: RenderMode = .cpu, summonIsOpen: Bool = false,
+                summonQuery: String = "", summonSelection: Int = 0) {
         self.apps = apps
-        self.runningApps = runningApps
-        self.windowTitles = windowTitles
+        self.windows = windows
+        self.layout = layout
         self.clock = clock
+        self.mode = mode
+        self.summonIsOpen = summonIsOpen
+        self.summonQuery = summonQuery
+        self.summonSelection = summonSelection
+    }
+
+    /// The ids of the apps that have a window now.
+    public var runningApps: Set<String> {
+        Set(windows.map(\.appID))
     }
 }
 
@@ -38,21 +57,32 @@ public struct ShellActions {
     /// Asks the front window to close (xdg_toplevel.close). The app decides
     /// what it does with that.
     public var closeFrontWindow: () -> Void
+    /// Brings a window to the front, which makes it the principal.
+    public var raiseWindow: (String) -> Void
+    /// Opens Summon, or closes it when it is open.
+    public var toggleSummon: () -> Void
+    /// Moves to the next layout.
+    public var nextLayout: () -> Void
+    /// Gives the canvas to one layout.
+    public var setLayout: (WindowLayoutKind) -> Void
 
     public init(openApp: @escaping (String) -> Void = { _ in },
-                closeFrontWindow: @escaping () -> Void = {}) {
+                closeFrontWindow: @escaping () -> Void = {},
+                raiseWindow: @escaping (String) -> Void = { _ in },
+                toggleSummon: @escaping () -> Void = {},
+                nextLayout: @escaping () -> Void = {},
+                setLayout: @escaping (WindowLayoutKind) -> Void = { _ in }) {
         self.openApp = openApp
         self.closeFrontWindow = closeFrontWindow
+        self.raiseWindow = raiseWindow
+        self.toggleSummon = toggleSummon
+        self.nextLayout = nextLayout
+        self.setLayout = setLayout
     }
 }
 
-/// The screen: the panel at the top, the dock at the bottom, and the app area
-/// between them. The window of an app fills the app area, behind the shell,
-/// because the compositor draws the windows before the shell.
+/// The screen: the rail on the left, and the canvas beside it.
 public struct RootView: View {
-    /// The space between the app area and the dock.
-    static let gap: Double = 8
-
     let state: ShellState
     let actions: ShellActions
 
@@ -62,23 +92,27 @@ public struct RootView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            Panel(state: state, actions: actions)
-                .frame(height: Panel.height)
-            Spacer()            // the app area: the windows are behind it
-            DockView(apps: state.apps, running: state.runningApps, actions: actions)
-                .padding(.bottom, DockView.bottomMargin)
+        ZStack(alignment: .topLeading) {
+            HStack(spacing: 0) {
+                RailView(state: state, actions: actions)
+                    .padding(Metrics.gap)
+                Spacer()        // the canvas: the windows are behind it
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if state.summonIsOpen {
+                SummonView(state: state, actions: actions)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// The app area of `screen`: the space between the panel and the dock.
-    /// The compositor gives it to the window of an app, and it keeps the
-    /// space free even when the dock has no icon in it.
+    /// The canvas of `screen`: everything that is not the rail. A layout
+    /// owns it, and it stays free even when no window is open.
     public static func windowArea(screen: Rect) -> Rect {
-        let top = Int(Panel.height)
-        let bottom = Int((DockView.height + DockView.bottomMargin + gap).rounded(.up))
-        return Rect(x: screen.x, y: screen.y + top,
-                    width: screen.width, height: max(0, screen.height - top - bottom))
+        let left = Int((Metrics.gap + Metrics.railWidth + Metrics.gap).rounded())
+        let margin = Int(Metrics.gap)
+        return Rect(x: screen.x + left, y: screen.y + margin,
+                    width: max(0, screen.width - left - margin),
+                    height: max(0, screen.height - 2 * margin))
     }
 }

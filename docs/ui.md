@@ -157,7 +157,7 @@ It must run as root, when no other program uses the display.
 
 ## Tests
 
-`make test-ui` runs the unit tests of the toolkit and the shell on the Mac. They test the layout, the text, and the panel. They need no screen, no VM and no container. `make test-ui-linux` runs the same tests on mydistro, in the builder container. See [toolkit.md](toolkit.md#tests).
+`make test-ui` runs the unit tests of the toolkit and the shell on the Mac. They test the layout, the text, the rail and Summon. They need no screen, no VM and no container. `make test-ui-linux` runs the same tests on mydistro, in the builder container. See [toolkit.md](toolkit.md#tests).
 
 The tests that need a screen run in the VM. See [testing.md](testing.md).
 
@@ -179,4 +179,4 @@ The VM has a virtio graphics device without 3D, so Mesa renders with the CPU (ll
 
 Apple's Virtualization framework gives a Linux guest no GPU. `VZVirtioGraphicsDeviceConfiguration` is a 2D scanout, and it never offers the 3D feature bit. The 3D graphics device of the framework, `VZMacGraphicsDeviceConfiguration`, accepts macOS guests only.
 
-The compositor also does not use a GPU yet. It draws into DRM dumb buffers with the CPU and shows them with a page flip. See [next-steps.md](next-steps.md) for the work that a GPU needs.
+The compositor also does not use a GPU yet. It draws into DRM dumb buffers with the CPU and puts them on the screen with a page flip. See [next-steps.md](next-steps.md) for the work that a GPU needs.

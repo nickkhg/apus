@@ -37,12 +37,12 @@ Thus, mydistro has a toolkit of its own. It is much smaller, it is complete for 
 
 There is no dependency graph. Each frame lowers the view tree to layout nodes, and the nodes lay out and draw themselves:
 
-1. The compositor makes a view, for example `Panel(state:)`.
+1. The compositor makes a view, for example `RailView(state:)`.
 2. `ViewRenderer` asks the view for its layout nodes. A composite view gives the nodes of its `body`. A primitive view (`Color`, `Text`, a stack, a modifier) makes its own node.
 3. The root node gets the rectangle to fill. It asks each child for a size, then gives each child a frame.
 4. Each node adds items to the display list: a fill or a bitmap. See [compositor.md](compositor.md#the-display-list).
 
-A complete frame of the panel takes microseconds, because the shell is small. A dependency graph saves work in a large app. It costs much more code.
+A complete frame of the rail takes microseconds, because the shell is small. A dependency graph saves work in a large app. It costs much more code.
 
 ### Layout: a proposal and an answer
 
@@ -79,8 +79,10 @@ ui/
     │   ├── Terminal/      the grid of characters of the terminal
     │   └── Shell/         YOUR UI
     │       ├── RootView.swift
-    │       ├── Panel.swift
-    │       └── Dock.swift
+    │       ├── Rail.swift
+    │       ├── Summon.swift
+    │       ├── Theme.swift
+    │       └── WindowLayout.swift
     └── Tests/
 ```
 
@@ -88,7 +90,7 @@ ui/
 |---|---|
 | `Render` | `Rect`, `Bitmap`, `DisplayItem`, `DisplayList`, `Canvas`, and `SoftwareRenderer`. No other module of ours is below it. |
 | `Toolkit` | The views, the layout, the text, and `ViewRenderer`. It makes display lists. It knows nothing about the screen or about Wayland. |
-| `Shell` | What mydistro draws itself: the panel, the dock, and `RootView`. |
+| `Shell` | What mydistro draws itself: the rail, Summon, the layouts, and `RootView`. |
 | `Terminal` | What the terminal app draws: the grid of characters, and the escape sequences that change it. The app around it is `ui/Sources/TerminalApp/`. See [applications.md](applications.md). |
 
 ### The root view
@@ -102,10 +104,10 @@ public struct RootView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            Panel(state: state, actions: actions)
-                .frame(height: Panel.height)
+            RailView(state: state, actions: actions)
+                .padding(Metrics.gap)
             Spacer()            // the app area: the windows are behind it
-            DockView(apps: state.apps, running: state.runningApps, actions: actions)
+            SummonView(state: state, actions: actions)
                 .padding(.bottom, DockView.bottomMargin)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
