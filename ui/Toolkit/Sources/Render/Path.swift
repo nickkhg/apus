@@ -91,6 +91,73 @@ public struct Path: Equatable, Sendable {
         close()
     }
 
+    /// Adds the parts of another path to this one.
+    public mutating func add(_ other: Path) {
+        elements += other.elements
+    }
+
+    /// The same outline, drawn the other way round.
+    ///
+    /// A ring comes from two outlines that go in opposite directions: the
+    /// winding of the inner one cancels the winding of the outer one, so the
+    /// middle stays empty and only the band between them is filled. This is
+    /// how a stroke is drawn.
+    public func reversed() -> Path {
+        var result = Path()
+        var index = 0
+        while index < elements.count {
+            guard case .move(let startX, let startY) = elements[index] else {
+                index += 1
+                continue
+            }
+            // One part: the point it starts at, the segments after it, and
+            // whether it closes. Each segment keeps the point it starts from,
+            // because that point is where the reversed segment ends.
+            var pen = (x: startX, y: startY)
+            var segments: [(element: Element, from: (x: Double, y: Double))] = []
+            var isClosed = false
+            index += 1
+            parts: while index < elements.count {
+                switch elements[index] {
+                case .move:
+                    break parts
+                case .close:
+                    isClosed = true
+                    index += 1
+                    break parts
+                case .line(let x, let y):
+                    segments.append((elements[index], pen))
+                    pen = (x, y)
+                case .quadratic(_, _, let x, let y):
+                    segments.append((elements[index], pen))
+                    pen = (x, y)
+                case .cubic(_, _, _, _, let x, let y):
+                    segments.append((elements[index], pen))
+                    pen = (x, y)
+                }
+                index += 1
+            }
+
+            result.move(to: pen.x, pen.y)
+            for segment in segments.reversed() {
+                let end = segment.from
+                switch segment.element {
+                case .line:
+                    result.line(to: end.x, end.y)
+                case .quadratic(let cx, let cy, _, _):
+                    result.quadratic(control: cx, cy, to: end.x, end.y)
+                case .cubic(let c1x, let c1y, let c2x, let c2y, _, _):
+                    // The control points swap with the ends.
+                    result.cubic(control1: c2x, c2y, control2: c1x, c1y, to: end.x, end.y)
+                case .move, .close:
+                    break
+                }
+            }
+            if isClosed { result.close() }
+        }
+        return result
+    }
+
     // MARK: For the renderer
 
     /// The line segments of the path, with every part closed. A curve becomes

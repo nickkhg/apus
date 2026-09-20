@@ -14,10 +14,11 @@ private struct Counter: View {
     }
 }
 
-/// The colour of the first fill says which value the state has.
+/// The colour of the first fill says which value the state has. These tests
+/// carry a number in a colour, so the alpha byte of the fill is dropped.
 private func value(_ list: DisplayList) -> UInt32? {
     for item in list {
-        if case .fill(_, let color) = item { return color }
+        if case .fill(_, let color) = item { return color & 0x00FF_FFFF }
     }
     return nil
 }

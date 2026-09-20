@@ -32,7 +32,12 @@ final class Client {
     var wmBase: OpaquePointer?
     var surface: OpaquePointer?
     var buffer: OpaquePointer?
-    var drawn = false
+    /// The size of the buffer that the window shows now. The compositor can
+    /// ask for a new size at any time, because the layout owns the size, so
+    /// the window draws again whenever the size it is given changes.
+    var drawnSize: (width: Int, height: Int)?
+    /// Each buffer needs a name of its own, as the old one may still exist.
+    var buffers = 0
 }
 
 let client = Client()
@@ -74,7 +79,14 @@ func makeBuffer(_ client: Client) {
     let (width, height) = (client.width, client.height)
     let stride = width * 4
     let size = stride * height
-    let name = "/mydistro-hello-\(getpid())"
+    // The compositor copies the pixels and gives the buffer back at once, so
+    // the buffer of the last size is no longer needed.
+    if let old = client.buffer {
+        wl_buffer_destroy(old)
+        client.buffer = nil
+    }
+    client.buffers += 1
+    let name = "/mydistro-hello-\(getpid())-\(client.buffers)"
     let fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0o600)
     guard fd >= 0 else { fail("shm_open: \(String(cString: strerror(errno)))") }
     shm_unlink(name)
@@ -123,14 +135,16 @@ let xdgSurfaceListener = permanent(xdg_surface_listener(
     configure: { data, xdgSurface, serial in
         let client = state(data)
         xdg_surface_ack_configure(xdgSurface, serial)
-        guard !client.drawn else { return }
-        // First configure: make a buffer of the size we now know, and show
-        // the window.
+        // Draw for the first configure, and again whenever the compositor
+        // asks for a different size. A window that keeps an old size is cut
+        // to the frame that the layout gave it.
+        let wanted = (width: client.width, height: client.height)
+        guard client.drawnSize == nil || client.drawnSize! != wanted else { return }
         makeBuffer(client)
         wl_surface_attach(client.surface, client.buffer, 0, 0)
         wl_surface_damage_buffer(client.surface, 0, 0, Int32.max, Int32.max)
         wl_surface_commit(client.surface)
-        client.drawn = true
+        client.drawnSize = wanted
         print("CLIENT-DRAWN \(client.width)x\(client.height)")
         fflush(nil)
     }

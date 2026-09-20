@@ -20,7 +20,14 @@ log_user 1
 source [file dirname [info script]]/lib.exp
 
 set bin ""
-if {[info exists env(MYDISTRO_UI_DIR)]} { set bin "$env(MYDISTRO_UI_DIR)/" }
+set uienv ""
+if {[info exists env(MYDISTRO_UI_DIR)]} {
+    set bin "$env(MYDISTRO_UI_DIR)/"
+    # The compositor starts the apps of /Applications, so it needs the
+    # directory in its own environment. Without this the compositor is the
+    # new build and every app it starts is the one in the image.
+    set uienv "MYDISTRO_UI_DIR=$env(MYDISTRO_UI_DIR) "
+}
 
 proc screen {name args} {
     if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/$name.ppm {*}$args} result]} {
@@ -33,7 +40,7 @@ spawn env VM_GPU=headless vm/run.sh installed
 login
 
 # Root on the serial console has no seat session: libseat opens devices directly.
-send "LIBSEAT_BACKEND=noop ${bin}mydistro-compositor &\r"
+send "LIBSEAT_BACKEND=noop ${uienv}${bin}mydistro-compositor &\r"
 expect {
     "COMPOSITOR-READY"     {}
     "mydistro-compositor:" { fail "compositor reported an error" }

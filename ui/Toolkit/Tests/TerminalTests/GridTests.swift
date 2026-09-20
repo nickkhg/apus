@@ -20,7 +20,10 @@ struct GridTests {
         let narrow = ViewRenderer.size(of: Text("i").font(cell.font), fitting: .unspecified)
         let wide = ViewRenderer.size(of: Text("W").font(cell.font), fitting: .unspecified)
         #expect(narrow.width == wide.width)
-        #expect(cell.width >= narrow.width)
+        // The measured width of one character is its advance plus a small
+        // constant, so the cell is a little narrower than that measurement.
+        #expect(cell.width <= narrow.width)
+        #expect(narrow.width - cell.width <= 1)
     }
 
     @Test("The first item fills the window with the background colour")
@@ -31,7 +34,7 @@ struct GridTests {
             return
         }
         #expect(rect == frame)
-        #expect(color == Palette.background)
+        #expect(color == Palette.background | 0xFF00_0000)
     }
 
     @Test("An empty screen draws only the background and the cursor")
@@ -72,7 +75,7 @@ struct GridTests {
         // The window, and the four cells behind the word.
         #expect(fills.count == 2)
         guard case .fill(let rect, let color) = fills.last else { return }
-        #expect(color == Palette.color(4))
+        #expect(color == Palette.color(4) | 0xFF00_0000)
         #expect(rect.width == Int((cell.width * 4).rounded(.up)))
     }
 
@@ -98,5 +101,52 @@ struct GridTests {
         let screen = Screen(columns: 20, rows: 5)
         screen.write(Array("\u{1B}[?25l".utf8))
         #expect(items(screen).count == 1)
+    }
+}
+
+@Suite("The cell size")
+struct CellSizeTests {
+    private let font = Font.monospaced(size: 15)
+
+    @Test("The cell width is the advance of the font, so the grid follows the glyphs")
+    func theCellWidthIsTheAdvance() {
+        let cell = CellSize(font: font)
+        // The advance from two measurements that differ by 40 characters.
+        let one = ViewRenderer.size(of: Text("M").font(font), fitting: .unspecified).width
+        let many = ViewRenderer.size(of: Text(String(repeating: "M", count: 41)).font(font),
+                                     fitting: .unspecified).width
+        // Each measurement is rounded to a whole pixel, so an advance taken
+        // over 40 characters can be out by a fortieth of a pixel.
+        #expect(abs((many - one) / 40 - cell.width) < 0.1)
+    }
+
+    @Test("A long line does not drift away from its cells")
+    func aLongLineDoesNotDrift() {
+        let cell = CellSize(font: font)
+        let columns = 60
+        let line = String(repeating: "M", count: columns)
+        let drawn = ViewRenderer.size(of: Text(line).font(font), fitting: .unspecified).width
+        let grid = Double(columns) * cell.width
+        // Over a whole line the two must stay within one character of each
+        // other. The old measurement was out by a pixel for each character.
+        #expect(abs(drawn - grid) < cell.width)
+    }
+
+    @Test("The cursor sits at the column that it marks")
+    func theCursorSitsOnItsColumn() {
+        let cell = CellSize(font: font)
+        let screen = Screen(columns: 40, rows: 4)
+        screen.write(Array("[root@mydistro ~]# abc".utf8))
+        let frame = Rect(x: 0, y: 0, width: 800, height: 200)
+        let list = Grid.displayList(for: screen, cell: cell, in: frame)
+        guard case .path(let path, _) = list.last,
+              case .move(let x, _) = path.elements.first else {
+            Issue.record("expected the cursor path last, got \(String(describing: list.last))")
+            return
+        }
+        // The cursor is after the text, and the text ends where the glyphs do.
+        let text = ViewRenderer.size(of: Text("[root@mydistro ~]# abc").font(font),
+                                     fitting: .unspecified).width
+        #expect(abs(x - text) < 2 * cell.width)
     }
 }

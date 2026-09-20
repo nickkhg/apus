@@ -58,15 +58,7 @@ final class FillNode: LayoutNode {
         guard color.alpha > 0 else { return }
         let rect = frame.pixels
         guard rect.width > 0, rect.height > 0 else { return }
-        if color.isOpaque {
-            pass.list.append(.fill(rect, color: color.packed))
-        } else {
-            // The renderer blends bitmaps, not fills, so a translucent
-            // colour becomes a one-colour bitmap.
-            let pixels = [UInt32](repeating: color.premultiplied, count: rect.width * rect.height)
-            let bitmap = Bitmap(width: rect.width, height: rect.height, isOpaque: false, pixels: pixels)
-            pass.list.append(.bitmap(bitmap, x: rect.x, y: rect.y))
-        }
+        pass.list.append(.fill(rect, color: color.premultiplied))
     }
 }
 
@@ -365,5 +357,39 @@ final class OffsetNode: LayoutNode {
     override func render(in frame: Frame, into pass: inout RenderPass) {
         child.render(in: Frame(x: frame.x + dx, y: frame.y + dy, width: frame.width, height: frame.height),
                      into: &pass)
+    }
+}
+
+/// Cuts a child to its frame. The renderer draws nothing outside it, and a
+/// view that the clip hides does not answer the pointer either.
+final class ClipNode: LayoutNode {
+    let child: LayoutNode
+
+    init(child: LayoutNode) {
+        self.child = child
+    }
+
+    override func computeSize(fitting proposal: Proposal) -> Size {
+        child.size(fitting: proposal)
+    }
+
+    override func render(in frame: Frame, into pass: inout RenderPass) {
+        let rect = frame.pixels
+        guard rect.width > 0, rect.height > 0 else { return }
+        // The regions that the child adds are cut to the same frame, so a
+        // button that the clip hides cannot be hovered or clicked.
+        let hovers = pass.hoverRegions.count
+        let taps = pass.tapRegions.count
+
+        pass.list.append(.pushClip(rect))
+        child.render(in: frame, into: &pass)
+        pass.list.append(.popClip)
+
+        for index in hovers..<pass.hoverRegions.count {
+            pass.hoverRegions[index].frame = pass.hoverRegions[index].frame.intersection(frame)
+        }
+        for index in taps..<pass.tapRegions.count {
+            pass.tapRegions[index].frame = pass.tapRegions[index].frame.intersection(frame)
+        }
     }
 }

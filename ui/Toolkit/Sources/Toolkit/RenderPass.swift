@@ -20,7 +20,7 @@ public struct HoverRegion {
     /// The place of the view in the tree. It is the same in the next frame,
     /// so the host knows that the pointer stays over the same view.
     let id: Int
-    let frame: Frame
+    var frame: Frame
     let action: (Bool) -> Void
 
     public func contains(x: Double, y: Double) -> Bool {
@@ -31,7 +31,7 @@ public struct HoverRegion {
 /// A view that answers a click of the pointer.
 public struct TapRegion {
     let id: Int
-    let frame: Frame
+    var frame: Frame
     /// The button went down over the view, or it went up, or the pointer
     /// left the view while the button was down.
     let onPress: (Bool) -> Void

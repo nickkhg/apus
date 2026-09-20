@@ -11,11 +11,18 @@ log_user 1
 source [file dirname [info script]]/../tests/lib.exp
 
 set bin ""
-if {[info exists env(MYDISTRO_UI_DIR)]} { set bin "$env(MYDISTRO_UI_DIR)/" }
+set uienv ""
+if {[info exists env(MYDISTRO_UI_DIR)]} {
+    set bin "$env(MYDISTRO_UI_DIR)/"
+    # The compositor starts the apps of /Applications, so it needs the
+    # directory in its own environment. Without this the compositor is the
+    # new build and every app it starts is the one in the image.
+    set uienv "MYDISTRO_UI_DIR=$env(MYDISTRO_UI_DIR) "
+}
 
 spawn env VM_GPU=window vm/run.sh installed
 login
-send "LIBSEAT_BACKEND=noop ${bin}mydistro-compositor &\r"
+send "LIBSEAT_BACKEND=noop ${uienv}${bin}mydistro-compositor &\r"
 expect {
     "COMPOSITOR-READY"     {}
     "mydistro-compositor:" { fail "compositor reported an error" }

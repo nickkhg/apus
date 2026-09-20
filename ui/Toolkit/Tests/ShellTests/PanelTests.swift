@@ -40,7 +40,7 @@ struct PanelTests {
             return
         }
         #expect(rect == Rect(x: 0, y: 0, width: 1280, height: 28))
-        #expect(color == 0x1B1626)
+        #expect(color == 0xFF1B1626)
     }
 
     @Test("The panel shows the name and the time, and nothing else when no window is open")

@@ -17,8 +17,10 @@ public final class Compositor {
     /// A mapped toplevel and where it is on screen.
     private final class Window {
         let surface: Surface
-        var x: Int, y: Int
-        init(surface: Surface, x: Int, y: Int) { (self.surface, self.x, self.y) = (surface, x, y) }
+        /// Where the layout put the window. A window with no frame waits in
+        /// the rail: it stays open and keeps its state, and it is not drawn.
+        var frame: Rect?
+        init(surface: Surface, frame: Rect?) { (self.surface, self.frame) = (surface, frame) }
     }
 
     private let options: Options
@@ -38,6 +40,9 @@ public final class Compositor {
     private let host = ViewHost()
     /// What the shell can ask the compositor to do.
     private var shellActions = ShellActions()
+    /// The layout that owns the canvas. A window never floats: this is the
+    /// only thing that gives a window a frame.
+    private var layoutKind = WindowLayoutKind.principal
     /// The apps in /Applications. The dock shows one icon for each.
     private let apps: [AppBundle]
     /// The same apps, as the shell gets them. They do not change, so the
@@ -91,10 +96,11 @@ public final class Compositor {
         // without a frame between minutes.
         try loop.onTimer(milliseconds: 1000) { [unowned self] in updateClock() }
         server.keymap = input.keymapText
-        server.windowArea = { [unowned self] in windowArea }
+        server.sizeForNewWindow = { [unowned self] surface in sizeForNewWindow(surface) }
         server.surfaceCommitted = { [unowned self] surface in surfaceCommitted(surface) }
         server.surfaceDestroyed = { [unowned self] surface in
             windows.removeAll { $0.surface === surface }
+            arrange()
             updateFocus()
             screen.setNeedsFrame()
         }
@@ -126,12 +132,20 @@ public final class Compositor {
     // MARK: - Drawing
 
     private func displayList() -> DisplayList {
+        // The option is 0xRRGGBB. The renderer wants an alpha byte, and the
+        // desktop is always opaque.
         var list: DisplayList = [.fill(Rect(x: 0, y: 0, width: screen.width, height: screen.height),
-                                       color: options.background)]
+                                       color: options.background | 0xFF00_0000)]
         for window in windows {
-            if let content = window.surface.content {
-                list.append(.bitmap(content, x: window.x, y: window.y))
-            }
+            guard let frame = window.frame, let content = window.surface.content else { continue }
+            // The frame is the layout's, not the app's. An app that drew a
+            // larger buffer is cut to its frame; a smaller one sits in the
+            // middle of it and the desktop shows around it.
+            let x = frame.x + max(0, (frame.width - content.width) / 2)
+            let y = frame.y + max(0, (frame.height - content.height) / 2)
+            list.append(.pushClip(frame))
+            list.append(.bitmap(content, x: x, y: y))
+            list.append(.popClip)
         }
         // The shell goes over the windows, and the pointer over both. The
         // host keeps the state of the shell views from frame to frame.
@@ -151,6 +165,74 @@ public final class Compositor {
     /// The part of the screen that windows use. The shell says where it is.
     private var windowArea: Rect {
         RootView.windowArea(screen: screenRect)
+    }
+
+    // MARK: - The layout
+
+    /// The canvas that the layout fills, as the layout wants it.
+    private var canvas: Frame {
+        let area = windowArea
+        return Frame(x: Double(area.x), y: Double(area.y),
+                     width: Double(area.width), height: Double(area.height))
+    }
+
+    /// The windows from the front to the back. The layout puts the first one
+    /// in the principal cell, so the front window is the principal.
+    private var frontFirst: [Window] {
+        windows.reversed()
+    }
+
+    /// One child of the layout, for a window that may not exist yet.
+    private func subview(id: AnyHashable, minimum: (width: Double, height: Double)?,
+                         content: Bitmap?) -> LayoutSubview {
+        LayoutSubview(id: id) { proposal in
+            WindowAnswer.size(minimum: minimum, content: content, to: proposal)
+        }
+    }
+
+    private func subview(for window: Window) -> LayoutSubview {
+        subview(id: ObjectIdentifier(window),
+                minimum: window.surface.toplevel?.minSize,
+                content: window.surface.content)
+    }
+
+    /// Runs the layout and gives every window its frame. A window whose size
+    /// changed is asked for the new one, because the layout owns the size.
+    private func arrange() {
+        let ordered = frontFirst
+        let frames = layoutKind.layout.frames(
+            in: canvas, subviews: LayoutSubviews(ordered.map { subview(for: $0) }))
+        for (window, frame) in zip(ordered, frames) {
+            let rect = frame?.pixels
+            window.frame = rect
+            let title = window.surface.toplevel?.title ?? ""
+            guard let rect else {
+                log("WINDOW-IN-RAIL \"\(title)\"")
+                continue
+            }
+            let asked = window.surface.toplevel?.configuredSize
+            guard asked?.width != rect.width || asked?.height != rect.height else {
+                log("WINDOW-KEPT \"\(title)\" \(rect.width)x\(rect.height)")
+                continue
+            }
+            log("WINDOW-CONFIGURED \"\(title)\" \(rect.width)x\(rect.height)"
+                + " was \(asked.map { "\($0.width)x\($0.height)" } ?? "new")")
+            server.configure(window.surface, width: rect.width, height: rect.height,
+                             activated: window === ordered.first)
+        }
+    }
+
+    /// Where a window that is about to appear will go. The new window goes
+    /// to the front, so the layout is run with it there.
+    private func sizeForNewWindow(_ surface: Surface) -> Rect {
+        var subviews = [subview(id: ObjectIdentifier(surface),
+                                minimum: surface.toplevel?.minSize, content: nil)]
+        subviews += frontFirst.map { subview(for: $0) }
+        let frames = layoutKind.layout.frames(in: canvas, subviews: LayoutSubviews(subviews))
+        // A window that the layout does not place still needs a size to draw
+        // at, so it gets a tile.
+        return (frames.first ?? nil)?.pixels
+            ?? Rect(x: 0, y: 0, width: Int(WindowMetrics.tile), height: Int(WindowMetrics.tile))
     }
 
     /// "14:05" from the system clock, in local time.
@@ -176,16 +258,15 @@ public final class Compositor {
     private func surfaceCommitted(_ surface: Surface) {
         if surface.isMapped, !windows.contains(where: { $0.surface === surface }),
            let content = surface.content {
-            // A window gets the app area: the space between the panel and
-            // the dock. The configure event asked the app for that size. An
-            // app that takes another size goes in the middle of the area.
-            let area = windowArea
-            let x = area.x + max(0, (area.width - content.width) / 2)
-            let y = area.y + max(0, (area.height - content.height) / 2)
-            windows.append(Window(surface: surface, x: x, y: y))
+            // The newest window goes to the front, and the layout then gives
+            // every window a frame.
+            windows.append(Window(surface: surface, frame: nil))
+            arrange()
             updateFocus()
             let title = surface.toplevel?.title ?? ""
-            log("WINDOW-MAPPED \"\(title)\" \(content.width)x\(content.height) at \(x),\(y)")
+            let frame = windows.last?.frame
+            let place = frame.map { "\($0.width)x\($0.height) at \($0.x),\($0.y)" } ?? "in the rail"
+            log("WINDOW-MAPPED \"\(title)\" \(place) drew \(content.width)x\(content.height)")
         }
         screen.setNeedsFrame()
     }
@@ -217,8 +298,13 @@ public final class Compositor {
     /// already. A dock icon does this.
     private func openApp(_ id: String) {
         if let index = windows.lastIndex(where: { $0.surface.toplevel?.appID == id }) {
+            // The window goes to the front, which makes it the principal.
+            // The layout must run again: the front window and the principal
+            // cell are the same thing, so the keys and the large cell never
+            // belong to two different windows.
             let window = windows.remove(at: index)
             windows.append(window)
+            arrange()
             updateFocus()
             log("APP-RAISED \(id)")
             screen.setNeedsFrame()

@@ -177,7 +177,8 @@ demo:
 	vm/demo.exp
 
 # The same, but the VM runs the programs from `make ui` through /mnt/host.
-demo-dev:
+# It builds them first, so that the VM never runs a program of an older build.
+demo-dev: ui
 	MYDISTRO_UI_DIR=/mnt/host/ui vm/demo.exp
 
 test:

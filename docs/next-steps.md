@@ -7,13 +7,18 @@ In this sequence:
 1. The pointer for apps. `wl_seat` has a keyboard already. Add `wl_pointer`, and send the events to the window under the pointer. The shell must keep the pointer when it is over the panel or the dock.
 2. Window management. A window that moves and that changes its size (`xdg_toplevel.move`, `xdg_toplevel.resize`), and a click that brings a window forward.
 3. `wl_output`. Many apps need it to know the screen size and scale.
-4. Damage tracking. Draw only the parts of the screen that changed.
-5. Stop drawing when libseat disables the seat (for example on a VT switch), and start again when libseat enables it.
-6. A GPU renderer. Use GBM, EGL, and OpenGL ES to draw the display list. Keep `SoftwareRenderer` as a fallback.
-7. `linux-dmabuf`, so that apps can give GPU buffers.
-8. Popups (`xdg_popup` and `xdg_positioner`).
-9. Test with real Wayland apps, for example `foot` or `weston-terminal`. The clients that test the Swift Wayland server now are `mydistro-hello-client` and `mydistro-terminal`.
-10. `wl_registry.global_remove`, for globals that go away (for example a disconnected output).
+4. A screen that changes its mode. The compositor reads the mode of the
+   display when it starts and keeps it. A virtual machine changes the mode
+   when its window changes size, and a monitor does it when a person connects it.
+   The compositor must watch for the change, make new buffers, and run the
+   layout again.
+5. Damage tracking. Draw only the parts of the screen that changed.
+6. Stop drawing when libseat disables the seat (for example on a VT switch), and start again when libseat enables it.
+7. A GPU renderer. Use GBM, EGL, and OpenGL ES to draw the display list. Keep `SoftwareRenderer` as a fallback.
+8. `linux-dmabuf`, so that apps can give GPU buffers.
+9. Popups (`xdg_popup` and `xdg_positioner`).
+10. Test with real Wayland apps, for example `foot` or `weston-terminal`. The clients that test the Swift Wayland server now are `mydistro-hello-client` and `mydistro-terminal`.
+11. `wl_registry.global_remove`, for globals that go away (for example a disconnected output).
 
 ## The toolkit and the shell
 
@@ -22,11 +27,11 @@ The toolkit draws the panel and the dock, with `@State`, shapes and the pointer.
 1. The keyboard in the toolkit: which view has the focus, and how the keys reach it. The keys now go to the app in front only.
 2. An icon file in a bundle, and an image as a display item. An icon is now the first letter of the name.
 3. Text that is too long for its space. Cut it, and add "…".
-4. Clip a view to its frame, and a border along a shape. The renderer fills an outline. It does not draw a line along one.
-5. A scale for a high-resolution screen. Now one point is one pixel.
-6. A pointer position in a handler, and a drag.
-7. Window title bars, with a close button of their own.
-8. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
+4. A scale for a high-resolution screen. Now one point is one pixel. The
+   compositor must also tell an app the scale, which needs `wl_output`.
+5. A pointer position in a handler, and a drag.
+6. Window title bars, with a close button of their own.
+7. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
 
 ## The terminal
 

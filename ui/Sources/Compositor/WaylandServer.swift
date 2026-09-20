@@ -77,6 +77,13 @@ final class Toplevel {
     unowned let surface: Surface
     var title = ""
     var appID = ""
+    /// The smallest size that the app accepts (xdg_toplevel.set_min_size).
+    /// A layout reads it as the app's answer to a proposal, because the
+    /// compositor cannot ask another process for a size.
+    var minSize: (width: Double, height: Double)?
+    /// The size that the last configure asked for. The compositor sends a
+    /// new one only when the size changes.
+    var configuredSize: (width: Int, height: Int)?
     fileprivate var configured = false
 
     init(xdgSurface: Resource<XdgSurface>, resource: Resource<XdgToplevel>, surface: Surface) {
@@ -89,9 +96,9 @@ final class WaylandServer {
     private let shm: Shm
     var socketName: String { display.socketName }
 
-    /// The space that a window gets: the app area of the screen. The first
-    /// configure asks the app for that size.
-    var windowArea: () -> Rect = { Rect(x: 0, y: 0, width: 0, height: 0) }
+    /// The size that a window gets when it first appears. The compositor
+    /// runs the layout and answers with the frame that the new window got.
+    var sizeForNewWindow: (Surface) -> Rect = { _ in Rect(x: 0, y: 0, width: 0, height: 0) }
     /// A toplevel's surface got new content (or was mapped for the first time).
     var surfaceCommitted: (Surface) -> Void = { _ in }
     /// A surface went away.
@@ -277,16 +284,27 @@ final class WaylandServer {
             // the app area, and the states of a window that fills its space.
             // An app that keeps another size still opens, in the middle of
             // the area.
-            let area = windowArea()
-            toplevel.resource?.sendConfigure(
-                width: Int32(area.width), height: Int32(area.height),
-                states: WaylandServer.states(.maximized, .activated))
-            toplevel.xdgSurface?.sendConfigure(serial: display.nextSerial())
+            let area = sizeForNewWindow(surface)
+            configure(surface, width: area.width, height: area.height, activated: true)
             toplevel.configured = true
             return
         }
         if surface.content != nil { surface.isMapped = true }
         surfaceCommitted(surface)
+    }
+
+    /// Asks a window for a size. The layout owns the size, so this is the
+    /// proposal of the negotiation: the app answers by committing a buffer,
+    /// which may be a different size.
+    func configure(_ surface: Surface, width: Int, height: Int, activated: Bool) {
+        guard let toplevel = surface.toplevel else { return }
+        toplevel.configuredSize = (width, height)
+        toplevel.resource?.sendConfigure(
+            width: Int32(width), height: Int32(height),
+            states: activated
+                ? WaylandServer.states(.maximized, .activated)
+                : WaylandServer.states(.maximized))
+        toplevel.xdgSurface?.sendConfigure(serial: display.nextSerial())
     }
 
     /// Window states, as the array of 32-bit values that xdg_toplevel wants.
@@ -328,6 +346,10 @@ final class WaylandServer {
                 switch request {
                 case .setTitle(let title): toplevel.title = title
                 case .setAppId(let appID): toplevel.appID = appID
+                case .setMinSize(let width, let height):
+                    toplevel.minSize = width > 0 || height > 0
+                        ? (Double(width), Double(height))
+                        : nil
                 default: break
                 }
             }
