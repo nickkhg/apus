@@ -52,6 +52,9 @@ public struct NoticeView: View {
     let notice: Notice
     let actions: ShellActions
 
+    /// How the screen is drawn. The root puts it in the environment.
+    @Environment(\.renderMode) private var mode
+
     public init(notice: Notice, actions: ShellActions = ShellActions()) {
         self.notice = notice
         self.actions = actions
@@ -101,6 +104,7 @@ public struct NoticeView: View {
                 .stroke(Palette.divider, lineWidth: 1)
         )
         .clipped()
+        .shadow(Appearance(mode).cellShadow, cornerRadius: Metrics.cellRadius)
     }
 
     /// How tall a notice is, for the size that its text needs.

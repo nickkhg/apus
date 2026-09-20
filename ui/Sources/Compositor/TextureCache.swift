@@ -32,6 +32,8 @@ final class TextureCache {
     private struct MaskKey: Hashable {
         let path: Path
         let clip: Rect
+        /// The shadow that made it soft, if it is a shadow.
+        var shadow: Shadow?
     }
 
     struct MaskTexture {
@@ -87,13 +89,29 @@ final class TextureCache {
     /// The coverage of a path, in a texture. Nil when the path covers no
     /// pixel of the clip.
     func mask(for path: Path, clippedTo clip: Rect) -> MaskTexture? {
-        let key = MaskKey(path: path, clip: clip)
+        upload(MaskKey(path: path, clip: clip)) {
+            SoftwareRenderer.mask(for: path, clippedTo: clip)
+        }
+    }
+
+    /// The soft coverage of a shadow, in a texture.
+    ///
+    /// The CPU makes it, as it makes the coverage of a path. A shadow under
+    /// a cell changes no more often than the cell does, so it is made one
+    /// time and the frames after that only draw it.
+    func shadow(for path: Path, _ shadow: Shadow, clippedTo clip: Rect) -> MaskTexture? {
+        upload(MaskKey(path: path, clip: clip, shadow: shadow)) {
+            SoftwareRenderer.shadowMask(for: path, shadow, clippedTo: clip)
+        }
+    }
+
+    private func upload(_ key: MaskKey, _ rasterize: () -> Mask?) -> MaskTexture? {
         if var entry = masks[key] {
             entry.lastUsed = frame
             masks[key] = entry
             return MaskTexture(texture: entry.texture, rect: entry.rect)
         }
-        guard let mask = SoftwareRenderer.mask(for: path, clippedTo: clip) else { return nil }
+        guard let mask = rasterize() else { return nil }
         let texture = make()
         mask.coverage.withUnsafeBytes { bytes in
             glTexImage2D(GLenum(GL_TEXTURE_2D), 0, GL_ALPHA,

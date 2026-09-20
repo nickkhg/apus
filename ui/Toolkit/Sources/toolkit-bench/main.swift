@@ -52,6 +52,32 @@ measure("draw the items") {
 measure("background fill only") {
     SoftwareRenderer.render([.fill(screen, color: 0xFF2B2340)], into: canvas)
 }
+
+// What depth costs the CPU. The shell asks for these three in GPU mode
+// only, and this is why: each one is dearer than the surface it is for.
+let surface = Rect(x: 320, y: 120, width: 640, height: 520)
+var outline = Path()
+outline.addRoundedRectangle(x: Double(surface.x), y: Double(surface.y),
+                            width: Double(surface.width), height: Double(surface.height),
+                            radius: 20)
+let full: DisplayList = [.fill(screen, color: 0xFF2B2340)]
+measure("a surface: fill") {
+    SoftwareRenderer.render(full + [.path(outline, color: 0xFF12161A)], into: canvas)
+}
+measure("a surface: gradient") {
+    SoftwareRenderer.render(full + [.gradient(outline, Gradient(
+        from: 0xFF12161A, to: 0xFF0E1114,
+        startX: Double(surface.y), startY: Double(surface.y),
+        endX: Double(surface.x), endY: Double(surface.y + surface.height)))], into: canvas)
+}
+measure("a surface: shadow") {
+    SoftwareRenderer.render(full + [.shadow(outline, Shadow(color: 0x8C000000,
+                                                            radius: 28, dy: 10))],
+                            into: canvas)
+}
+measure("a surface: blur") {
+    SoftwareRenderer.render(full + [.blur(outline, radius: 20)], into: canvas)
+}
 // Which item costs what.
 print("--- each item")
 for (index, item) in list.enumerated() {
@@ -61,6 +87,9 @@ for (index, item) in list.enumerated() {
     case .bitmap(let bitmap, _, _): name = "\(index) bitmap \(bitmap.width)x\(bitmap.height)"
     case .pushClip(let rect): name = "\(index) clip \(rect.width)x\(rect.height)"
     case .popClip: name = "\(index) clip ends"
+    case .shadow(_, let shadow): name = "\(index) shadow, radius \(Int(shadow.radius))"
+    case .blur(_, let radius): name = "\(index) blur, radius \(Int(radius))"
+    case .gradient: name = "\(index) gradient"
     case .path(let path, _):
         var xs: [Double] = [], ys: [Double] = []
         for element in path.elements {

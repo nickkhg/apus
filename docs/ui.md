@@ -187,12 +187,16 @@ Both take the same display list, so nothing above the renderer changes. The chai
 
 1. GBM makes buffers on the same DRM device that the display uses.
 2. EGL draws into those buffers, with the GBM platform.
-3. GLES draws the display list (`GLRenderer`). Each item becomes one quad: a colour for a `fill`, a texture for a `bitmap`, and the coverage of the outline for a `path`.
+3. GLES draws the display list (`GLRenderer`). Each item becomes one quad. A `fill` is a colour, a `bitmap` is a texture, and a `path` or a `shadow` is the coverage of an outline. A `gradient` mixes its two colours in the shader. A `blur` is the one item that reads the screen back.
 4. `eglSwapBuffers` finishes a buffer. The buffer becomes a KMS framebuffer, and a page flip puts it on the display.
 
 A `path` becomes a texture because the GPU has no rule for filling an outline. The coverage comes from `SoftwareRenderer.mask`, which is the rasterizer that the CPU renderer uses, so the edges are the same in both. `TextureCache` keeps the masks. The CPU therefore rasterizes a shape that does not change one time only.
 
+A `blur` copies the part of the screen that it covers into a texture. Two passes with a framebuffer of its own make that copy soft. The item then puts the copy back inside the coverage of the path. It therefore reads what the list drew before it, and nothing after it.
+
 The tests use the CPU renderer. Its pixels are the same on every run, and the tests check exact colours. `tests/gpu.exp` draws one screen with each renderer and compares the two pictures. They agree to 3 of 255 in a colour channel. The difference is rounding: the CPU divides by 256, and the GPU divides by 255.
+
+`tests/gpu.exp` then draws the same screen again in the second mode of the shell. That mode asks for a shadow, a gradient and a blur. The two renderers must agree there as well, with a wider allowance. The blur of the GPU is 17 steps in each direction, and the blur of the CPU is an exact box. The test also holds that the two modes draw different screens. A mode is not the other mode with the effects turned off.
 
 ## Graphics in the VM
 

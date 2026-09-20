@@ -112,6 +112,27 @@ public struct Path: Hashable, Sendable {
         })
     }
 
+    /// The same outline, moved by `dx` and `dy`. A shadow is the outline
+    /// of the shape above it, moved down.
+    public func translated(dx: Double, dy: Double) -> Path {
+        guard dx != 0 || dy != 0 else { return self }
+        return Path(elements: elements.map { element in
+            switch element {
+            case .move(let x, let y):
+                .move(x: x + dx, y: y + dy)
+            case .line(let x, let y):
+                .line(x: x + dx, y: y + dy)
+            case .quadratic(let cx, let cy, let x, let y):
+                .quadratic(cx: cx + dx, cy: cy + dy, x: x + dx, y: y + dy)
+            case .cubic(let c1x, let c1y, let c2x, let c2y, let x, let y):
+                .cubic(c1x: c1x + dx, c1y: c1y + dy, c2x: c2x + dx, c2y: c2y + dy,
+                       x: x + dx, y: y + dy)
+            case .close:
+                .close
+            }
+        })
+    }
+
     /// Adds the parts of another path to this one.
     public mutating func add(_ other: Path) {
         elements += other.elements

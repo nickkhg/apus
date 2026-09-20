@@ -12,6 +12,10 @@ public struct EnvironmentValues: Sendable {
     /// same time, so that things that start together stay together.
     public var now: Double = 0
 
+    /// How the screen is drawn: what a view can afford to ask for. See
+    /// RenderMode in Effects.swift.
+    public var renderMode: RenderMode = .cpu
+
     /// Where the `@State` values of the view tree are. The renderer puts it
     /// here, so that a view needs no global. See State.swift.
     var viewState: ViewState?

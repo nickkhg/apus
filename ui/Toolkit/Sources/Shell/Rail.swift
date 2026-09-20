@@ -63,6 +63,8 @@ public struct RailView: View {
         self.actions = actions
     }
 
+    private var appearance: Appearance { Appearance(state.mode) }
+
     public var body: some View {
         VStack(spacing: 0) {
             SummonButton(actions: actions)
@@ -82,15 +84,17 @@ public struct RailView: View {
         .frame(maxHeight: .infinity)
         .background(
             RoundedRectangle(cornerRadius: Metrics.railRadius)
-                .fill(Palette.surface)
+                .fill(appearance.surfaceFace)
         )
+        .shadow(appearance.surfaceShadow, cornerRadius: Metrics.railRadius)
     }
 }
 
 /// Opens Summon: the one surface that starts an app and moves to a window.
 struct SummonButton: View {
     let actions: ShellActions
-    @Animated(.quick) private var glow = 0.0
+    /// How much the pointer has lit this control, from 0 to 1.
+    @State private var glow = 0.0
 
     var body: some View {
         Button(action: { actions.toggleSummon() }) {
@@ -104,7 +108,7 @@ struct SummonButton: View {
                 RoundedRectangle(cornerRadius: Metrics.buttonRadius)
                     .fill(Palette.accentSurface.lightened(by: glow * 0.4))
             )
-            .onHover { glow = $0 ? 1 : 0 }
+            .onHover { hovering in withAnimation(.quick) { glow = hovering ? 1 : 0 } }
         }
     }
 
@@ -119,7 +123,8 @@ struct SummonButton: View {
 struct LayoutButton: View {
     let kind: WindowLayoutKind
     let actions: ShellActions
-    @Animated(.quick) private var glow = 0.0
+    /// How much the pointer has lit this control, from 0 to 1.
+    @State private var glow = 0.0
 
     var body: some View {
         Button(action: { actions.nextLayout() }) {
@@ -129,7 +134,7 @@ struct LayoutButton: View {
                     RoundedRectangle(cornerRadius: Metrics.buttonRadius)
                         .fill(Palette.control.lightened(by: glow * 0.5))
                 )
-                .onHover { glow = $0 ? 1 : 0 }
+                .onHover { hovering in withAnimation(.quick) { glow = hovering ? 1 : 0 } }
         }
     }
 
@@ -215,7 +220,8 @@ struct Track: View {
 struct TrackBar: View {
     let window: WindowEntry
     let actions: ShellActions
-    @Animated(.quick) private var glow = 0.0
+    /// How much the pointer has lit this control, from 0 to 1.
+    @State private var glow = 0.0
 
     var body: some View {
         Button(action: { actions.raiseWindow(window.id) }) {
@@ -223,7 +229,7 @@ struct TrackBar: View {
                 .frame(width: Metrics.trackWidth, height: height)
                 .overlay(ring)
                 .padding(Metrics.ringWidth)
-                .onHover { glow = $0 ? 1 : 0 }
+                .onHover { hovering in withAnimation(.quick) { glow = hovering ? 1 : 0 } }
         }
     }
 

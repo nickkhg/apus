@@ -9,14 +9,6 @@ import Toolkit
 // most of the lines. Neither mode is the other one with the effects turned
 // off: each has its own values below.
 
-/// How the shell draws depth. The compositor picks it from the hardware.
-public enum RenderMode: String, Sendable {
-    /// Solid colours, one-point lines, short motion. The software renderer.
-    case cpu
-    /// Shadows, blur and gradients. A renderer with a GPU behind it.
-    case gpu
-}
-
 /// What differs between the two modes.
 ///
 /// CPU mode separates one surface from another with a line of one point and
@@ -51,6 +43,72 @@ public struct Appearance: Equatable, Sendable {
     public var surface: Color {
         mode == .cpu ? Palette.surface : Palette.surface.lightened(by: 0.04)
     }
+
+    /// How solid a surface is. A surface over a blur lets some of the blur
+    /// through, which is what makes the blur worth drawing. CPU mode has no
+    /// blur under it, so its surface is solid.
+    public var surfaceOpacity: Double {
+        mode == .cpu ? 1 : 0.86
+    }
+
+    /// The shadow under a surface that floats over the canvas: the rail and
+    /// Summon. It is what holds the surface off the desktop in GPU mode,
+    /// and it is what the line of CPU mode stands in for.
+    public var surfaceShadow: ShadowStyle {
+        mode == .cpu ? .none
+            : ShadowStyle(color: Color(white: 0, alpha: 0.55), radius: 28, y: 10)
+    }
+
+    /// The shadow under a cell in the band: a card, a message, the cell of
+    /// an app that is starting. A cell is nearer to the canvas than the
+    /// rail is, so its shadow is shorter.
+    public var cellShadow: ShadowStyle {
+        mode == .cpu ? .none
+            : ShadowStyle(color: Color(white: 0, alpha: 0.42), radius: 14, y: 5)
+    }
+
+    /// How soft the layer under Summon is, in points. CPU mode makes that
+    /// layer dark instead, which is what `dim` is for.
+    public var blurRadius: Double {
+        mode == .cpu ? 0 : 20
+    }
+
+    /// The face of a surface. In GPU mode it is a gradient from the top
+    /// down, which is the light that the shadow says is there. In CPU mode
+    /// the two ends are the same colour, so it is one flat colour.
+    public var surfaceFace: LinearGradient {
+        LinearGradient(from: mode == .cpu ? surface : surface.lightened(by: 0.03),
+                       to: mode == .cpu ? surface : surface.darkened(by: 0.05),
+                       direction: .down)
+    }
+
+    /// The move, as this mode can afford it.
+    ///
+    /// Every move is shorter on the CPU, and a spring becomes a plain
+    /// arrival: an overshoot costs the frames that it takes to come back,
+    /// and those frames are the expensive ones.
+    public func motion(_ animation: Animation) -> Animation {
+        guard mode == .cpu else { return animation }
+        var shorter = animation
+        shorter.duration *= 0.75
+        // An overshoot costs the frames that it takes to come back, and
+        // those frames are the expensive ones.
+        if case .spring = shorter.curve { shorter.curve = .easeOut }
+        return shorter
+    }
+}
+
+/// The moves of the shell. SwiftUI's own moves are in the toolkit; these
+/// are the ones that this design names.
+extension Animation {
+    /// A control answers the pointer at once.
+    public static let quick = Animation.easeOut(duration: 0.12)
+    /// A surface opens or closes.
+    public static let surface = Animation.easeOut(duration: 0.16)
+    /// A window moves to another cell.
+    public static let window = Animation.easeInOut(duration: 0.24)
+    /// A surface that arrives with some weight.
+    public static let arrive = Animation.spring(duration: 0.26, bounce: 0.22)
 }
 
 /// The colours of the shell.

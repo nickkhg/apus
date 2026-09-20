@@ -49,6 +49,8 @@ public struct StandInCard: View {
     let card: StandIn
     let actions: ShellActions
     @State private var isHovered = false
+    /// How the screen is drawn. The root puts it in the environment.
+    @Environment(\.renderMode) private var mode
 
     public init(card: StandIn, actions: ShellActions = ShellActions()) {
         self.card = card
@@ -89,6 +91,7 @@ public struct StandInCard: View {
             )
             .onHover { isHovered = $0 }
             .clipped()
+            .shadow(Appearance(mode).cellShadow, cornerRadius: Metrics.cellRadius)
         }
     }
 

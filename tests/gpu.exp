@@ -61,12 +61,17 @@ proc guest {command what} {
 }
 
 # Runs the compositor with one renderer, writes the screen, and stops it.
-proc drawWith {renderer name} {
+#
+# `mode` is how the shell draws depth. It is pinned, because without it the
+# shell follows the renderer, and two pictures would differ because the shell
+# chose to draw differently, not because the renderer did. `cpu` asks for
+# flat colours, and `gpu` asks for the shadow, the gradient and the blur.
+#
+# With `summon`, Summon is opened before the picture is taken. That is the
+# one surface with a blur under it.
+proc drawWith {renderer name {mode cpu} {summon 0}} {
     global bin uienv
-    # MYDISTRO_SHELL_MODE pins how the shell draws depth. Without it the
-    # shell follows the renderer, and the two pictures would differ because
-    # the shell chose to draw differently, not because the renderer did.
-    send "LIBSEAT_BACKEND=noop MYDISTRO_RENDERER=$renderer MYDISTRO_SHELL_MODE=cpu MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock ${uienv}${bin}mydistro-compositor &\r"
+    send "LIBSEAT_BACKEND=noop MYDISTRO_RENDERER=$renderer MYDISTRO_SHELL_MODE=$mode MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock ${uienv}${bin}mydistro-compositor &\r"
     if {$renderer eq "gpu"} {
         # The renderer says which GL it got. In a VM that is llvmpipe.
         expect {
@@ -81,6 +86,17 @@ proc drawWith {renderer name} {
         timeout                { fail "$renderer: the compositor did not start" }
     }
     after 1500
+
+    if {$summon} {
+        send "${bin}mydistro-screen input --key super\r"
+        expect {
+            "pressed super"    {}
+            "mydistro-screen:" { fail "$name: the key did not go in" }
+            timeout            { fail "$name: Summon did not answer the key" }
+        }
+        settle "$name: the key"
+        after 1000
+    }
 
     send "${bin}mydistro-screen shot /mnt/screens/$name.ppm\r"
     expect {
@@ -110,17 +126,50 @@ proc drawWith {renderer name} {
     guest "wait" "$renderer: the compositor did not go away"
 }
 
+# Two pictures that must be the same picture.
+proc same {first second what {options {}}} {
+    set command [concat [list python3 tests/renderers.py \
+        out/vm/screens/$first.ppm out/vm/screens/$second.ppm] $options]
+    if {[catch {exec {*}$command} result]} {
+        fail "$what disagree: $result"
+    }
+    send_user "\n$what agree: $result\n"
+}
+
+# Two pictures that must not be the same picture.
+proc differs {first second what} {
+    if {![catch {exec python3 tests/renderers.py \
+            out/vm/screens/$first.ppm out/vm/screens/$second.ppm}]} {
+        fail "$what: the two pictures are the same"
+    }
+    send_user "\n$what: the two pictures differ, as they must\n"
+}
+
 spawn env VM_GPU=headless $env(MYDISTRO_VM) installed
 login
 
+# The first mode: flat colours. The two renderers must agree pixel by pixel.
 drawWith cpu renderer-cpu
 drawWith gpu renderer-gpu
+same renderer-cpu renderer-gpu "the renderers"
 
-if {[catch {exec python3 tests/renderers.py \
-        out/vm/screens/renderer-cpu.ppm out/vm/screens/renderer-gpu.ppm} result]} {
-    fail "the renderers disagree: $result"
-}
-send_user "\n$result\n"
+# The second mode: a shadow under each surface, a gradient in its face, and
+# a blur under Summon. Both renderers draw those items, so the two pictures
+# must agree here as well. The shadow is the same mask in both, and only the
+# arithmetic of the gradient differs, so the allowance is a little wider.
+drawWith cpu depth-cpu gpu
+drawWith gpu depth-gpu gpu
+same depth-cpu depth-gpu "the renderers in the second mode" {--tolerance 10 --allow 6000}
+
+# A mode is not the other mode with the effects turned off. The two must
+# therefore draw different screens.
+differs renderer-cpu depth-cpu "the two modes"
+
+# The blur: the one item that reads the picture back. Summon is the surface
+# that has one under it. A picture of it proves that the GPU renderer can
+# copy the screen, make it soft in two passes, and put it back.
+drawWith gpu summon-gpu gpu 1
+differs depth-gpu summon-gpu "Summon with a blur under it"
 
 send "poweroff\r"
 expect eof

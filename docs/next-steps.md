@@ -21,14 +21,19 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
 1. More apps. `AppClient` and the system monitor are the pattern to follow. See [apps.md](apps.md). The design draws a file browser, a notes app and a power reading.
 2. An icon file in a bundle, and an image as a display item. Summon draws a colour mark now.
 3. A pointer position in a handler, and a drag.
-4. A shadow, a blur and a gradient in the display list, for the second mode of the design. `Appearance` holds the values of both modes already. See [toolkit.md](toolkit.md). Decide one thing first: does CPU mode ever draw a shadow? `Appearance` says no. CPU mode separates one surface from the next with a line and a step in the colour. If that answer holds, the software renderer can refuse those items, and the work is one shader for each on the GPU. If it does not hold, a blur on the CPU wants a separable box pass over a buffer of its own. That is most of the cost.
+4. More of the second mode. The shadow, the blur and the gradient are in the display list now, and both renderers draw all three. See [toolkit.md](toolkit.md#the-two-modes). Three things remain:
 
-   `SoftwareRenderer.mask` with `TextureCache` is the way to draw a shadow on the GPU. Rasterize it once on the CPU and keep the texture: a shadow under a cell changes no more often than the cell does.
-
-   A test that compares the two modes cannot compare pixels, because the two modes are meant to differ. `tests/gpu.exp` compares the two renderers in one mode, which is a different question.
+   - A blur reads the screen back. With damage tracking (item 3 of the compositor list) it could read only the part that changed.
+   - The GPU blur is 17 steps in each direction. A smaller copy of the screen would give the same picture for less work.
+   - The compositor does not tell an app which mode the screen is in. An app therefore reads `cpu` from `\.renderMode` and asks for no blur of its own. A `wl_output` value or a value in the bundle could carry it.
+   - CPU mode asks for none of the three. A slow machine in GPU mode has no way to say "the shadows only", and `Appearance` has no middle mode.
 5. More than one desktop, and a layout for each one. The design has this as the target, and one desktop is what ships.
 6. A picture of a window in the card that stands in for it. It is a crop of the top left at one pixel to one point. A person turns it on for one app at a time.
-7. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
+7. A cell that moves. `Animation.window` names the move, and `Frame` is Animatable. A card, a message or the cell of a starting app can then slide to its new place instead of jumping. The window itself cannot: the compositor gives an app its size over Wayland, and an app that redraws at 60 different sizes is not free. So the chrome would move while the window jumps, which is worse than both jumping.
+
+   A screen that moves also makes the pixel tests uncertain: a picture taken in the middle of a move is a different picture each run. `mydistro-screen shot` could wait for the screen to settle first. `ViewHost` knows when nothing is moving.
+8. `.animation(_:value:)` of SwiftUI. A move starts with `withAnimation` now, which covers the same ground for a value that a handler changes. The modifier needs the dependency graph of SwiftUI: it watches a value and moves the views that read it. See [toolkit.md](toolkit.md#motion).
+9. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
 
 ## The terminal
 
@@ -75,6 +80,7 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
 - The GPU renderer sends the pixels of a window to the GPU at each commit. The GPU can read a buffer of the app directly, with `EGL_WL_bind_wayland_display` or with dma-buf. That removes the copy.
 - The GPU renderer draws one quad for each item. Items with the same texture and colour could go into one draw.
 - `make gui` and `make demo` open a window. The automated tests do not test them. `tests/display.exp` and `tests/compositor.exp` test the same display with no window. In a window, the keyboard and the pointer are USB devices of the framework. The tests do not use those devices. They make their own with uinput.
+- The compositor writes "Fatal error: Attempted to read an unowned reference but object ... was already destroyed" as it stops, after COMPOSITOR-EXIT. The tests pass, because the work is over by then. Something that an `unowned` points at goes away before the thing that holds it. The Wayland library and `ViewHost` both hold one (`rg unowned`).
 - The tests use one VM disk in sequence. `tests/display.exp` and `tests/compositor.exp` need the disk from `tests/install.exp`.
 - Old builder images use disk space. On 19 September, `container system df` reported 42 GB that `container image prune` can remove.
 

@@ -54,6 +54,15 @@ public enum DisplayItem {
     /// An outline filled with a colour, 0xAARRGGBB with the colour
     /// multiplied by alpha. The edges are smooth.
     case path(Path, color: UInt32)
+    /// A soft dark shape under an outline: what a surface that stands off
+    /// the background casts. See `Shadow`.
+    case shadow(Path, Shadow)
+    /// Makes what is already drawn soft, inside an outline. The pixels come
+    /// from the picture under the item, so the order of the list matters:
+    /// only the items before it are in the blur.
+    case blur(Path, radius: Double)
+    /// An outline filled with a colour that changes along a line.
+    case gradient(Path, Gradient)
     /// Cuts every item after this one to `Rect`, until the `popClip` that
     /// goes with it. Clips inside clips give the common part of the two.
     case pushClip(Rect)
@@ -91,6 +100,12 @@ public enum SoftwareRenderer {
                 draw(bitmap, x: x, y: y, clip: clip, canvas)
             case .path(let path, let color):
                 fill(path, color: color, clip: clip, canvas)
+            case .shadow(let path, let shadow):
+                draw(shadow, of: path, clip: clip, canvas)
+            case .blur(let path, let radius):
+                blur(under: path, radius: radius, clip: clip, canvas)
+            case .gradient(let path, let gradient):
+                fill(path, gradient: gradient, clip: clip, canvas)
             case .pushClip(let rect):
                 stack.append(clip)
                 clip = intersection(clip, rect)
@@ -315,7 +330,7 @@ public enum SoftwareRenderer {
 
     /// Multiplies a premultiplied colour by a part, for partial coverage.
     @inline(__always)
-    private static func scale(_ color: UInt32, by part: Double) -> UInt32 {
+    static func scale(_ color: UInt32, by part: Double) -> UInt32 {
         guard part < 1 else { return color }
         let amount = UInt32((part * 255).rounded())
         let rb = (((color & 0x00FF00FF) * amount) >> 8) & 0x00FF00FF
@@ -325,7 +340,7 @@ public enum SoftwareRenderer {
 
     /// Source-over for premultiplied alpha: out = src + dst × (1 − αsrc).
     @inline(__always)
-    private static func blend(_ src: UInt32, over dst: UInt32) -> UInt32 {
+    static func blend(_ src: UInt32, over dst: UInt32) -> UInt32 {
         let alpha = src >> 24
         if alpha == 0xFF { return src }
         if alpha == 0 { return dst }

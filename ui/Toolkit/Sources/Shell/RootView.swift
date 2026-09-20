@@ -172,6 +172,9 @@ public struct RootView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Every view under this one reads the mode from the environment,
+        // so no view needs the whole state to know how to draw depth.
+        .renderMode(state.mode)
     }
 
     /// Where each message goes: a column at the end of the band, from the

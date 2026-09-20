@@ -53,6 +53,8 @@ public struct Launch: Identifiable, Equatable, Sendable {
 public struct LaunchCard: View {
     let launch: Launch
     let actions: ShellActions
+    /// How the screen is drawn. The root puts it in the environment.
+    @Environment(\.renderMode) private var mode
 
     public init(launch: Launch, actions: ShellActions = ShellActions()) {
         self.launch = launch
@@ -80,6 +82,7 @@ public struct LaunchCard: View {
                 .stroke(accent.opacity(launch.hasFailed ? 1 : 0.4), lineWidth: 1)
         )
         .clipped()
+        .shadow(Appearance(mode).cellShadow, cornerRadius: Metrics.cellRadius)
     }
 
     /// The head of the cell, in the colour of the state.
@@ -145,7 +148,8 @@ struct CardButton: View {
     let name: String
     let accent: Bool
     let action: () -> Void
-    @Animated(.quick) private var glow = 0.0
+    /// How much the pointer has lit this control, from 0 to 1.
+    @State private var glow = 0.0
 
     var body: some View {
         Button(action: action) {
@@ -158,7 +162,7 @@ struct CardButton: View {
                     RoundedRectangle(cornerRadius: 6)
                         .fill(background)
                 )
-                .onHover { glow = $0 ? 1 : 0 }
+                .onHover { hovering in withAnimation(.quick) { glow = hovering ? 1 : 0 } }
         }
     }
 

@@ -349,38 +349,48 @@ position of the mouse by the scale before it gives it to the host.
 ## Limits
 
 - `Text` does not wrap and does not cut a long line.
-- There are no images and no shadows, and a shape has no border: the renderer
-  fills an outline, it does not draw a line along one.
+- There are no images, and a shape has no border: the renderer fills an
+  outline, it does not draw a line along one. A stroke is the band between
+  two outlines.
 - The pointer reaches the views, as `onHover`, `onPress` and
   `onTapGesture`. A view gets no pointer position in its handlers. The keys
   go to the app in front, and not to a view: the toolkit has no focus.
-- A view cannot draw outside its frame, and nothing clips a view to its
-  frame.
-- One point is one pixel. There is no scale for a high-resolution screen.
+- A view cannot draw outside its frame. `clipped()` cuts one to its frame.
+- A shadow is the frame of a view with round corners, not the outline of
+  what the view drew. The renderer draws each item as it comes and keeps no
+  picture of a view to take a shape from.
+- `.animation(_:value:)` of SwiftUI is not here. A move starts with
+  `withAnimation`. To read a value and move the views that use it, SwiftUI
+  needs its dependency graph, and the toolkit has none.
 
 ## Motion
 
-A value moves instead of jumping. `@Animated` is `@State` that eases to its target:
+A value moves instead of jumping. This is the API of SwiftUI: `withAnimation` names the move, and the `@State` that changes inside it moves to its new value.
 
 ```swift
 struct SummonButton: View {
-    @Animated(.quick) private var glow = 0.0
+    @State private var glow = 0.0
 
     var body: some View {
         mark.background(Palette.accentSurface.lightened(by: glow * 0.4))
-            .onHover { glow = $0 ? 1 : 0 }
+            .onHover { hovering in
+                withAnimation(.quick) { glow = hovering ? 1 : 0 }
+            }
     }
 }
 ```
 
-Reading it gives where the value is now. Writing it gives the value somewhere to go.
-
-- `Animation` holds a time and a curve: `linear`, `easeOut` or `easeInOut`. The named ones are `.quick` (120 ms, a control), `.surface` (160 ms) and `.window` (240 ms).
+- `Animation` has the moves of SwiftUI: `.default`, `.linear`, `.easeIn`, `.easeOut`, `.easeInOut` and `.spring(duration:bounce:)`. Each one takes a duration. `.delay(_:)`, `.speed(_:)` and `.duration(_:)` change a move. The shell adds its own names in Theme.swift: `.quick` (120 ms, a control), `.surface` (160 ms), `.window` (240 ms) and `.arrive` (a surface with some weight).
+- A spring goes past its target one time and comes back to it. It is a curve, not a spring that swings and settles, so the toolkit needs no maths library.
+- `withAnimation(nil)` takes the move away, for a change inside a move that must not move.
+- A value moves only if its type is Animatable. A number, a colour, a size and a frame are. Anything else changes at once.
+- A type says what moves with `animatableData`, as in SwiftUI. A type of one number needs no more than `extension Double: Animatable {}`. A type of four numbers puts them in two `AnimatablePair`s. See Animatable.swift.
+- Reading a `@State` value that is moving gives where the value is now, not where it is going. Writing the same target again therefore changes nothing, and a view may name its target in its body.
 - Every move in one frame reads the same time, so things that start together stay together. The time comes from `ViewHost.now`, which the compositor sets from the clock of the system.
-- A view that still has somewhere to go asks for the next frame. A view that arrived asks for nothing, so a screen that does not move costs no frames.
+- A value that still has somewhere to go asks for the next frame. A value that arrived asks for nothing, so a screen that does not move costs no frames.
 - `@Environment(\.now)` reads that time in a view, and any other value of the environment.
 
-The design must be right with no motion at all. A renderer that cannot hold the frame rate may end every move at once and lose nothing but the pleasure.
+The design must be right with no motion at all. A renderer that cannot hold the frame rate may end every move at once and lose nothing but the pleasure. `Appearance.motion(_:)` does that by mode. CPU mode shortens every move, and it turns a spring into a plain arrival. The frames of an overshoot are the expensive ones.
 
 ## Text that is too long
 
@@ -421,7 +431,37 @@ The shell draws in one of two modes, and `Appearance` holds what differs.
 | --- | --- | --- |
 | A surface stands off what is behind it with | a line of one point, and a large step in the colour | a shadow, and a smaller step |
 | The layer under Summon dims by | 0.66 | 0.5, because a blur does some of the work |
+| The face of a surface is | one flat colour | a gradient from the top down |
+| A surface is | solid | 0.86 solid, so that the blur under it comes through |
+| A move is | three quarters of the time, and no overshoot | the whole move |
 
 Neither mode is the other one with the effects turned off. Turn the shadows off in GPU mode and the surfaces run together. That is the proof that the two sets of values are not one set.
 
-`ShellState.mode` carries the choice. The compositor makes that choice from the renderer that it has. The display list carries no shadow, no blur and no gradient yet. GPU mode therefore holds its own values and has nothing yet to draw them with.
+`ShellState.mode` carries the choice, and the compositor makes that choice from the renderer that it has. `RootView` puts it in the environment as `\.renderMode`, so a view deep in the tree reads it without the whole state. `RenderMode` is in the toolkit, not in the shell. An app in a tile will read it for the same reason: to ask for a blur only where a blur is cheap. The compositor does not tell an app the mode yet, so an app reads `cpu`.
+
+### Depth in the display list
+
+Three items carry depth, and both renderers draw all three.
+
+| Item | What it is | On the CPU | On the GPU |
+| --- | --- | --- | --- |
+| `shadow(Path, Shadow)` | the outline, moved and made soft | two box passes over the coverage | the same mask, kept in a texture |
+| `blur(Path, radius:)` | the picture under the item, made soft | two box passes over the pixels | a copy of the screen, then two passes |
+| `gradient(Path, Gradient)` | an outline filled along a line | a colour for each pixel | the same, in the shader |
+
+What the three cost the CPU, for one surface of 640 × 520 points over a screen of 1280 × 800. `make bench` measures them.
+
+| Item | Time |
+| --- | --- |
+| A fill of the same outline | 0.85 ms |
+| A gradient | 2.7 ms |
+| A shadow of radius 28 | 5.8 ms |
+| A blur of radius 20 | 7.9 ms |
+
+A whole frame of the shell takes 0.5 ms. One blurred surface therefore costs more than the screen does, and that is why CPU mode asks for none of the three.
+
+- A view asks for them with `.shadow(_:cornerRadius:)`, `Blur(radius:cornerRadius:)` and `LinearGradient(from:to:direction:)`. A shape takes a gradient as well: `RoundedRectangle(cornerRadius: 8).fill(gradient)`.
+- A blur reads the items before it and none of the items after it. The order of the list is therefore the order of the depth.
+- A gradient whose two ends are one colour becomes a plain fill. CPU mode asks for gradients of one colour, so it pays for none of this.
+- The soft mask of a shadow comes from the same rasterizer in both renderers, so a shadow is the same picture on both. `TextureCache` keeps it: a shadow under a cell changes no more often than the cell does.
+- The blur of the GPU is 17 steps in each direction, and the blur of the CPU is an exact box. The two are near, not equal. `tests/gpu.exp` compares the renderers with a wider allowance in this mode for that reason.

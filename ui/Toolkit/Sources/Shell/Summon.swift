@@ -169,12 +169,14 @@ public struct SummonView: View {
     @State private var selection = 0
     /// How far Summon has arrived, from 0 to 1. It starts at 0 and the body
     /// gives it 1, so the surface comes in rather than appearing at once.
-    @Animated(.surface) private var appeared = 0.0
+    @State private var appeared = 0.0
 
     public init(state: ShellState, actions: ShellActions = ShellActions()) {
         self.state = state
         self.actions = actions
     }
+
+    private var appearance: Appearance { Appearance(state.mode) }
 
     private var groups: [SummonGroup] { SummonList.groups(for: state, query: query) }
 
@@ -188,8 +190,11 @@ public struct SummonView: View {
 
     public var body: some View {
         // The first frame gives the move somewhere to go. Every frame after
-        // it names the same target, which starts nothing.
-        appeared = 1
+        // it reads a value that is on its way, and starts nothing. The mode
+        // says how much of a move it can afford.
+        if appeared == 0 {
+            withAnimation(appearance.motion(.arrive)) { appeared = 1 }
+        }
         return VStack(spacing: 0) {
             surface
                 .frame(width: SummonMetrics.width)
@@ -199,7 +204,7 @@ public struct SummonView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(white: 0, alpha: Appearance(state.mode).dim * appeared))
+        .background(Color(white: 0, alpha: appearance.dim * min(appeared, 1)))
         // Summon is the surface in front, so it reads every key. Nothing
         // under it may read the keyboard while it is open.
         .onKey { key in
@@ -253,14 +258,21 @@ public struct SummonView: View {
             Divider(thickness: 1).foregroundColor(Palette.divider)
             footer
         }
+        // The blur is behind the face, and the face lets some of it
+        // through. In CPU mode the blur has a radius of 0 and draws
+        // nothing, and the face is solid.
         .background(
-            RoundedRectangle(cornerRadius: SummonMetrics.radius)
-                .fill(Palette.surface)
+            Blur(radius: appearance.blurRadius, cornerRadius: SummonMetrics.radius)
+                .overlay(
+                    RoundedRectangle(cornerRadius: SummonMetrics.radius)
+                        .fill(appearance.surfaceFace.opacity(appearance.surfaceOpacity))
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: SummonMetrics.radius)
-                .stroke(Palette.divider, lineWidth: Appearance(state.mode).surfaceLine)
+                .stroke(Palette.divider, lineWidth: appearance.surfaceLine)
         )
+        .shadow(appearance.surfaceShadow, cornerRadius: SummonMetrics.radius)
     }
 
     /// The line where the query is shown, with a caret after it.
