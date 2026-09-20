@@ -55,7 +55,10 @@ proc drawWith {renderer name} {
 
     # Stopping matters: a GBM surface with a buffer still lent to the display
     # never goes away, and the compositor would not stop.
-    send "kill %1\r"
+    #
+    # `%%` is the job that started last. The second compositor of this test
+    # is job 2, so `kill %1` would say "no such job".
+    send "kill %%\r"
     expect {
         "COMPOSITOR-EXIT" {}
         timeout           { fail "$renderer: the compositor did not stop" }
