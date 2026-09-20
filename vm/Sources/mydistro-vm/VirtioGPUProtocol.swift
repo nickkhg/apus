@@ -23,7 +23,21 @@ enum VirtioGPU {
         /// A context says which capset it is for when it is made. Venus
         /// needs this one.
         case contextInit = 4
+        /// The device says, in its configuration, how large a step it wants
+        /// between blobs. Every blob the guest makes is then a whole number
+        /// of those steps.
+        case blobAlignment = 5
     }
+
+    /// The step between blobs that the device asks for.
+    ///
+    /// The guest puts each blob in the host-visible window straight after
+    /// the one before it, so the step between blobs is also the step between
+    /// the offsets it asks the device to map. macOS maps memory in whole
+    /// pages of 16384 bytes and refuses any other offset, so the step must
+    /// be a page. Without this the guest counts in 4096 and three offsets
+    /// out of four cannot be mapped at all.
+    static let blobAlignment = UInt32(getpagesize())
 
     /// The queues: commands, then the cursor.
     static let controlQueue: UInt16 = 0
@@ -164,10 +178,11 @@ enum VirtioGPU {
     /// `struct virtio_gpu_config`, the device-specific configuration.
     static func configuration(scanouts: UInt32, capsets: UInt32) -> Data {
         var data = Data()
-        data.append(UInt32(0))   // events_read
-        data.append(UInt32(0))   // events_clear
-        data.append(scanouts)    // num_scanouts
-        data.append(capsets)     // num_capsets
+        data.append(UInt32(0))       // events_read
+        data.append(UInt32(0))       // events_clear
+        data.append(scanouts)        // num_scanouts
+        data.append(capsets)         // num_capsets
+        data.append(blobAlignment)   // blob_alignment
         return data
     }
 

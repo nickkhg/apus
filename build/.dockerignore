@@ -1,0 +1,8 @@
+# The build context is build/. Only the two tarballs that the Containerfile
+# adds are wanted from cache/. The rest of it is large, and the checkouts in
+# it hold symbolic links that the container tool cannot pack.
+cache/swift-6.4.0-macos
+cache/swift-sdks
+cache/venusbuild
+cache/virglrenderer
+cache/swift-6.4.0-RELEASE-osx.pkg

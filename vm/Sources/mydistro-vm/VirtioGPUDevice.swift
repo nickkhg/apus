@@ -79,6 +79,7 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
                 (1 << VirtioGPU.Feature.virgl.rawValue)
                 | (1 << VirtioGPU.Feature.contextInit.rawValue)
                 | (1 << VirtioGPU.Feature.resourceBlob.rawValue)
+                | (1 << VirtioGPU.Feature.blobAlignment.rawValue)
         }
 
         // The window of memory that the guest can see directly. Venus needs

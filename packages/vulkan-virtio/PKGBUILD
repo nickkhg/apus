@@ -1,0 +1,59 @@
+# Mesa's Venus driver, with the step between blobs that macOS needs.
+#
+# Arch Linux ARM has this driver in its own vulkan-virtio package. That one
+# counts blobs in pages of 4096 bytes, and a Mac maps memory in pages of
+# 16384, so every blob after the first lands at an offset the host cannot
+# map and Vulkan never starts. blob-alignment.py adds the missing half of
+# VIRTIO_GPU_F_BLOB_ALIGNMENT: the driver asks the kernel for the step the
+# device wants, and rounds every blob up to it. See docs/gpu.md.
+#
+# The build takes the Vulkan driver alone. None of the OpenGL drivers are
+# built, so it needs neither LLVM nor Rust and takes a few minutes.
+pkgname=vulkan-virtio
+pkgver=26.2.3
+pkgrel=1
+epoch=2
+pkgdesc="Mesa's Venus Vulkan driver, with blob alignment for Apple Virtualization"
+arch=('aarch64')
+url='https://www.mesa3d.org/'
+license=('MIT')
+depends=('libdrm' 'expat' 'zlib' 'zstd' 'vulkan-icd-loader')
+provides=('vulkan-driver')
+source=("https://archive.mesa3d.org/mesa-$pkgver.tar.xz" 'blob-alignment.py')
+sha256sums=('SKIP' 'SKIP')
+
+prepare() {
+    python3 blob-alignment.py \
+        "mesa-$pkgver/src/virtio/vulkan/vn_renderer_virtgpu.c"
+}
+
+build() {
+    meson setup "mesa-$pkgver" build \
+        --prefix /usr --libdir lib --buildtype plain --wrap-mode nodownload \
+        -D vulkan-drivers=virtio \
+        -D gallium-drivers= \
+        -D platforms= \
+        -D glx=disabled \
+        -D egl=disabled \
+        -D gbm=disabled \
+        -D opengl=false \
+        -D gles1=disabled \
+        -D gles2=disabled \
+        -D llvm=disabled \
+        -D shared-glapi=disabled \
+        -D video-codecs= \
+        -D vulkan-layers= \
+        -D install-mesa-clc=false \
+        -D build-tests=false
+    meson compile -C build
+}
+
+package() {
+    meson install -C build --destdir "$pkgdir"
+    # The Vulkan driver alone: this package does not own the headers, the
+    # pkg-config files, or the driver settings that the full Mesa installs
+    # beside it. Arch's mesa package owns those, and pacman refuses to
+    # install two packages that carry the same file.
+    rm -rf "$pkgdir/usr/include" "$pkgdir/usr/lib/pkgconfig" \
+           "$pkgdir/usr/share/drirc.d"
+}
