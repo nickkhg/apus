@@ -184,9 +184,9 @@ expect {
 
 # Closing the last window gives the desktop back, and the dot under the icon
 # goes away: that pixel is the background of the dock again (1B1626 at 0.85
-# over the desktop is 171320).
+# over the desktop 2B2340 is 1D1829).
 act --pointer 1200,14 --click
-screen close-terminal 640,400=2B2340 667,771=171320
+screen close-terminal 640,400=2B2340 667,771=1D1829
 
 send "\r"
 expect -re "# $"

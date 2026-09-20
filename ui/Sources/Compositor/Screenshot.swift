@@ -18,11 +18,11 @@ final class Screenshot {
     private let fd: Int32
     private var watch: EventLoop.Watch?
 
-    /// The buffer to write. The compositor gives the front buffer.
-    private let source: () -> DumbFramebuffer
+    /// The screen that makes the picture and says how big it is.
+    private let screen: any Screen
 
-    init?(path: String, loop: EventLoop, source: @escaping () -> DumbFramebuffer) {
-        self.source = source
+    init?(path: String, loop: EventLoop, screen: any Screen) {
+        self.screen = screen
         fd = socket(AF_UNIX, Int32(SOCK_STREAM.rawValue), 0)
         guard fd >= 0 else { return nil }
 
@@ -67,25 +67,12 @@ final class Screenshot {
         let request = String(decoding: text, as: UTF8.self)
         guard !request.isEmpty else { return }
 
-        let answer: String
-        let picture = source()
-        if request == "size" {
-            answer = "ok \(picture.width) \(picture.height)\n"
-        } else if let failure = write(picture, to: request) {
-            answer = "error \(failure)\n"
-        } else {
-            answer = "ok \(picture.width) \(picture.height)\n"
+        let size = "ok \(screen.width) \(screen.height)\n"
+        var answer = size
+        if request != "size" {
+            do { try screen.writePicture(to: request) } catch { answer = "error \(error)\n" }
         }
         _ = answer.withCString { Glibc.write(client, $0, strlen($0)) }
     }
 
-    /// Writes the buffer, and gives the reason if it could not.
-    private func write(_ buffer: DumbFramebuffer, to path: String) -> String? {
-        do {
-            try buffer.writePPM(to: path)
-            return nil
-        } catch {
-            return "\(error)"
-        }
-    }
 }

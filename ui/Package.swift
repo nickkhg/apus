@@ -85,6 +85,9 @@ let package = Package(
         // globals that apps use. It draws the shell with the toolkit.
         .target(name: "Compositor", dependencies: [
             "DRMKit", "CDRM", "CInput", "CUdev", "CXKBCommon", "CSeat", "Wayland",
+            // GPU rendering: GBM makes the buffers, EGL draws into them,
+            // GLES draws the display list. See GPUScreen and GLRenderer.
+            "CGBM", "CEGL", "CGLES",
             .product(name: "Render", package: "Toolkit"),
             .product(name: "Toolkit", package: "Toolkit"),
             .product(name: "Shell", package: "Toolkit"),

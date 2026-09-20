@@ -126,7 +126,7 @@ public final class DRMDevice {
 
     /// Shows `framebuffer` on `output`. The returned value puts back whatever
     /// was on screen before (e.g. the text console) when you call restore().
-    public func show(_ framebuffer: DumbFramebuffer, on output: Output) throws(DRMError) -> ScreenRestore {
+    public func show(_ framebuffer: any Framebuffer, on output: Output) throws(DRMError) -> ScreenRestore {
         let previous = drmModeGetCrtc(fd, output.crtcID)
         var connector = output.connectorID
         var mode = output.mode.info

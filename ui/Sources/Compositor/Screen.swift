@@ -2,10 +2,58 @@ import DRMKit
 import Glibc
 import Render
 
-/// One output (monitor), double-buffered: we draw into the back buffer and
-/// flip it to the front at the next vertical blank. Frames are drawn only
-/// when something changed.
-final class Screen: PageFlipHandler {
+/// One output (monitor). The compositor gives it a display list and asks for
+/// a frame; how the pixels are made is the screen's business.
+///
+/// SoftwareScreen draws with the CPU into dumb buffers. GPUScreen draws with
+/// GLES into GBM buffers. `MYDISTRO_RENDERER` chooses between them.
+protocol Screen: AnyObject {
+    var output: Output { get }
+    var width: Int { get }
+    var height: Int { get }
+    var widthInMillimetres: Int? { get }
+
+    /// The items to draw. The screen asks for them when it draws a frame.
+    var displayList: () -> DisplayList { get set }
+    /// Called when a frame reached the screen (for Wayland frame callbacks).
+    var frameShown: () -> Void { get set }
+    /// Called after the screen took a new size, so that the layout can run
+    /// again.
+    var sizeChanged: () -> Void { get set }
+
+    /// Asks for a new frame. Several requests before the next vertical blank
+    /// produce one frame.
+    func setNeedsFrame()
+    /// The display reported a change: a monitor that a person connected, or
+    /// a virtual screen that took a new size.
+    func displayChanged()
+    /// Puts back what was on screen before (the text console).
+    func release()
+    /// Writes the pixels that the screen shows now, as a binary PPM. The
+    /// tests read the file.
+    func writePicture(to path: String) throws
+}
+
+/// The screen that `MYDISTRO_RENDERER` asks for. The default is the CPU,
+/// because its pixels are the same on every run and the tests check exact
+/// colours.
+func makeScreen(device: DRMDevice) throws -> any Screen {
+    let wanted = getenv("MYDISTRO_RENDERER").map { String(cString: $0) } ?? "cpu"
+    switch wanted {
+    case "cpu", "software":
+        return try SoftwareScreen(device: device)
+    case "gpu", "gl":
+        return try GPUScreen(device: device)
+    default:
+        log("screen: MYDISTRO_RENDERER must be 'cpu' or 'gpu', not '\(wanted)'; using cpu")
+        return try SoftwareScreen(device: device)
+    }
+}
+
+/// Draws with the CPU into dumb buffers, double-buffered: we draw into the
+/// back buffer and flip it to the front at the next vertical blank. Frames
+/// are drawn only when something changed.
+final class SoftwareScreen: Screen, PageFlipHandler {
     let device: DRMDevice
     private(set) var output: Output
     var width: Int { output.mode.width }
@@ -16,12 +64,8 @@ final class Screen: PageFlipHandler {
         output.widthInMillimetres > 0 ? output.widthInMillimetres : nil
     }
 
-    /// Called to draw a frame.
-    var draw: (Canvas) -> Void = { _ in }
-    /// Called when a frame reached the screen (for Wayland frame callbacks).
+    var displayList: () -> DisplayList = { [] }
     var frameShown: () -> Void = {}
-    /// Called after the screen took a new size, so that the layout can run
-    /// again.
     var sizeChanged: () -> Void = {}
 
     private var buffers: [DumbFramebuffer]
@@ -45,9 +89,7 @@ final class Screen: PageFlipHandler {
         restore = try device.show(buffers[0], on: output)
     }
 
-    /// The display reported a change: a monitor that a person connected, or
-    /// a virtual screen that took a new size. The mode is read again, and
-    /// the buffers follow it.
+    /// The mode is read again, and the buffers follow it.
     func displayChanged() {
         displayMayHaveChanged = true
         if !flipPending { takeNewMode() }
@@ -81,16 +123,17 @@ final class Screen: PageFlipHandler {
 
     /// The buffer that the screen shows now. The tests read these pixels:
     /// they are the ones that went to the display, not a second rendering.
-    var front: DumbFramebuffer { buffers[1 - back] }
+    private var front: DumbFramebuffer { buffers[1 - back] }
 
-    /// Puts back what was on screen before (the text console).
+    func writePicture(to path: String) throws {
+        try front.writePPM(to: path)
+    }
+
     func release() {
         restore?.restore()
         restore = nil
     }
 
-    /// Asks for a new frame. Several requests before the next vertical blank
-    /// produce one frame.
     func setNeedsFrame() {
         needsFrame = true
         if !flipPending { drawFrame() }
@@ -99,8 +142,10 @@ final class Screen: PageFlipHandler {
     private func drawFrame() {
         needsFrame = false
         let buffer = buffers[back]
+        let list = displayList()
         buffer.withPixels { pixels, stride in
-            draw(Canvas(pixels: pixels, width: width, height: height, stride: stride))
+            SoftwareRenderer.render(list, into: Canvas(pixels: pixels, width: width,
+                                                      height: height, stride: stride))
         }
         if canPageFlip {
             do {

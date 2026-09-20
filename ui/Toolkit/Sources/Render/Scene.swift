@@ -7,7 +7,7 @@
 // display lists from views, and the Compositor module composites windows.
 
 /// A rectangle in screen pixels.
-public struct Rect: Sendable, Equatable {
+public struct Rect: Sendable, Hashable {
     public var x: Int, y: Int, width: Int, height: Int
     public init(x: Int, y: Int, width: Int, height: Int) {
         (self.x, self.y, self.width, self.height) = (x, y, width, height)
@@ -331,8 +331,15 @@ public enum SoftwareRenderer {
         if alpha == 0 { return dst }
         let inverse = 255 - alpha
         // Red and blue together, then green, 8 bits of headroom each.
-        let rb = ((dst & 0xFF00FF) * inverse >> 8) & 0xFF00FF
-        let g = ((dst & 0x00FF00) * inverse >> 8) & 0x00FF00
+        //
+        // The brackets around the multiplication are necessary. In C, `*`
+        // binds tighter than `>>`, and this line is the C idiom. In Swift a
+        // shift binds tighter than a multiplication, so without the
+        // brackets this reads `dst * (inverse >> 8)`. `inverse` is always
+        // below 256, so `inverse >> 8` is 0, and every partly transparent
+        // colour then covered the destination instead of blending with it.
+        let rb = (((dst & 0xFF00FF) * inverse) >> 8) & 0xFF00FF
+        let g = (((dst & 0x00FF00) * inverse) >> 8) & 0x00FF00
         return (src & 0xFFFFFF) &+ rb &+ g
     }
 }

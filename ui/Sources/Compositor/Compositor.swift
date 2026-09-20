@@ -37,7 +37,7 @@ public final class Compositor {
     private let options: Options
     private let seat: Seat
     private let drm: DRMDevice
-    private let screen: Screen
+    private let screen: any Screen
     private let input: Input
     /// Watches for a change of the display, so that the screen can follow it.
     private let display: DisplayMonitor?
@@ -81,7 +81,7 @@ public final class Compositor {
         seat = try Seat()
         debug("seat \(seat.name) active; opening display")
         drm = try Compositor.openDisplayDevice(seat: seat)
-        screen = try Screen(device: drm)
+        screen = try makeScreen(device: drm)
         scale = Compositor.chosenScale(options: options, screen: screen)
         debug("screen \(drm.path) \(screen.output) scale \(scale); starting input")
         input = try Input(seat: seat)
@@ -110,7 +110,7 @@ public final class Compositor {
         try loop.onSignal(SIGINT) { [unowned self] in running = false }
         try loop.onSignal(SIGTERM) { [unowned self] in running = false }
 
-        screen.draw = { [unowned self] canvas in SoftwareRenderer.render(displayList(), into: canvas) }
+        screen.displayList = { [unowned self] in displayList() }
         screen.sizeChanged = { [unowned self] in screenSizeChanged() }
         screen.frameShown = { [unowned self] in
             let now = monotonicMilliseconds()
@@ -137,7 +137,7 @@ public final class Compositor {
             screen.setNeedsFrame()
         }
         if let path = getenv("MYDISTRO_SCREENSHOT_SOCKET").map({ String(cString: $0) }) {
-            screenshot = Screenshot(path: path, loop: loop) { [unowned self] in screen.front }
+            screenshot = Screenshot(path: path, loop: loop, screen: screen)
         }
         screen.setNeedsFrame()
     }

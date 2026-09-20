@@ -9,7 +9,7 @@ public protocol PageFlipHandler: AnyObject {
 extension DRMDevice {
     /// Makes `framebuffer` current right away (a full mode set). Use once at
     /// start-up; after that, use schedulePageFlip.
-    public func setFramebuffer(_ framebuffer: DumbFramebuffer, on output: Output) throws(DRMError) {
+    public func setFramebuffer(_ framebuffer: any Framebuffer, on output: Output) throws(DRMError) {
         var connector = output.connectorID
         var mode = output.mode.info
         guard drmModeSetCrtc(fd, output.crtcID, framebuffer.id, 0, 0, &connector, 1, &mode) == 0 else {
@@ -20,7 +20,7 @@ extension DRMDevice {
     /// Queues `framebuffer` to replace the current one at the next vertical
     /// blank. When the flip is done, the device fd becomes readable and
     /// handleEvents() calls handler.pageFlipCompleted().
-    public func schedulePageFlip(_ framebuffer: DumbFramebuffer, on output: Output,
+    public func schedulePageFlip(_ framebuffer: any Framebuffer, on output: Output,
                                  handler: PageFlipHandler) throws(DRMError) {
         let userData = Unmanaged.passUnretained(handler as AnyObject).toOpaque()
         guard drmModePageFlip(fd, output.crtcID, framebuffer.id,

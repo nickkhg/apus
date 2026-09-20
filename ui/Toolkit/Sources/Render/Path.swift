@@ -3,8 +3,8 @@
 // GPU renderer can fill the same paths later.
 
 /// An outline of lines and curves, in screen points.
-public struct Path: Equatable, Sendable {
-    public enum Element: Equatable, Sendable {
+public struct Path: Hashable, Sendable {
+    public enum Element: Hashable, Sendable {
         case move(x: Double, y: Double)
         case line(x: Double, y: Double)
         /// A curve with one control point.

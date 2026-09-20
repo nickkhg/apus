@@ -75,7 +75,7 @@ help:
 	@echo "make ui         quick Swift build of ui/ on the Mac into out/ui (shared at /mnt/host/ui in the VM)"
 	@echo "make ui-container  the same build in the build container"
 	@echo "make sdk        the macOS Swift toolchain and the mydistro Swift SDK (make ui does this)"
-	@echo "make test       install, display and compositor tests"
+	@echo "make test       install, display, compositor and GPU tests"
 	@echo "make test-ui    unit tests of the toolkit and the shell, on the Mac (seconds)"
 	@echo "make test-ui-linux  the same tests in the builder container"
 	@echo "make bench      how long one frame of the shell takes"
@@ -202,6 +202,7 @@ test: vm
 	tests/install.exp
 	tests/display.exp
 	tests/compositor.exp
+	tests/gpu.exp
 
 # The compositor test with the programs from `make ui`. Needs the installed
 # disk from `make test`.
