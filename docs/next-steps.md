@@ -19,14 +19,14 @@ In this sequence:
 
 The toolkit draws the panel and the dock, with `@State`, shapes and the pointer. See [toolkit.md](toolkit.md). Next, in this sequence:
 
-1. A click. `onHover` works, but a view cannot get a button press, so the dock icons do nothing.
-2. The keyboard: which view has the focus, and how the keys reach it.
-3. Window title bars, with a close button.
-4. Text that is too long for its space. Cut it, and add "…".
-5. Clip a view to its frame, and a border along a shape. The renderer fills an outline. It does not draw a line along one.
-6. An image in the UI (an icon file), as a display item.
-7. A scale for a high-resolution screen. Now one point is one pixel.
-8. An app launcher and a settings UI.
+1. The keyboard: which view has the focus, and how the keys reach it.
+2. Window title bars, with a close button.
+3. Text that is too long for its space. Cut it, and add "…".
+4. Clip a view to its frame, and a border along a shape. The renderer fills an outline. It does not draw a line along one.
+5. An image in the UI (an icon file), as a display item.
+6. A scale for a high-resolution screen. Now one point is one pixel.
+7. The dock items start no program. There is nothing to start yet.
+8. A pointer position in a handler, and a drag.
 9. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
 
 ## The system

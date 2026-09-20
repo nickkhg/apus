@@ -36,6 +36,10 @@ public final class Compositor {
     private var shell = ShellState()
     /// The shell's view tree: its `@State` values and the pointer.
     private let host = ViewHost()
+    /// What the shell can ask the compositor to do.
+    private var shellActions = ShellActions()
+    /// The desktop colour that the shell selected, if it selected one.
+    private var desktopColor: UInt32?
 
     public var socketName: String { server.socketName }
     public var screenSize: (width: Int, height: Int) { (screen.width, screen.height) }
@@ -67,6 +71,13 @@ public final class Compositor {
         }
         input.handler = { [unowned self] event in handle(event) }
         host.needsUpdate = { [unowned self] in screen.setNeedsFrame() }
+        shellActions = ShellActions(
+            closeFrontWindow: { [unowned self] in closeFrontWindow() },
+            setDesktopColor: { [unowned self] color in
+                desktopColor = color?.packed
+                screen.setNeedsFrame()
+            }
+        )
         shell.clock = Compositor.clockText()
         // The clock changes once a minute. A one-second timer keeps it right
         // without a frame between minutes.
@@ -105,7 +116,7 @@ public final class Compositor {
 
     private func displayList() -> DisplayList {
         var list: DisplayList = [.fill(Rect(x: 0, y: 0, width: screen.width, height: screen.height),
-                                       color: options.background)]
+                                       color: desktopColor ?? options.background)]
         for window in windows {
             if let content = window.surface.content {
                 list.append(.bitmap(content, x: window.x, y: window.y))
@@ -115,7 +126,7 @@ public final class Compositor {
         // host keeps the state of the shell views from frame to frame.
         var state = shell
         state.windowTitles = windows.map { $0.surface.toplevel?.title ?? "" }
-        list += host.displayList(for: RootView(state: state), in: screenRect)
+        list += host.displayList(for: RootView(state: state, actions: shellActions), in: screenRect)
         list.append(.bitmap(Cursor.bitmap, x: Int(pointer.x), y: Int(pointer.y)))
         return list
     }
@@ -173,12 +184,22 @@ public final class Compositor {
             movePointer(to: (pointer.x + dx, pointer.y + dy))
         case .pointerPosition(let x, let y):
             movePointer(to: (x * Double(screen.width), y * Double(screen.height)))
-        case .button:
-            break   // no input focus or window management yet
+        case .button(let code, let pressed):
+            // BTN_LEFT. The shell gets the click. An app gets nothing yet:
+            // there is no input focus and no wl_seat.
+            if code == 0x110 { host.pointerButton(pressed: pressed) }
         case .key(let keysym, let pressed, let control, let alt):
             // Ctrl+Alt+Backspace (XKB_KEY_BackSpace = 0xff08) quits.
             if pressed, control, alt, keysym == 0xFF08 { running = false }
         }
+    }
+
+    /// Asks the window in front to close. The app decides what it does.
+    private func closeFrontWindow() {
+        guard let window = windows.last else { return }
+        window.surface.toplevel?.resource?.sendClose()
+        server.flush()
+        log("WINDOW-CLOSE-SENT \"\(window.surface.toplevel?.title ?? "")\"")
     }
 
     private func movePointer(to position: (x: Double, y: Double)) {

@@ -82,6 +82,7 @@ The programs print these markers:
 | `PROBE-READY`, `PROBE-DONE` | `mydistro-display-probe` |
 | `COMPOSITOR-READY`, `COMPOSITOR-EXIT` | `mydistro-compositor` |
 | `WINDOW-MAPPED` | `mydistro-compositor`, when a window opens |
+| `WINDOW-CLOSE-SENT` | `mydistro-compositor`, when the Close button of the panel asks a window to close |
 | `CLIENT-DRAWN` | `mydistro-hello-client` |
 
 ### Screenshots
@@ -92,9 +93,10 @@ The programs print these markers:
 tests/screen.py out/vm/monitor.sock out/vm/screen.ppm [--pointer X,Y] X,Y=RRGGBB ...
 ```
 
-`--pointer X,Y` moves the pointer of the VM to that pixel first, through the
-QEMU monitor, and waits for the compositor to draw again. The compositor
-test uses it to test that a dock icon becomes brighter under the pointer.
+`--pointer X,Y` moves the pointer of the VM to that pixel first, and
+`--click` then presses the left button and releases it. The events go
+through QMP, and the tool waits for the compositor to draw again. The
+compositor test uses them for the dock and for the Close button.
 
 There are two kinds of check:
 
@@ -122,6 +124,9 @@ The compositor test checks these places on the 1280×800 screen:
 | (640, 400) | `000000` | The outline of the pointer |
 | (641, 402) | `FFFFFF` | The inside of the pointer |
 | (570, 740) | `4C8DF6` | The first dock icon, after the pointer goes on it |
+| (128, 80) | `152745` | The desktop, after a click on the first dock icon |
+| (586, 771) | `FFFFFF` | The dot under the icon that the click selected |
+| (576, 360) | `152745` | Where the window was, after a click on the Close button |
 
 ## After a change
 

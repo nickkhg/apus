@@ -106,6 +106,8 @@ public struct RootView: View {
 
 To add a part to the interface, write a `View` in `ui/Toolkit/Sources/Shell/` and put it in the body of `RootView`.
 
+`ShellActions` is what the shell can ask the compositor to do: close the front window, and give the desktop a colour. The shell knows nothing about windows or Wayland, so it asks. The Close button of the panel and the dock icons use these actions.
+
 `ShellState` is what the compositor gives the shell for each frame: the window titles and the time. Add a value to it when your UI needs more.
 
 `RootView.windowArea(screen:)` says which part of the screen the windows use. The compositor asks the shell, so the shell decides how much space it takes.
@@ -132,6 +134,7 @@ The only platform-dependent code is in `FontCache.swift`: which directory the fo
 |---|---|
 | `Color` | A colour, and a view that fills its space |
 | `Text` | One line of text |
+| `Button` | A view that does something when the pointer clicks it |
 | `Spacer` | Space that grows |
 | `Divider` | A line across a stack |
 | `VStack`, `HStack`, `ZStack` | Children in a column, in a row, or on top of each other |
@@ -159,6 +162,8 @@ draws the outline with smooth edges. To make a shape of your own, write a
 | `.aspectRatio(_:contentMode:)`, `.scaledToFit()`, `.scaledToFill()` | Keeps the proportions |
 | `.foregroundColor(_:)`, `.font(_:)` | The colour and the font for the views inside |
 | `.onHover { isOver in ... }` | Called when the pointer comes over the view and when it leaves |
+| `.onTapGesture { ... }` | Called when the pointer goes down and up again on the view |
+| `.onPress { isDown in ... }` | Called while the pointer is down on the view, for a view that must look pressed |
 
 A `body` uses `if`, `if`/`else`, `switch`, and `for` loops, as SwiftUI does.
 
@@ -220,12 +225,42 @@ let host = ViewHost()
 host.needsUpdate = { screen.setNeedsFrame() }
 let items = host.displayList(for: RootView(state: shell), in: screenRect)
 host.pointerMoved(to: x, y: y)
+host.pointerButton(pressed: true)
 ```
 
 The host calls `onHover` when the pointer comes over a view, and again when
 it leaves. It calls the handler one time for each change, not for each
 movement of the pointer. A view under another view also hears the pointer,
 because a view tree has no window order.
+
+A click is a press and a release on the same view:
+
+| Step | What the host does |
+|---|---|
+| The button goes down over a view | `onPress(true)` on the view in front at that place |
+| The pointer leaves the view, with the button down | `onPress(false)`. The view is no longer pressed. |
+| The pointer comes back | `onPress(true)` |
+| The button goes up over the view | `onPress(false)`, then `onTapGesture` |
+| The button goes up somewhere else | Nothing. There is no click. |
+
+Only the view in front gets a click, and only the first button (`BTN_LEFT`)
+counts. `.onPress { }` and `.onTapGesture { }` on the same view are one place
+for the pointer, not two.
+
+A `Button` puts the two together:
+
+```swift
+Button("Close") { actions.closeFrontWindow() }      // a title on a background
+
+Button(action: { open(item) }) {                    // your own look
+    Icon(item)
+}
+```
+
+`Button(_:action:)` draws the button: a title on a round background that
+becomes brighter under the pointer and darker while the pointer is down.
+`Button(action:label:)` draws only the label, and the label decides how the
+button looks. The dock icons use the second one.
 
 ## Text
 
@@ -248,7 +283,7 @@ A view of the interface goes in `ui/Toolkit/Sources/Shell/`. A view that every U
 
 ## Tests
 
-`make test-ui` runs the 67 unit tests on the Mac, and `make test-ui-linux` runs the same tests on mydistro. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, and the text. `ui/Toolkit/Tests/ShellTests/` tests the panel.
+`make test-ui` runs the 77 unit tests on the Mac, and `make test-ui-linux` runs the same tests on mydistro. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, and the text. `ui/Toolkit/Tests/ShellTests/` tests the panel.
 
 A test lays out a view in a rectangle and looks at the display list. For example, this is the test of a spacer:
 
@@ -288,8 +323,9 @@ takes the whole screen makes the renderer fill the whole screen.
 - `Text` does not wrap and does not cut a long line.
 - There are no images and no shadows, and a shape has no border: the renderer
   fills an outline, it does not draw a line along one.
-- Only the pointer reaches the views, and only as `onHover`. There is no
-  click, no keyboard and no focus.
+- The pointer reaches the views, as `onHover`, `onPress` and
+  `onTapGesture`. There is no keyboard and no focus, and a view gets no
+  pointer position in its handlers.
 - A view cannot draw outside its frame, and nothing clips a view to its
   frame.
 - One point is one pixel. There is no scale for a high-resolution screen.

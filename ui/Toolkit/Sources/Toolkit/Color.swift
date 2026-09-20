@@ -44,14 +44,20 @@ public struct Color: View, Equatable, Sendable {
     /// The mydistro accent colour.
     public static let accent = Color(hex: 0x965ADC)
 
+    /// The same colour, nearer to black. 0 keeps it, 1 makes it black.
+    public func darkened(by amount: Double) -> Color {
+        let keep = 1 - Color.clamp(amount)
+        return Color(red: red * keep, green: green * keep, blue: blue * keep, alpha: alpha)
+    }
+
     public func opacity(_ alpha: Double) -> Color {
         Color(red: red, green: green, blue: blue, alpha: self.alpha * alpha)
     }
 
     var isOpaque: Bool { alpha >= 1 }
 
-    /// 0xRRGGBB, for an opaque fill.
-    var packed: UInt32 {
+    /// 0xRRGGBB, for an opaque fill. The compositor uses it for the desktop.
+    public var packed: UInt32 {
         (Color.byte(red) << 16) | (Color.byte(green) << 8) | Color.byte(blue)
     }
 

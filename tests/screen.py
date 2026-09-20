@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Screenshot the VM through the QEMU monitor and check pixel colours.
 
-    tests/screen.py MONITOR_SOCKET OUTPUT.ppm [--pointer X,Y] X,Y=RRGGBB ...
+    tests/screen.py MONITOR_SOCKET OUTPUT.ppm [--pointer X,Y] [--click] X,Y=RRGGBB ...
 
 X and Y are pixels, or fractions of the screen size when they contain a
 dot (0.5,0.5 is the centre).
@@ -13,6 +13,9 @@ dot (0.5,0.5 is the centre).
 --pointer X,Y moves the pointer of the VM to that pixel first, and waits for
 the compositor to draw again. The VM needs an absolute pointer device
 (virtio-tablet, which VM_GPU=headless and VM_GPU=window add).
+
+--click presses the left button and releases it, at the place that --pointer
+gave.
 
 Exits non-zero if any check fails.
 """
@@ -47,6 +50,16 @@ def move_pointer(sock_path, x, y, width, height):
         {"type": "abs", "data": {"axis": "y", "value": int(y * 32767 / height)}},
     ]}})
     time.sleep(1.0)  # the compositor draws the next frame
+
+
+def click(sock_path):
+    """Presses the left button and releases it."""
+    qmp_path = os.path.join(os.path.dirname(sock_path), "qmp.sock")
+    for down in (True, False):
+        qmp(qmp_path, {"execute": "input-send-event", "arguments": {
+            "events": [{"type": "btn", "data": {"down": down, "button": "left"}}]}})
+        time.sleep(0.3)
+    time.sleep(1.0)
 
 
 def screendump(sock_path, out_path):
@@ -122,17 +135,25 @@ def differing(pixels, width, area, colour):
 def main():
     sock_path, out_path, specs = sys.argv[1], sys.argv[2], sys.argv[3:]
     pointer = None
+    clicking = False
     if specs and specs[0] == "--pointer":
         pointer = specs[1]
         specs = specs[2:]
+    if specs and specs[0] == "--click":
+        clicking = True
+        specs = specs[1:]
     screendump(sock_path, out_path)
     width, height, pixels = read_ppm(out_path)
-    if pointer:
-        x, y = pointer.split(",")
-        move_pointer(sock_path, coordinate(x, width), coordinate(y, height), width, height)
+    if pointer or clicking:
+        if pointer:
+            x, y = pointer.split(",")
+            move_pointer(sock_path, coordinate(x, width), coordinate(y, height), width, height)
+            print(f"pointer at {pointer}")
+        if clicking:
+            click(sock_path)
+            print("clicked")
         screendump(sock_path, out_path)
         width, height, pixels = read_ppm(out_path)
-        print(f"pointer at {pointer}")
     print(f"screenshot {width}x{height}")
     failed = False
     for spec in specs:

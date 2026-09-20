@@ -7,14 +7,12 @@ import Render
 ///     RoundedRectangle(cornerRadius: 8)
 ///         .fill(Color.accent)
 ///         .frame(width: 48, height: 48)
-public protocol Shape: View {
+public protocol Shape: View where Body == Never {
     /// The outline, for the space that the layout gave the shape.
     func path(in frame: Frame) -> Path
 }
 
 extension Shape {
-    public typealias Body = Never
-
     public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
         nodes.append(ShapeNode(shape: self, color: environment.foregroundColor))
     }

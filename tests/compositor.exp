@@ -71,6 +71,27 @@ if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/leave.ppm \
 }
 send_user "\n$result\n"
 
+# A click on the first dock icon does an action: the item gets a dot under it
+# and the desktop takes the colour of the item (4C8DF6 darkened: 152745).
+if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/click.ppm \
+        --pointer 586,745 --click 128,80=152745 586,771=FFFFFF} result]} {
+    fail "dock click check: $result"
+}
+send_user "\n$result\n"
+
+# The Close button of the panel sends xdg_toplevel.close to the front window.
+# mydistro-hello-client stops when it gets that, so the window goes away.
+if {[catch {exec python3 tests/screen.py out/vm/monitor.sock out/vm/close.ppm \
+        --pointer 1200,14 --click 576,360=152745} result]} {
+    fail "close button check: $result"
+}
+send_user "\n$result\n"
+
+expect {
+    "WINDOW-CLOSE-SENT" {}
+    timeout             { fail "the compositor sent no close to the window" }
+}
+
 send "kill %1\r"
 expect {
     "COMPOSITOR-EXIT" {}

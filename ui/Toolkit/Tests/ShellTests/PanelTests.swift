@@ -36,10 +36,41 @@ struct PanelTests {
         #expect(texts(list).count == 2)
     }
 
-    @Test("The panel shows the title of the front window")
+    @Test("The panel shows the title of the front window, and a close button")
     func windowTitle() {
         let list = items(ShellState(windowTitles: ["first", "second"], clock: "14:05"))
-        #expect(texts(list).count == 3)
+        // The name, the title, the title of the button, and the time.
+        #expect(texts(list).count == 4)
+    }
+
+    @Test("The close button asks the compositor to close the front window")
+    func closeButtonCallsTheAction() {
+        final class Counter { var closes = 0 }
+        let counter = Counter()
+        let actions = ShellActions(closeFrontWindow: { counter.closes += 1 })
+        let host = ViewHost()
+        let panel = Rect(x: 0, y: 0, width: 1280, height: Int(Panel.height))
+        let list = host.displayList(
+            for: Panel(state: ShellState(windowTitles: ["a window"], clock: "14:05"),
+                       actions: actions),
+            in: panel)
+        // The button is left of the time, at the right end of the panel.
+        var button: Rect?
+        for item in list {
+            if case .path(let path, _) = item {
+                for element in path.elements {
+                    if case .move(let x, let y) = element { button = Rect(x: Int(x), y: Int(y), width: 0, height: 0) }
+                }
+            }
+        }
+        guard let button else {
+            Issue.record("the panel has no button")
+            return
+        }
+        host.pointerMoved(to: Double(button.x) + 20, y: Double(button.y) + 6)
+        host.pointerButton(pressed: true)
+        host.pointerButton(pressed: false)
+        #expect(counter.closes == 1)
     }
 
     @Test("The name is on the left and the time is on the right")
@@ -66,7 +97,8 @@ struct PanelTests {
 
     @Test("An empty title adds no text")
     func emptyTitle() {
-        #expect(texts(items(ShellState(windowTitles: [""], clock: "14:05"))).count == 2)
+        // The name, the title of the close button, and the time.
+        #expect(texts(items(ShellState(windowTitles: [""], clock: "14:05"))).count == 3)
     }
 }
 
@@ -95,14 +127,16 @@ struct DockTests {
     @Test("The dock is as large as its icons, not as large as the screen")
     func dockKeepsItsSize() {
         let shapes = paths(DockView())
-        // One background and three icons.
+        // One background and three icons. The dots of the items that are not
+        // active are clear, and a clear shape draws nothing.
         #expect(shapes.count == 4)
         for icon in shapes.dropFirst() {
             #expect(icon == (width: 44, height: 44))
         }
         let background = shapes[0]
         #expect(background.width == 44 * 3 + 10 * 2 + 20)
-        #expect(background.height == 44 + 20)
+        // The icon, the space under it, the dot, and the padding.
+        #expect(background.height == 44 + 4 + 5 + 20)
     }
 
     @Test("The dock is at the bottom of the screen, under the panel")
@@ -117,5 +151,71 @@ struct DockTests {
             }
         }
         #expect(lowest > 700 && lowest <= 800 - 16)
+    }
+}
+
+@Suite("Dock clicks")
+struct DockClickTests {
+    private let screen = Rect(x: 0, y: 0, width: 1280, height: 800)
+
+    /// The middle of the first dock icon. The dock is in the middle of the
+    /// screen at the bottom: 172 wide, and the first icon starts after the
+    /// padding of 10.
+    private let firstIcon = (x: 1280.0 / 2 - 172 / 2 + 10 + 22, y: 800.0 - 16 - 73 + 10 + 22)
+
+    @Test("A click on a dock item gives the desktop the colour of the item")
+    func clickSetsTheDesktopColor() {
+        final class Log { var colors: [Color?] = [] }
+        let log = Log()
+        let actions = ShellActions(setDesktopColor: { log.colors.append($0) })
+        let host = ViewHost()
+        func draw() {
+            _ = host.displayList(for: RootView(state: ShellState(clock: "14:05"), actions: actions),
+                                 in: screen)
+        }
+        host.needsUpdate = { draw() }
+        draw()
+
+        host.pointerMoved(to: firstIcon.x, y: firstIcon.y)
+        host.pointerButton(pressed: true)
+        host.pointerButton(pressed: false)
+        #expect(log.colors.count == 1)
+        #expect(log.colors.first ?? nil != nil, "the desktop takes a colour")
+
+        // A second click on the same item clears it.
+        host.pointerButton(pressed: true)
+        host.pointerButton(pressed: false)
+        #expect(log.colors.count == 2)
+        #expect(log.colors.last ?? nil == nil)
+    }
+
+    @Test("A click marks the item with a dot")
+    func clickMarksTheItem() {
+        let host = ViewHost()
+        var list: DisplayList = []
+        func draw() {
+            list = host.displayList(for: RootView(state: ShellState(clock: "14:05")), in: screen)
+        }
+        host.needsUpdate = { draw() }
+        draw()
+
+        /// The dots are the small shapes. A dot that draws nothing is clear.
+        func dots(_ list: DisplayList) -> Int {
+            list.filter { item in
+                guard case .path(let path, _) = item else { return false }
+                var ys: [Double] = []
+                for element in path.elements {
+                    if case .cubic(_, _, _, _, _, let y) = element { ys.append(y) }
+                }
+                guard let low = ys.min(), let high = ys.max() else { return false }
+                return high - low < 8
+            }.count
+        }
+
+        #expect(dots(list) == 0, "no item is active at the start")
+        host.pointerMoved(to: firstIcon.x, y: firstIcon.y)
+        host.pointerButton(pressed: true)
+        host.pointerButton(pressed: false)
+        #expect(dots(list) == 1)
     }
 }

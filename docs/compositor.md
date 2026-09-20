@@ -69,7 +69,16 @@ The compositor draws `RootView` from the `Shell` library over the whole screen. 
 
 The compositor gives the shell a `ShellState` for each frame: the window titles from the Wayland toplevels, and the time from `localtime_r`. A timer in the event loop reads the clock every second and asks for a frame when the minute changes.
 
-A `ViewHost` keeps the shell between frames: the `@State` values of the shell views, and which view the pointer is over. When the pointer moves, the compositor gives the position to the host. The host then calls the `onHover` handler of a view that the pointer entered or left. A handler that changes a state value asks for a frame. This is how the dock icons become brighter under the pointer.
+A `ViewHost` keeps the shell between frames: the `@State` values of the shell views, and which view the pointer is over. When the pointer moves or a button goes down, the compositor gives it to the host. The host then calls the handler of the view: `onHover` for a view that the pointer entered or left, and `onPress` and `onTapGesture` for a click. A handler that changes a state value asks for a frame. This is how the dock icons become brighter under the pointer.
+
+The shell asks the compositor for two things (`ShellActions`):
+
+| Action | What the compositor does |
+|---|---|
+| `closeFrontWindow` | Sends `xdg_toplevel.close` to the window in front. The app decides what it does with that. |
+| `setDesktopColor` | Draws the desktop in that colour. A dock item does this when the pointer clicks it. |
+
+The compositor sends the first pointer button (`BTN_LEFT`) to the shell only. An app gets no pointer and no keyboard yet, because there is no `wl_seat`.
 
 The shell is a view, so its tests need no screen. See [toolkit.md](toolkit.md).
 

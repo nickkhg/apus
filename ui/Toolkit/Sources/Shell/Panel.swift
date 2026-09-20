@@ -14,9 +14,11 @@ public struct Panel: View {
     static let titleColor = Color(white: 0.8)
 
     let state: ShellState
+    let actions: ShellActions
 
-    public init(state: ShellState) {
+    public init(state: ShellState, actions: ShellActions = ShellActions()) {
         self.state = state
+        self.actions = actions
     }
 
     public var body: some View {
@@ -30,6 +32,12 @@ public struct Panel: View {
                     .foregroundColor(Panel.titleColor)
             }
             Spacer()
+            if !state.windowTitles.isEmpty {
+                Button("Close") {
+                    actions.closeFrontWindow()
+                }
+                .font(.caption)
+            }
             Text(state.clock)
                 .font(.body)
                 .foregroundColor(.white)

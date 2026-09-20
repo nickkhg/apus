@@ -21,22 +21,41 @@ public struct ShellState: Equatable, Sendable {
     }
 }
 
-/// The screen: the panel at the top, and the free space under it. The windows
-/// of the apps are behind the free space, because the compositor draws them
-/// before the shell.
+/// What the shell can ask the compositor to do. The compositor fills these
+/// in, because the shell knows nothing about windows or Wayland.
+public struct ShellActions {
+    /// Asks the front window to close (xdg_toplevel.close). The app decides
+    /// what it does with that.
+    public var closeFrontWindow: () -> Void
+    /// Sets the colour of the desktop behind the windows. A dock item does
+    /// this when the pointer clicks it.
+    public var setDesktopColor: (Color?) -> Void
+
+    public init(closeFrontWindow: @escaping () -> Void = {},
+                setDesktopColor: @escaping (Color?) -> Void = { _ in }) {
+        self.closeFrontWindow = closeFrontWindow
+        self.setDesktopColor = setDesktopColor
+    }
+}
+
+/// The screen: the panel at the top, the dock at the bottom, and the free
+/// space between them. The windows of the apps are behind the free space,
+/// because the compositor draws them before the shell.
 public struct RootView: View {
     let state: ShellState
+    let actions: ShellActions
 
-    public init(state: ShellState) {
+    public init(state: ShellState, actions: ShellActions = ShellActions()) {
         self.state = state
+        self.actions = actions
     }
 
     public var body: some View {
         VStack(spacing: 0) {
-            Panel(state: state)
+            Panel(state: state, actions: actions)
                 .frame(height: Panel.height)
             Spacer()            // the windows are behind this space
-            DockView()
+            DockView(actions: actions)
                 .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
