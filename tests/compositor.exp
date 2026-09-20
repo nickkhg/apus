@@ -67,11 +67,27 @@ proc act_start {args} {
     send "$command\r"
 }
 
+# Waits until the shell is ready for the next command.
+#
+# A wait for the prompt is not enough. The compositor and the apps write to
+# the same console, so the prompt can go past while an expect is reading
+# their lines, and a later wait for it never ends. A mark that the input
+# command prints has the same fault the other way round: an expect between
+# the two throws the mark away.
+#
+# So this sends a command of its own and waits for its answer. The number
+# rises each time, so nothing already in the stream can answer for it, and the
+# shell runs it only after the input command has finished. The mark is
+# printed in parts, so that the echo of the command line does not carry it.
+set syncCount 0
 proc act_done {} {
+    global syncCount
+    incr syncCount
+    send "printf 'SYNC-%s\\n' $syncCount\r"
     expect {
         "mydistro-screen:" { fail "the input command failed" }
-        -re {# $}          {}
-        timeout            { fail "the input command did not finish" }
+        "SYNC-$syncCount"  {}
+        timeout            { fail "the shell did not answer" }
     }
 }
 
@@ -98,6 +114,13 @@ proc screen {name args} {
 
 spawn env VM_GPU=headless $env(MYDISTRO_VM) installed
 login
+
+# A bundle whose program starts and opens no window. The shell gives an app
+# ten seconds to show a window; this one never will, so the cell that holds
+# its place says that it did not start. The compositor reads /Applications
+# when it starts, so the bundle goes there first.
+send "mkdir -p /Applications/Broken.app && printf 'id = org.mydistro.broken\\nname = Broken\\nexec = /bin/true\\ncolor = E0574B\\n' > /Applications/Broken.app/app.conf\r"
+expect -re "# $"
 
 # Root on the serial console has no seat session: libseat opens devices directly.
 send "LIBSEAT_BACKEND=noop MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock ${uienv}${bin}mydistro-compositor &\r"
@@ -297,6 +320,31 @@ after 1000
 # in the middle of the canvas, which is 1200 x 784 at 72,8.
 screen close-terminal 400,400=07080A 36,400=12161A \
     560,370-790,420!07080A
+
+# An app that starts and opens no window. The cell that holds its place is
+# the large cell, because a new launch goes in front as a new window does.
+# The shell waits ten seconds before it says so.
+act_start --key super --type "broken" --key enter
+expect {
+    "APP-STARTED org.mydistro.broken" {}
+    timeout { fail "Summon did not start the broken app" }
+}
+act_done
+# While it starts, the cell says so, and the desktop is not bare.
+after 1000
+screen starting 400,400=0E1114
+# Ten seconds later the cell says that it did not start.
+set timeout 30
+expect {
+    "APP-DID-NOT-START org.mydistro.broken" {}
+    timeout { fail "the shell did not give up on the app that never opened a window" }
+}
+set timeout 180
+after 1000
+# The cell names the app, says what went wrong, and shows the program that
+# the bundle names. The two controls of the card are covered by a test of
+# the shell, which can find them without a place on the screen.
+screen did-not-start 400,400=0E1114 300,300-1000,500!0E1114
 
 send "\r"
 expect -re "# $"

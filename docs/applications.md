@@ -57,6 +57,18 @@ To add an app:
 
 The compositor writes `APP-STARTED <id> pid <number>` on the console, and `WINDOW-MAPPED` when the window comes.
 
+## An app that starts holds a cell
+
+An app takes a cell from the moment a person chooses it, and not from the moment its window appears. A person therefore sees the app in the place where it will be, instead of an unchanged screen.
+
+- While the program runs and no window has come, the cell says that the app is starting.
+- The window takes the cell when it comes, and the app is open.
+- An app that opens no window in ten seconds did not start. The cell then names the app, says what went wrong, and shows the program that the bundle names. It has two controls: one starts the app again, and one takes the cell away.
+
+The compositor writes `APP-DID-NOT-START <id>` on the console when it gives up.
+
+A cell that says "did not start" is where a person is already looking, which a line on a console is not.
+
 `MYDISTRO_UI_DIR` changes which program starts: a program of that directory takes the place of the program of a bundle with the same name. `make demo-dev` and `make test-dev` set it, so that Summon starts the new build.
 
 ## The canvas

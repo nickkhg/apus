@@ -30,6 +30,8 @@ public struct ShellState: Equatable, Sendable {
     public var heads: [WindowHead]
     /// The messages that wait to be read.
     public var notices: [Notice]
+    /// The apps that are starting, and the ones that did not start.
+    public var launches: [Launch]
     /// The part of the screen that the layout owns, in points. The shell
     /// puts a notice and the empty message inside it.
     public var canvas: Rect
@@ -38,7 +40,8 @@ public struct ShellState: Equatable, Sendable {
                 layout: WindowLayoutKind = .principal, clock: Clock = Clock(),
                 mode: RenderMode = .cpu, summonIsOpen: Bool = false,
                 standIns: [StandIn] = [], heads: [WindowHead] = [],
-                notices: [Notice] = [], canvas: Rect = Rect(x: 0, y: 0, width: 0, height: 0)) {
+                notices: [Notice] = [], launches: [Launch] = [],
+                canvas: Rect = Rect(x: 0, y: 0, width: 0, height: 0)) {
         self.apps = apps
         self.windows = windows
         self.layout = layout
@@ -48,6 +51,7 @@ public struct ShellState: Equatable, Sendable {
         self.standIns = standIns
         self.heads = heads
         self.notices = notices
+        self.launches = launches
         self.canvas = canvas
     }
 
@@ -80,6 +84,10 @@ public struct ShellActions {
     public var makeWidget: (String) -> Void
     /// Takes a message away.
     public var dismissNotice: (String) -> Void
+    /// Starts an app that did not start, again.
+    public var retryLaunch: (String) -> Void
+    /// Takes the cell of an app that did not start away.
+    public var dismissLaunch: (String) -> Void
 
     public init(openApp: @escaping (String) -> Void = { _ in },
                 closeFrontWindow: @escaping () -> Void = {},
@@ -89,7 +97,9 @@ public struct ShellActions {
                 setLayout: @escaping (WindowLayoutKind) -> Void = { _ in },
                 closeWindow: @escaping (String) -> Void = { _ in },
                 makeWidget: @escaping (String) -> Void = { _ in },
-                dismissNotice: @escaping (String) -> Void = { _ in }) {
+                dismissNotice: @escaping (String) -> Void = { _ in },
+                retryLaunch: @escaping (String) -> Void = { _ in },
+                dismissLaunch: @escaping (String) -> Void = { _ in }) {
         self.openApp = openApp
         self.closeFrontWindow = closeFrontWindow
         self.raiseWindow = raiseWindow
@@ -99,6 +109,8 @@ public struct ShellActions {
         self.closeWindow = closeWindow
         self.makeWidget = makeWidget
         self.dismissNotice = dismissNotice
+        self.retryLaunch = retryLaunch
+        self.dismissLaunch = dismissLaunch
     }
 }
 
@@ -115,7 +127,7 @@ public struct RootView: View {
     public var body: some View {
         ZStack(alignment: .topLeading) {
             // Nothing is open: the canvas says how to open something.
-            if state.windows.isEmpty, state.canvas.width > 0 {
+            if state.windows.isEmpty, state.launches.isEmpty, state.canvas.width > 0 {
                 EmptyCanvas()
                     .frame(width: Double(state.canvas.width),
                            height: Double(state.canvas.height))
@@ -126,6 +138,13 @@ public struct RootView: View {
                 WindowHeadView(head: head, actions: actions)
                     .frame(width: Double(head.cell.width), height: Metrics.headHeight)
                     .offset(x: Double(head.cell.x), y: Double(head.cell.y))
+            }
+            // The cell of an app that is starting, or of one that did not.
+            ForEach(state.launches) { launch in
+                LaunchCard(launch: launch, actions: actions)
+                    .frame(width: Double(launch.frame.width),
+                           height: Double(launch.frame.height))
+                    .offset(x: Double(launch.frame.x), y: Double(launch.frame.y))
             }
             // The cells that the band holds for windows with no place. They
             // are in the canvas, so they go under the rail and under Summon.

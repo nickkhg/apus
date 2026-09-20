@@ -91,6 +91,7 @@ The programs print these markers:
 | `WINDOW-IN-RAIL` | `mydistro-compositor`, when a layout places no window and it waits in the rail |
 | `LAYOUT` | `mydistro-compositor`, when a person picks another layout |
 | `APP-STARTED`, `APP-RAISED` | `mydistro-compositor`, when Summon starts an app or brings its window forward |
+| `APP-DID-NOT-START` | `mydistro-compositor`, when an app opens no window in ten seconds |
 | `CLIENT-DRAWN` | `mydistro-hello-client` |
 | `CLIENT-POINTER-ENTER`, `CLIENT-POINTER`, `CLIENT-POINTER-LEAVE`, `CLIENT-BUTTON` | `mydistro-hello-client`, when the compositor gives it the pointer |
 | `TERMINAL-READY` | `mydistro-terminal`, with the size of the grid |

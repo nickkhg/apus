@@ -25,6 +25,24 @@ public final class Compositor {
         public init() {}
     }
 
+    /// An app that was asked to start.
+    private final class PendingLaunch {
+        let id: String
+        let bundle: AppBundle
+        /// When the app was asked to start, in milliseconds.
+        var startedAt: UInt32
+        /// Why it did not start, once the shell has given up on it.
+        var failure: String?
+        /// The cell that the layout gave it.
+        var frame: Rect?
+
+        init(id: String, bundle: AppBundle) {
+            self.id = id
+            self.bundle = bundle
+            startedAt = monotonicMilliseconds()
+        }
+    }
+
     /// A mapped toplevel and where it is on screen.
     private final class Window {
         /// A name for the window that stays the same while it is open. The
@@ -71,6 +89,15 @@ public final class Compositor {
     private var shellActions = ShellActions()
     /// The messages that wait to be read.
     private var notices: [Notice] = []
+    /// The apps between the moment a person chose them and the moment their
+    /// window appears. A launch holds a cell, so that a person sees the app
+    /// in the place where it will be.
+    private var launches: [PendingLaunch] = []
+    /// Counts the launches, to name each one.
+    private var nextLaunchID = 0
+    /// How long an app has to open a window before the shell says that it
+    /// did not start, in milliseconds.
+    private static let launchLimit: UInt32 = 10_000
     /// The layout that owns the canvas. A window never floats: this is the
     /// only thing that gives a window a frame.
     private var layoutKind = WindowLayoutKind.principal
@@ -154,12 +181,25 @@ public final class Compositor {
             dismissNotice: { [unowned self] id in
                 notices.removeAll { $0.id == id }
                 screen.setNeedsFrame()
+            },
+            retryLaunch: { [unowned self] id in
+                guard let launch = launches.first(where: { $0.id == id }) else { return }
+                launches.removeAll { $0.id == id }
+                startLaunch(of: launch.bundle)
+            },
+            dismissLaunch: { [unowned self] id in
+                launches.removeAll { $0.id == id }
+                arrange()
+                screen.setNeedsFrame()
             }
         )
         shell.clock = Compositor.clockText()
         // The clock changes once a minute. A one-second timer keeps it right
         // without a frame between minutes.
-        try loop.onTimer(milliseconds: 1000) { [unowned self] in updateClock() }
+        try loop.onTimer(milliseconds: 1000) { [unowned self] in
+            updateClock()
+            checkLaunches()
+        }
         server.keymap = input.keymapText
         server.screenChanged(to: screenInfo)
         server.sizeForNewWindow = { [unowned self] surface in sizeForNewWindow(surface) }
@@ -228,6 +268,7 @@ public final class Compositor {
         state.standIns = standIns
         state.heads = heads
         state.notices = notices
+        state.launches = launchCards
         state.canvas = windowArea
         // The time of this frame. Everything that moves reads it, so things
         // that start together stay together.
@@ -311,13 +352,26 @@ public final class Compositor {
     /// Runs the layout and gives every window its frame. A window whose size
     /// changed is asked for the new one, because the layout owns the size.
     private func arrange() {
+        // A launch is a cell of its own until its window comes. The newest
+        // launch is first, so it takes the large cell as a new window does.
+        let starting = launches.reversed().map { $0 }
         let ordered = frontFirst
-        let subviews = LayoutSubviews(ordered.map { subview(for: $0) })
+        let subviews = LayoutSubviews(
+            starting.map { launch in
+                LayoutSubview(id: launch.id) { proposal in
+                    WindowAnswer.size(minimum: nil, content: nil, to: proposal)
+                }
+            } + ordered.map { subview(for: $0) })
         let frames = layoutKind.layout.frames(in: canvas, subviews: subviews)
-        for (window, subview) in zip(ordered, subviews) {
+        for (launch, frame) in zip(starting, frames) {
+            launch.frame = frame?.pixels
+        }
+        let windowFrames = Array(frames.dropFirst(starting.count))
+        let windowSubviews = Array(subviews.dropFirst(starting.count))
+        for (window, subview) in zip(ordered, windowSubviews) {
             window.reservation = subview.reservation?.pixels
         }
-        for (window, frame) in zip(ordered, frames) {
+        for (window, frame) in zip(ordered, windowFrames) {
             let cell = frame?.pixels
             window.cell = cell
             // The shell keeps the head of a cell for itself, so the window
@@ -445,6 +499,53 @@ public final class Compositor {
         }
     }
 
+    /// The cells of the apps that are starting, and of the ones that did not.
+    private var launchCards: [Launch] {
+        launches.reversed().compactMap { launch -> Launch? in
+            guard let frame = launch.frame else { return nil }
+            return Launch(id: launch.id,
+                          appName: launch.bundle.name,
+                          mark: launch.bundle.entry.color,
+                          command: launch.bundle.command,
+                          state: launch.failure.map { Launch.State.failed($0) } ?? .starting,
+                          frame: frame)
+        }
+    }
+
+    /// Asks an app to start and keeps a cell for it. An app that is already
+    /// starting is not started again.
+    private func startLaunch(of bundle: AppBundle) {
+        guard !launches.contains(where: { $0.bundle.id == bundle.id }) else { return }
+        nextLaunchID += 1
+        let launch = PendingLaunch(id: "l\(nextLaunchID)", bundle: bundle)
+        if AppCatalog.start(bundle) == nil {
+            launch.failure = "The system could not run the program of the bundle."
+        }
+        launches.append(launch)
+        arrange()
+        screen.setNeedsFrame()
+    }
+
+    /// An app that has taken too long has not started. The one-second timer
+    /// of the clock looks for these.
+    private func checkLaunches() {
+        let now = monotonicMilliseconds()
+        var changed = false
+        for launch in launches where launch.failure == nil {
+            guard now &- launch.startedAt > Compositor.launchLimit else { continue }
+            launch.failure = "It ran, and it opened no window."
+            log("APP-DID-NOT-START \(launch.bundle.id)")
+            changed = true
+        }
+        if changed { screen.setNeedsFrame() }
+    }
+
+    /// The window of an app arrived, so its launch is over.
+    private func endLaunch(ofApp appID: String) {
+        guard launches.contains(where: { $0.bundle.id == appID }) else { return }
+        launches.removeAll { $0.bundle.id == appID }
+    }
+
     /// The cards that the shell draws in the cells that windows cannot use.
     private var standIns: [StandIn] {
         let now = monotonicMilliseconds()
@@ -537,6 +638,9 @@ public final class Compositor {
             // every window a frame.
             nextWindowID += 1
             windows.append(Window(id: "w\(nextWindowID)", surface: surface, frame: nil))
+            // The app opened its window, so its launch is over and the cell
+            // that held its place goes back to the layout.
+            endLaunch(ofApp: surface.toplevel?.appID ?? "")
             arrange()
             updateFocus()
             let title = surface.toplevel?.title ?? ""
@@ -614,12 +718,7 @@ public final class Compositor {
                         detail: "Its bundle is not in \(AppCatalog.directory)."))
             return
         }
-        guard AppCatalog.start(bundle) != nil else {
-            post(Notice(id: "start:\(id)", kind: .failure, source: bundle.name,
-                        title: "\(bundle.name) did not start",
-                        detail: "The system could not run \(bundle.command)."))
-            return
-        }
+        startLaunch(of: bundle)
     }
 
     /// The window in front gets the keys.
