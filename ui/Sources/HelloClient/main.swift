@@ -48,6 +48,8 @@ final class Client {
     var drawnSize: (width: Int, height: Int)?
     /// Each buffer needs a name of its own, as the old one may still exist.
     var buffers = 0
+    var seat: OpaquePointer?
+    var pointer: OpaquePointer?
 }
 
 let client = Client()
@@ -144,6 +146,10 @@ let registryListener = permanent(wl_registry_listener(
             client.shm = OpaquePointer(wl_registry_bind(registry, name, wl_shm_interface_ptr(), 1))
         case "xdg_wm_base":
             client.wmBase = OpaquePointer(wl_registry_bind(registry, name, xdg_wm_base_interface_ptr(), 1))
+        case "wl_seat":
+            client.seat = OpaquePointer(
+                wl_registry_bind(registry, name, wl_seat_interface_ptr(), 5))
+            wl_seat_add_listener(client.seat, seatListener, clientPointer)
         case "wl_output":
             client.output = OpaquePointer(
                 wl_registry_bind(registry, name, wl_output_interface_ptr(), 2))
@@ -175,6 +181,47 @@ let outputListener = permanent(wl_output_listener(
     },
     name: { _, _, _ in },
     description: { _, _, _ in }
+))
+
+// The pointer. The test reads these lines to check that the compositor
+// gives the pointer to the window under it.
+let pointerListener = permanent(wl_pointer_listener(
+    enter: { _, _, _, _, x, y in
+        print("CLIENT-POINTER-ENTER \(Int(wl_fixed_to_double(x))),\(Int(wl_fixed_to_double(y)))")
+        fflush(nil)
+    },
+    leave: { _, _, _, _ in
+        print("CLIENT-POINTER-LEAVE")
+        fflush(nil)
+    },
+    motion: { _, _, _, x, y in
+        print("CLIENT-POINTER \(Int(wl_fixed_to_double(x))),\(Int(wl_fixed_to_double(y)))")
+        fflush(nil)
+    },
+    button: { _, _, _, _, button, state in
+        print("CLIENT-BUTTON \(button) \(state)")
+        fflush(nil)
+    },
+    axis: { _, _, _, _, _ in },
+    frame: { _, _ in },
+    axis_source: { _, _, _ in },
+    axis_stop: { _, _, _, _ in },
+    axis_discrete: { _, _, _, _ in },
+    axis_value120: { _, _, _, _ in },
+    axis_relative_direction: { _, _, _, _ in },
+    // The pointer was put somewhere, rather than moved there.
+    warp: { _, _, _, _ in }
+))
+
+let seatListener = permanent(wl_seat_listener(
+    capabilities: { data, seat, capabilities in
+        let client = state(data)
+        guard capabilities & WL_SEAT_CAPABILITY_POINTER.rawValue != 0,
+              client.pointer == nil else { return }
+        client.pointer = wl_seat_get_pointer(seat)
+        wl_pointer_add_listener(client.pointer, pointerListener, data)
+    },
+    name: { _, _, _ in }
 ))
 
 let wmBaseListener = permanent(xdg_wm_base_listener(

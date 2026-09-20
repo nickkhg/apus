@@ -302,7 +302,11 @@ public struct SummonView: View {
             ForEach(groups) { group in
                 GroupHeader(title: group.title)
                 ForEach(group.items) { item in
-                    SummonRow(item: item, actions: actions,
+                    SummonRow(item: item,
+                              choose: {
+                                  choose(item)
+                                  actions.toggleSummon()
+                              },
                               isSelected: item.id == chosen?.id)
                 }
             }
@@ -350,7 +354,9 @@ struct GroupHeader: View {
 /// One line. The pointer chooses it; the keyboard will choose it later.
 struct SummonRow: View {
     let item: SummonItem
-    let actions: ShellActions
+    /// What to do when a person picks this line. The view above owns it, so
+    /// that the pointer and Enter cannot do different things.
+    let choose: () -> Void
     var isSelected = false
     @State private var isHovered = false
 
@@ -393,19 +399,5 @@ struct SummonRow: View {
             .fill(isSelected ? Palette.accentSurface
                              : (isHovered ? Palette.control : Color.clear))
             .padding(.horizontal, 6)
-    }
-
-    private func choose() {
-        switch item.kind {
-        case .window(let id):
-            actions.raiseWindow(id)
-        case .app(let id):
-            actions.openApp(id)
-        case .command(.closeFrontWindow):
-            actions.closeFrontWindow()
-        case .command(.layout(let kind)):
-            actions.setLayout(kind)
-        }
-        actions.toggleSummon()
     }
 }

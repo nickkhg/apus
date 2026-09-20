@@ -20,13 +20,11 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
 
 1. A widget user interface for the other apps. The terminal has one. An app draws it for a tile of 256 points across.
 2. An icon file in a bundle, and an image as a display item. Summon draws a colour mark now.
-3. Text that is too long for its space. Cut it, and add "…".
-4. A pointer position in a handler, and a drag.
-5. `wl_pointer`, so that an app reads the pointer. The shell keeps it now.
-6. A shadow, a blur and a gradient in the display list, for the second mode of the design. `Appearance` holds the values of both modes already. See [toolkit.md](toolkit.md).
-7. More than one desktop, and a layout for each one. The design has this as the target, and one desktop is what ships.
-8. A picture of a window in the card that stands in for it. It is a crop of the top left at one pixel to one point. A person turns it on for one app at a time.
-9. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
+3. A pointer position in a handler, and a drag.
+4. A shadow, a blur and a gradient in the display list, for the second mode of the design. `Appearance` holds the values of both modes already. See [toolkit.md](toolkit.md).
+5. More than one desktop, and a layout for each one. The design has this as the target, and one desktop is what ships.
+6. A picture of a window in the card that stands in for it. It is a crop of the top left at one pixel to one point. A person turns it on for one app at a time.
+7. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
 
 ## The terminal
 

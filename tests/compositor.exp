@@ -185,6 +185,32 @@ after 1000
 screen open-hello 400,400=3070F0 84,44=FFFFFF \
     1100,200=14111E 1040,24-1250,44!14111E
 
+# The pointer reaches the app under it. Hello has the large cell, so its
+# window covers 920 x 744 at 80,40, and a point well inside it belongs to
+# the app and not to the shell.
+act_start --pointer 400,400
+expect {
+    -re {CLIENT-POINTER-ENTER} {}
+    timeout { fail "the pointer did not reach the window under it" }
+}
+act_done
+# A click goes to the same window. BTN_LEFT is 272, and 1 is "pressed".
+act_start --pointer 420,420 --click
+expect {
+    -re {CLIENT-BUTTON 272 1} {}
+    timeout { fail "the click did not reach the window under it" }
+}
+act_done
+# The pointer goes back over the rail, which is the shell, so the app hears
+# that the pointer left it.
+act_start --pointer 36,400
+expect {
+    -re {CLIENT-POINTER-LEAVE} {}
+    timeout { fail "the app was not told that the pointer left" }
+}
+act_done
+act --pointer 1200,740
+
 # The terminal comes back to the front. Hello named a smallest size of
 # 600 x 400, so it cannot use a tile of 256: the band holds a square cell
 # for it and the shell draws a stand-in card there, while the window itself
@@ -209,6 +235,33 @@ act_start --key super --type "hello" --key enter
 expect {
     -re {WINDOW-CONFIGURED "[^"]*" 256x256 was 920x744} {}
     timeout { fail "the window in the rail did not come back to the large cell" }
+}
+act_done
+after 1000
+
+# A command of Summon gives the canvas to another layout. Side by side
+# splits the canvas in two: each half is (1200 - 8) / 2 = 596 wide, and the
+# window in it gets 580 x 744 once the shell has taken its head.
+act_start --key super --type "side" --key enter
+expect {
+    -re {LAYOUT sideBySide} {}
+    timeout { fail "Summon did not change the layout" }
+}
+expect {
+    -re {WINDOW-CONFIGURED "[^"]*" 580x744} {}
+    timeout { fail "the windows did not take half of the canvas each" }
+}
+act_done
+after 1000
+# Two windows, side by side: the terminal on one half and hello on the
+# other. The head of each one sits over its own half.
+screen side-by-side 300,400=3070F0 900,400=14111E
+
+# Back to the principal layout for the steps below.
+act_start --key super --type "principal" --key enter
+expect {
+    -re {LAYOUT principal} {}
+    timeout { fail "Summon did not go back to the principal layout" }
 }
 act_done
 after 1000

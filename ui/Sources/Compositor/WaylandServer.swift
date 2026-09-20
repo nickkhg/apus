@@ -8,7 +8,8 @@ import Wayland
 //   wl_compositor  surfaces (and regions, which are ignored)
 //   wl_shm         shared-memory buffers (the Wayland module implements it)
 //   xdg_wm_base    toplevel windows (no popups yet)
-//   wl_seat        the keyboard. The pointer stays with the shell.
+//   wl_seat        the keyboard and the pointer. The shell keeps the
+//                  pointer while it is over the chrome of the shell.
 //
 // The Swift object for a protocol object is the `data` of its resource, so it
 // lives as long as the resource. Back references to resources are weak.
@@ -113,6 +114,10 @@ final class WaylandServer {
 
     /// The wl_keyboard objects of the apps.
     private var keyboards: [Resource<WlKeyboard>] = []
+    /// The wl_pointer objects of the apps.
+    private var pointers: [Resource<WlPointer>] = []
+    /// The surface that the pointer is over, when it belongs to an app.
+    private weak var pointerFocus: Surface?
     /// What the screen is now: its size in pixels, how many pixels there
     /// are to a point, and how large the picture is in millimetres. An app
     /// reads this from wl_output, and it needs the scale to draw sharply.
@@ -159,7 +164,11 @@ final class WaylandServer {
         display.addGlobal(WlSeat.self, version: 7) { [unowned self] seat in
             // The seat has a keyboard only. The shell answers the pointer,
             // and an app gets no pointer events yet.
-            seat.sendCapabilities(capabilities: WlSeat.Capability.keyboard.rawValue)
+            // The seat has a keyboard and a pointer. The shell keeps the
+            // pointer while it is over its own chrome; the compositor gives
+            // it here only while it is over the window of an app.
+            seat.sendCapabilities(capabilities: WlSeat.Capability.keyboard.rawValue
+                | WlSeat.Capability.pointer.rawValue)
             seat.sendName(name: "seat0")
             seat.onRequest = { [unowned self, unowned seat] request in
                 handle(request, of: seat)
@@ -219,14 +228,78 @@ final class WaylandServer {
                 enter(surface, with: keyboard)
             }
         case .getPointer(let id):
-            // Accepted and silent: the seat says it has a keyboard only, so
-            // an app that asks for a pointer gets no events.
-            _ = seat.create(id)
+            let pointer = seat.create(id)
+            pointers.append(pointer)
+            pointer.onDestroy { [unowned self, unowned pointer] in
+                pointers.removeAll { $0 === pointer }
+            }
+            // A pointer that an app asks for while it is already under the
+            // pointer hears about that at once.
+            if let surface = pointerFocus, surface.resource?.client === pointer.client {
+                pointerEnter(surface, with: pointer, at: pointerAt)
+            }
         case .getTouch(let id):
             _ = seat.create(id)
         case .release:
             break
         }
+    }
+
+    // MARK: - wl_pointer
+
+    /// Where the pointer is inside the surface it is over, in points.
+    private var pointerAt: (x: Double, y: Double) = (0, 0)
+
+    /// Gives the pointer to a surface of an app, or takes it away when the
+    /// shell wants it. `point` is inside the surface.
+    func setPointerFocus(_ surface: Surface?, at point: (x: Double, y: Double)) {
+        pointerAt = point
+        guard surface !== pointerFocus else { return }
+        if let old = pointerFocus?.resource, !old.isDestroyed {
+            for pointer in pointers(of: old.client) {
+                pointer.sendLeave(serial: display.nextSerial(), surface: old)
+                pointer.sendFrame()
+            }
+        }
+        pointerFocus = surface
+        guard let surface, surface.resource != nil else { return }
+        for pointer in pointers(of: surface.resource?.client) {
+            pointerEnter(surface, with: pointer, at: point)
+        }
+    }
+
+    private func pointerEnter(_ surface: Surface, with pointer: Resource<WlPointer>,
+                              at point: (x: Double, y: Double)) {
+        guard let resource = surface.resource else { return }
+        pointer.sendEnter(serial: display.nextSerial(), surface: resource,
+                          surfaceX: point.x, surfaceY: point.y)
+        pointer.sendFrame()
+    }
+
+    /// The pointer moved inside the surface that has it.
+    func sendPointer(motion point: (x: Double, y: Double), time: UInt32) {
+        pointerAt = point
+        guard let resource = pointerFocus?.resource, !resource.isDestroyed else { return }
+        for pointer in pointers(of: resource.client) {
+            pointer.sendMotion(time: time, surfaceX: point.x, surfaceY: point.y)
+            pointer.sendFrame()
+        }
+    }
+
+    /// A button of the pointer, for the surface that has it.
+    func sendPointer(button code: UInt32, pressed: Bool, time: UInt32) {
+        guard let resource = pointerFocus?.resource, !resource.isDestroyed else { return }
+        let state = pressed ? WlPointer.ButtonState.pressed : .released
+        for pointer in pointers(of: resource.client) {
+            pointer.sendButton(serial: display.nextSerial(), time: time,
+                               button: code, state: state.rawValue)
+            pointer.sendFrame()
+        }
+    }
+
+    /// The wl_pointer objects of one client.
+    private func pointers(of client: Client?) -> [Resource<WlPointer>] {
+        pointers.filter { $0.client === client && !$0.isDestroyed }
     }
 
     /// Gives the keys to a surface, or to none. The compositor calls this
