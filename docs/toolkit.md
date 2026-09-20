@@ -80,6 +80,8 @@ ui/
     │   └── Shell/         YOUR UI
     │       ├── RootView.swift
     │       ├── Rail.swift
+    │       ├── StandIn.swift
+    │       ├── WindowHead.swift
     │       ├── Summon.swift
     │       ├── Theme.swift
     │       └── WindowLayout.swift
@@ -355,3 +357,64 @@ position of the mouse by the scale before it gives it to the host.
 - A view cannot draw outside its frame, and nothing clips a view to its
   frame.
 - One point is one pixel. There is no scale for a high-resolution screen.
+
+## Motion
+
+A value moves instead of jumping. `@Animated` is `@State` that eases to its target:
+
+```swift
+struct SummonButton: View {
+    @Animated(.quick) private var glow = 0.0
+
+    var body: some View {
+        mark.background(Palette.accentSurface.lightened(by: glow * 0.4))
+            .onHover { glow = $0 ? 1 : 0 }
+    }
+}
+```
+
+Reading it gives where the value is now. Writing it gives the value somewhere to go.
+
+- `Animation` holds a time and a curve: `linear`, `easeOut` or `easeInOut`. The named ones are `.quick` (120 ms, a control), `.surface` (160 ms) and `.window` (240 ms).
+- Every move in one frame reads the same time, so things that start together stay together. The time comes from `ViewHost.now`, which the compositor sets from the clock of the system.
+- A view that still has somewhere to go asks for the next frame. A view that arrived asks for nothing, so a screen that does not move costs no frames.
+- `@Environment(\.now)` reads that time in a view, and any other value of the environment.
+
+The design must be right with no motion at all. A renderer that cannot hold the frame rate may end every move at once and lose nothing but the pleasure.
+
+## The keyboard
+
+A view reads the keys with `onKey`. It answers whether it used the key, and a key that no view used belongs to whatever is under the toolkit. In mydistro that is the app with the focus.
+
+```swift
+SummonView(state: state, actions: actions)
+    .onKey { key in
+        switch key.named {
+        case .escape: actions.toggleSummon(); return true
+        default: return false
+        }
+    }
+```
+
+- The view in front reads a key first, as with the pointer. A view behind it hears nothing about a key that the front view used.
+- `KeyEvent.named` names the keys that do something instead of writing something: `escape`, `enter`, `tab`, `backspace`, `delete`, the four arrows, `home` and `end`. `characters` holds what a key writes, and it is empty for the named ones.
+- A view that leaves the tree stops reading. Summon keeps its query in `@State`, so the query starts again every time it opens.
+
+The compositor gives each key to the shell first, and sends it to the app only when no view of the shell used it.
+
+## Notices
+
+A notice is a short message from the system or from an app. It never covers the window in the large cell. It goes where a tile would go, at the end of the band, and the newest one is lowest. `Notice.Kind` is `information`, `warning` or `failure`, and each has a colour. The colour never carries the meaning on its own. The text says it too.
+
+## The two modes
+
+The shell draws in one of two modes, and `Appearance` holds what differs.
+
+| | CPU | GPU |
+| --- | --- | --- |
+| A surface stands off what is behind it with | a line of one point, and a large step in the colour | a shadow, and a smaller step |
+| The layer under Summon dims by | 0.66 | 0.5, because a blur does some of the work |
+
+Neither mode is the other one with the effects turned off. Turn the shadows off in GPU mode and the surfaces run together. That is the proof that the two sets of values are not one set.
+
+`ShellState.mode` carries the choice. The compositor makes that choice from the renderer that it has. The display list carries no shadow, no blur and no gradient yet. GPU mode therefore holds its own values and has nothing yet to draw them with.

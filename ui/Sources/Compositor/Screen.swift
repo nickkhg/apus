@@ -80,6 +80,8 @@ final class SoftwareScreen: Screen, PageFlipHandler {
     private var restore: ScreenRestore?
     /// Some drivers can't page flip; then frames are shown with a mode set.
     private var canPageFlip = true
+    /// True while a frame is being drawn.
+    private var isDrawing = false
     /// Set when the display reported a change. The new size is taken between
     /// frames, because a buffer that the screen is showing cannot go away.
     private var displayMayHaveChanged = false
@@ -141,10 +143,15 @@ final class SoftwareScreen: Screen, PageFlipHandler {
 
     func setNeedsFrame() {
         needsFrame = true
-        if !flipPending { drawFrame() }
+        // A frame that is being drawn must not start another one. Something
+        // that moves asks for the next frame while this one is drawn, and
+        // the flip that follows picks it up.
+        if !flipPending, !isDrawing { drawFrame() }
     }
 
     private func drawFrame() {
+        isDrawing = true
+        defer { isDrawing = false }
         needsFrame = false
         let buffer = buffers[back]
         let list = displayList()

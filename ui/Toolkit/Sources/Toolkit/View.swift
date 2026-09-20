@@ -27,7 +27,7 @@ extension View {
         // values. See State.swift.
         state.enter(Self.self)
         defer { state.leave() }
-        state.connect(self)
+        state.connect(self, environment: environment)
         body.makeNodes(into: &nodes, environment: environment)
     }
 

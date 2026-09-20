@@ -15,8 +15,9 @@ The compositor cannot call into a window, because a window is another process. S
 | What the window sent | The answer |
 | --- | --- |
 | `xdg_toplevel.set_min_size` | That size, or the proposal when the proposal is larger |
-| A buffer, and no minimum | The size of the buffer it last committed |
-| Nothing yet | The proposal, and a tile on a side that the proposal leaves free |
+| No minimum | The proposal, and a tile on a side that the proposal leaves free |
+
+The size that a window last drew is not its answer. An app that drew a large window would then answer a large length for a tile. No app could take a tile after it drew once. The app answers the real question by drawing: the layout gives it the tile, and the app commits a buffer for that size. An app that names a minimum larger than a tile is the one case that needs no round trip.
 
 A foreign app needs no code path of its own. It is a window that answers a proposal the layout cannot satisfy. Every layout must handle that case anyway, because an app of the toolkit can also answer badly.
 
@@ -25,6 +26,14 @@ A foreign app needs no code path of its own. It is a window that answers a propo
 A window that the layout does not place waits in the rail. It stays open and it keeps its state. The rail shows a short bar for it, and the shell draws a stand-in where the window would have been.
 
 This happens when a window answers a size that a tile cannot hold: more than 384 points long, or more than a tile is wide. A terminal that drew 784 points tall cannot use a tile of 256, so it waits.
+
+## What the shell keeps of a cell
+
+A layout gives a window a cell. The shell keeps the top 32 points of it for a head, and 8 points on the other three sides. The window draws in the rest. A cell of 1200 × 784 at 72, 8 gives the window 1184 × 744 at 80, 40.
+
+The head names the app and the window, and says which class the window has. It holds two controls. One closes the window. The other takes the window out of the large cell, so that it becomes a tile. A line in the accent colour along the top says which window has the keyboard.
+
+A tile keeps nothing. A tile is 256 points across, and a bar of controls would take a tenth of it. An app draws its own name inside its widget user interface instead.
 
 ## The four layouts
 

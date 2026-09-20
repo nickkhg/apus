@@ -55,6 +55,8 @@ final class GPUScreen: Screen, PageFlipHandler {
     private var flipPending = false
     private var needsFrame = false
     private var canPageFlip = true
+    /// True while a frame is being drawn.
+    private var isDrawing = false
     private var displayMayHaveChanged = false
 
     init(device: DRMDevice) throws {
@@ -213,7 +215,10 @@ final class GPUScreen: Screen, PageFlipHandler {
 
     func setNeedsFrame() {
         needsFrame = true
-        if !flipPending { drawFrame() }
+        // A frame that is being drawn must not start another one. Something
+        // that moves asks for the next frame while this one is drawn, and
+        // the flip that follows picks it up.
+        if !flipPending, !isDrawing { drawFrame() }
     }
 
     /// Draws the list and takes the finished buffer from GBM.
@@ -232,6 +237,8 @@ final class GPUScreen: Screen, PageFlipHandler {
     }
 
     private func drawFrame() {
+        isDrawing = true
+        defer { isDrawing = false }
         needsFrame = false
         guard let surface else { return }
         let next: (bo: OpaquePointer, framebuffer: ImportedFramebuffer)

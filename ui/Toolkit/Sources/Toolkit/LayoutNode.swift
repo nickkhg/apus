@@ -95,7 +95,13 @@ final class StackNode: LayoutNode {
         self.axis = axis
         self.spacing = spacing
         self.alignment = alignment
-        self.children = children
+        // A Spacer written on its own grows in both directions, because it
+        // does not know where it is. In a stack it grows along the stack
+        // only: a Spacer in a row must not make the row tall.
+        self.children = children.map { child in
+            guard let spacer = child as? SpacerNode, spacer.axis == nil else { return child }
+            return SpacerNode(axis: axis, minLength: spacer.minLength)
+        }
     }
 
     private var totalSpacing: Double {

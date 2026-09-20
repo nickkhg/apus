@@ -34,6 +34,14 @@ public final class Compositor {
         /// Where the layout put the window. A window with no frame waits in
         /// the rail: it stays open and keeps its state, and it is not drawn.
         var frame: Rect?
+        /// The cell that the band holds for a window with no frame. The
+        /// shell draws a stand-in there.
+        var reservation: Rect?
+        /// The whole cell that the layout gave the window. The shell draws
+        /// the head in the top of it, and `frame` is what is left.
+        var cell: Rect?
+        /// When the window last committed a buffer, in milliseconds.
+        var changed = monotonicMilliseconds()
         init(id: String, surface: Surface, frame: Rect?) {
             (self.id, self.surface, self.frame) = (id, surface, frame)
         }
@@ -67,6 +75,8 @@ public final class Compositor {
     private let host = ViewHost()
     /// What the shell can ask the compositor to do.
     private var shellActions = ShellActions()
+    /// The messages that wait to be read.
+    private var notices: [Notice] = []
     /// The layout that owns the canvas. A window never floats: this is the
     /// only thing that gives a window a frame.
     private var layoutKind = WindowLayoutKind.principal
@@ -145,7 +155,13 @@ public final class Compositor {
                 let next = (all.firstIndex(of: layoutKind).map { $0 + 1 } ?? 0) % all.count
                 setLayout(all[next])
             },
-            setLayout: { [unowned self] kind in setLayout(kind) }
+            setLayout: { [unowned self] kind in setLayout(kind) },
+            closeWindow: { [unowned self] id in closeWindow(id) },
+            makeWidget: { [unowned self] id in makeWidget(id) },
+            dismissNotice: { [unowned self] id in
+                notices.removeAll { $0.id == id }
+                screen.setNeedsFrame()
+            }
         )
         shell.clock = Compositor.clockText()
         // The clock changes once a minute. A one-second timer keeps it right
@@ -217,6 +233,13 @@ public final class Compositor {
         state.mode = shellMode
         state.layout = layoutKind
         state.windows = windowEntries
+        state.standIns = standIns
+        state.heads = heads
+        state.notices = notices
+        state.canvas = windowArea
+        // The time of this frame. Everything that moves reads it, so things
+        // that start together stay together.
+        host.now = Double(monotonicMilliseconds()) / 1000
         list += host.displayList(for: RootView(state: state, actions: shellActions),
                                  in: screenRect, scale: scale)
         // The pointer is kept in pixels, because that is what the mouse and
@@ -311,10 +334,21 @@ public final class Compositor {
     /// changed is asked for the new one, because the layout owns the size.
     private func arrange() {
         let ordered = frontFirst
-        let frames = layoutKind.layout.frames(
-            in: canvas, subviews: LayoutSubviews(ordered.map { subview(for: $0) }))
+        let subviews = LayoutSubviews(ordered.map { subview(for: $0) })
+        let frames = layoutKind.layout.frames(in: canvas, subviews: subviews)
+        for (window, subview) in zip(ordered, subviews) {
+            window.reservation = subview.reservation?.pixels
+        }
         for (window, frame) in zip(ordered, frames) {
-            let rect = frame?.pixels
+            let cell = frame?.pixels
+            window.cell = cell
+            // The shell keeps the head of a cell for itself, so the window
+            // gets what is left of it. A tile has no head: the app draws the
+            // whole tile, with its own name in it.
+            let rect = cell.map {
+                WindowChrome.content(of: $0, sizeClass: SizeClass.of(Proposal(
+                    width: Double($0.width), height: Double($0.height))))
+            }
             window.frame = rect
             let title = window.surface.toplevel?.title ?? ""
             guard let rect else {
@@ -362,8 +396,13 @@ public final class Compositor {
         let frames = layoutKind.layout.frames(in: canvas, subviews: LayoutSubviews(subviews))
         // A window that the layout does not place still needs a size to draw
         // at, so it gets a tile.
-        return (frames.first ?? nil)?.pixels
+        let cell = (frames.first ?? nil)?.pixels
             ?? Rect(x: 0, y: 0, width: Int(WindowMetrics.tile), height: Int(WindowMetrics.tile))
+        // The shell keeps the head of the cell, so the first configure asks
+        // for the size that the window really draws. Without this the window
+        // draws the whole cell once and then has to draw again.
+        return WindowChrome.content(of: cell, sizeClass: SizeClass.of(Proposal(
+            width: Double(cell.width), height: Double(cell.height))))
     }
 
     /// The time from the system clock, in local time. The rail stacks the
@@ -408,6 +447,58 @@ public final class Compositor {
         }
     }
 
+    /// The bar that the shell draws over each window with room for one.
+    private var heads: [WindowHead] {
+        let front = frontFirst
+        return front.compactMap { window -> WindowHead? in
+            guard let cell = window.cell else { return nil }
+            let sizeClass = SizeClass.of(Proposal(width: Double(cell.width),
+                                                  height: Double(cell.height)))
+            guard sizeClass != .widget else { return nil }
+            let toplevel = window.surface.toplevel
+            let app = apps.first { $0.id == toplevel?.appID }
+            return WindowHead(id: window.id,
+                              appName: app?.name ?? toplevel?.appID ?? "A window",
+                              mark: app?.entry.color ?? Color(hex: 0x6C777D),
+                              title: toplevel?.title ?? "",
+                              sizeClass: sizeClass,
+                              hasFocus: window === front.first,
+                              cell: cell)
+        }
+    }
+
+    /// The cards that the shell draws in the cells that windows cannot use.
+    private var standIns: [StandIn] {
+        let now = monotonicMilliseconds()
+        return frontFirst.compactMap { window -> StandIn? in
+            guard let cell = window.reservation else { return nil }
+            let toplevel = window.surface.toplevel
+            let app = apps.first { $0.id == toplevel?.appID }
+            let answer = WindowAnswer.size(minimum: toplevel?.minSize,
+                                           content: window.surface.content,
+                                           to: Proposal(width: WindowMetrics.tile, height: nil))
+            let minimum = toplevel?.minSize != nil ? "at least " : ""
+            let drew = window.surface.content.map { "\($0.width) × \($0.height)" } ?? "nothing yet"
+            return StandIn(
+                id: window.id,
+                appName: app?.name ?? toplevel?.appID ?? "A window",
+                mark: app?.entry.color ?? Color(hex: 0x6C777D),
+                title: toplevel?.title ?? "",
+                answered: "\(minimum)\(Int(answer.width)) × \(Int(answer.height))",
+                drew: drew,
+                changed: Compositor.ago(milliseconds: now - window.changed),
+                frame: cell)
+        }
+    }
+
+    /// How long ago something happened, in a few characters.
+    private static func ago(milliseconds: UInt32) -> String {
+        let seconds = Int(milliseconds / 1000)
+        if seconds < 60 { return "\(seconds) s" }
+        if seconds < 3600 { return "\(seconds / 60) min" }
+        return "\(seconds / 3600) h"
+    }
+
     /// Puts a window in front, which makes it the principal.
     private func raiseWindow(_ id: String) {
         guard let index = windows.firstIndex(where: { $0.id == id }) else { return }
@@ -415,6 +506,34 @@ public final class Compositor {
         windows.append(window)
         arrange()
         updateFocus()
+        screen.setNeedsFrame()
+    }
+
+    /// Says something to the person at the screen. The same message twice
+    /// replaces the first one, so a button that fails does not fill the
+    /// screen with cards.
+    private func post(_ notice: Notice) {
+        notices.removeAll { $0.id == notice.id }
+        notices.append(notice)
+        log("NOTICE \(notice.kind) \"\(notice.title)\"")
+        screen.setNeedsFrame()
+    }
+
+    /// Asks one window to close. The app decides what it does with that.
+    private func closeWindow(_ id: String) {
+        guard let window = windows.first(where: { $0.id == id }) else { return }
+        window.surface.toplevel?.resource?.sendClose()
+        log("WINDOW-CLOSE-SENT \"\(window.surface.toplevel?.title ?? "")\"")
+    }
+
+    /// Takes a window out of the large cell. The window under it becomes the
+    /// principal, and this one becomes a tile.
+    private func makeWidget(_ id: String) {
+        guard windows.count > 1, windows.last?.id == id else { return }
+        windows.swapAt(windows.count - 1, windows.count - 2)
+        arrange()
+        updateFocus()
+        log("WINDOW-TO-WIDGET \"\(windows.first { $0.id == id }?.surface.toplevel?.title ?? "")\"")
         screen.setNeedsFrame()
     }
 
@@ -430,6 +549,10 @@ public final class Compositor {
     // MARK: - Windows
 
     private func surfaceCommitted(_ surface: Surface) {
+        // A window that waits in the rail shows how long ago it last drew.
+        if let window = windows.first(where: { $0.surface === surface }) {
+            window.changed = monotonicMilliseconds()
+        }
         if surface.isMapped, !windows.contains(where: { $0.surface === surface }),
            let content = surface.content {
             // The newest window goes to the front, and the layout then gives
@@ -467,75 +590,20 @@ public final class Compositor {
             // The Super key opens Summon and closes it again.
             if key.pressed, key.keysym == Keysym.superLeft || key.keysym == Keysym.superRight {
                 shell.summonIsOpen.toggle()
-                shell.summonQuery = ""
-                shell.summonSelection = 0
                 screen.setNeedsFrame()
                 return
             }
-            // While Summon is open it takes every key: it is the one surface
-            // in front, so nothing under it may read the keyboard.
-            if shell.summonIsOpen {
-                if key.pressed { summonKey(key) }
+            // The shell reads the key first. A surface of the shell that is
+            // in front, such as Summon, takes it. A key that no view of the
+            // shell used goes to the app that has the focus.
+            if host.key(KeyEvent(
+                keysym: key.keysym,
+                characters: Keysym.character(of: key.keysym).map(String.init) ?? "",
+                isPressed: key.pressed, control: key.control, alt: key.alt)) {
+                screen.setNeedsFrame()
                 return
             }
             server.send(key: key)
-        }
-    }
-
-    /// One key for Summon: it narrows the list, moves in it, or chooses.
-    private func summonKey(_ key: Input.Key) {
-        switch key.keysym {
-        case Keysym.escape:
-            shell.summonIsOpen = false
-        case Keysym.enter, Keysym.keypadEnter:
-            let chosen = SummonList.selected(in: shellStateForSummon)
-            shell.summonIsOpen = false
-            shell.summonQuery = ""
-            shell.summonSelection = 0
-            if let chosen { choose(chosen) }
-        case Keysym.tab, Keysym.down:
-            move(by: 1)
-        case Keysym.up:
-            move(by: -1)
-        case Keysym.backspace:
-            if !shell.summonQuery.isEmpty {
-                shell.summonQuery.removeLast()
-                shell.summonSelection = 0
-            }
-        default:
-            // A key that makes a character narrows the list.
-            guard let character = Keysym.character(of: key.keysym) else { return }
-            shell.summonQuery.append(character)
-            shell.summonSelection = 0
-        }
-        screen.setNeedsFrame()
-    }
-
-    /// Moves the selection, and stops at the ends of the list.
-    private func move(by step: Int) {
-        let count = SummonList.items(for: shellStateForSummon).count
-        guard count > 0 else { return }
-        shell.summonSelection = (shell.summonSelection + step + count) % count
-    }
-
-    /// The state that Summon reads. It needs the apps and the windows, which
-    /// the display list fills in for each frame.
-    private var shellStateForSummon: ShellState {
-        var state = shell
-        state.apps = appEntries
-        state.mode = shellMode
-        state.layout = layoutKind
-        state.windows = windowEntries
-        return state
-    }
-
-    /// Does what a line of Summon says.
-    private func choose(_ item: SummonItem) {
-        switch item.kind {
-        case .window(let id): raiseWindow(id)
-        case .app(let id): openApp(id)
-        case .command(.closeFrontWindow): closeFrontWindow()
-        case .command(.layout(let kind)): setLayout(kind)
         }
     }
 
@@ -557,9 +625,17 @@ public final class Compositor {
         }
         guard let bundle = apps.first(where: { $0.id == id }) else {
             log("compositor: no app with the id \(id)")
+            post(Notice(id: "start:\(id)", kind: .failure, source: "mydistro",
+                        title: "No app has the name \(id)",
+                        detail: "Its bundle is not in \(AppCatalog.directory)."))
             return
         }
-        AppCatalog.start(bundle)
+        guard AppCatalog.start(bundle) != nil else {
+            post(Notice(id: "start:\(id)", kind: .failure, source: bundle.name,
+                        title: "\(bundle.name) did not start",
+                        detail: "The system could not run \(bundle.command)."))
+            return
+        }
     }
 
     /// The window in front gets the keys.
