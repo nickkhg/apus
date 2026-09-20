@@ -26,6 +26,40 @@ if {[info exists env(MYDISTRO_UI_DIR)]} {
     set uienv "MYDISTRO_UI_DIR=$env(MYDISTRO_UI_DIR) "
 }
 
+# Waits for the guest to finish what it was given.
+#
+# A wait for the shell prompt is not sufficient. The compositor and the apps
+# write to the same console as the shell, so a prompt can go past while an
+# expect is reading their lines, and the wait for it after that never ends.
+#
+# This sends a command of its own with a number that rises, so nothing
+# already in the stream can answer for it, and the shell runs it only after
+# the command before it has finished. The number is written as $((N)): the
+# shell's echo of the command line then reads "MARK-$((3))" and only the
+# output reads "MARK-3", so the echo cannot answer either.
+set marks 0
+
+proc settle {what} {
+    global marks
+    incr marks
+    send "echo MARK-\$(($marks))\r"
+    expect {
+        "MARK-$marks" {}
+        timeout { fail "$what: the guest did not answer" }
+    }
+}
+
+# Runs one command in the guest and waits for it to end.
+proc guest {command what} {
+    global marks
+    incr marks
+    send "$command; echo MARK-\$(($marks))\r"
+    expect {
+        "MARK-$marks" {}
+        timeout { fail "$what: the guest did not finish" }
+    }
+}
+
 # Runs the compositor with one renderer, writes the screen, and stops it.
 proc drawWith {renderer name} {
     global bin uienv
@@ -54,7 +88,7 @@ proc drawWith {renderer name} {
         -re {ok [0-9]+ [0-9]+} {}
         timeout                { fail "$renderer: no picture" }
     }
-    expect -re {# $}
+    settle "$renderer: the picture"
 
     # Stopping matters: a GBM surface with a buffer still lent to the display
     # never goes away, and the compositor would not stop.
@@ -66,19 +100,14 @@ proc drawWith {renderer name} {
         "COMPOSITOR-EXIT" {}
         timeout           { fail "$renderer: the compositor did not stop" }
     }
-    expect -re {# $}
+    settle "$renderer: the exit"
 
     # COMPOSITOR-EXIT comes before the process goes: the message is printed,
     # and then the screen, the GL context and the DRM device are given back.
     # The next compositor cannot become DRM master while the last one still
     # holds the device, and drmModeSetCrtc then says "Permission denied".
     # `wait` waits for the job to really end.
-    send "wait; echo GONE-$renderer\r"
-    expect {
-        "GONE-$renderer" {}
-        timeout          { fail "$renderer: the compositor did not go away" }
-    }
-    expect -re {# $}
+    guest "wait" "$renderer: the compositor did not go away"
 }
 
 spawn env VM_GPU=headless $env(MYDISTRO_VM) installed
