@@ -321,6 +321,35 @@ after 1000
 screen close-terminal 400,400=07080A 36,400=12161A \
     560,370-790,420!07080A
 
+# The system monitor: the second app written with the toolkit, and the first
+# written with AppClient. It draws a tile of its own, which is what the band
+# is for.
+act_start --key super --type "system" --key enter
+expect {
+    "SYSTEM-MONITOR-READY" {}
+    timeout { fail "the system monitor did not start" }
+}
+expect {
+    -re {WINDOW-MAPPED "System" 1184x744 at 80,40} {}
+    timeout { fail "the system monitor did not take the canvas" }
+}
+act_done
+after 1500
+# It has the whole canvas, so it draws the user interface of a window.
+screen system-window 400,400=171C21 120,60-600,110!0E1114
+
+# The terminal comes to the front, so the monitor moves into a tile of
+# 256 x 256 at 1016,8 and draws the user interface of a tile.
+act_start --key super --type "terminal" --key enter
+expect {
+    -re {WINDOW-CONFIGURED "System" 256x256} {}
+    timeout { fail "the monitor did not move into a tile" }
+}
+act_done
+after 1500
+# The tile has the background of the app, and its head names the app.
+screen system-tile 1100,70=0E1114 1030,20-1250,40!0E1114
+
 # An app that starts and opens no window. The cell that holds its place is
 # the large cell, because a new launch goes in front as a new window does.
 # The shell waits ten seconds before it says so.

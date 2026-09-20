@@ -98,6 +98,7 @@ A test with SourceKit-LSP gave the documentation of the C function `libinput_dis
 | `Wayland` | Swift library | The Wayland server. See [compositor.md](compositor.md). |
 | `Compositor` | Swift library | The compositor. See [compositor.md](compositor.md). |
 | `mydistro-compositor` | Program | Runs the compositor |
+| `mydistro-system` | Program | The system monitor. It is the first app written with `AppClient`, and the second user of the toolkit. |
 | `mydistro-hello-client` | Program | A small Wayland app with one window. It uses libwayland-client, as most apps do. It names a smallest size, so it behaves like an app that no tile can hold. |
 | `mydistro-terminal` | Program | The terminal app. See [applications.md](applications.md). |
 | `mydistro-display-probe` | Program | Draws a test pattern on the screen, then restores the screen |

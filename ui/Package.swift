@@ -41,6 +41,7 @@ let package = Package(
         .executable(name: "mydistro-compositor", targets: ["CompositorMain"]),
         .executable(name: "mydistro-hello-client", targets: ["HelloClient"]),
         .executable(name: "mydistro-terminal", targets: ["TerminalApp"]),
+        .executable(name: "mydistro-system", targets: ["SystemMonitor"]),
         .executable(name: "mydistro-display-probe", targets: ["DisplayProbe"]),
         .executable(name: "mydistro-ui-check", targets: ["UICheck"]),
         .executable(name: "mydistro-screen", targets: ["ScreenTool"]),
@@ -116,6 +117,24 @@ let package = Package(
         // of these from the host.
         .target(name: "CUinput"),
         .executableTarget(name: "ScreenTool", dependencies: ["CUinput"]),
+
+        // How an app of mydistro opens a window: the connection, the shared
+        // memory of the pixels, the size that the compositor asks for, and
+        // the pointer and the keys, all through the toolkit. An app gives a
+        // view tree and gets a window.
+        .target(name: "AppClient", dependencies: [
+            "CWaylandClient", "CXDGShellClient", "CXKBCommon",
+            .product(name: "Render", package: "Toolkit"),
+            .product(name: "Toolkit", package: "Toolkit"),
+        ]),
+
+        // The system monitor: an app of the toolkit, and the second user of
+        // it. The bundle in Apps/System.app puts it in /Applications.
+        .executableTarget(name: "SystemMonitor", dependencies: [
+            "AppClient",
+            .product(name: "Toolkit", package: "Toolkit"),
+            .product(name: "Render", package: "Toolkit"),
+        ]),
 
         // Takes over the screen and draws a test pattern (used by tests/display.exp).
         .executableTarget(name: "DisplayProbe", dependencies: ["DRMKit"]),

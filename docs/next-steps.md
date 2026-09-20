@@ -18,10 +18,14 @@ In this sequence:
 
 The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the pointer. A layout puts the windows on the canvas. Summon starts the apps of `/Applications`, and the terminal is one of them. See [toolkit.md](toolkit.md), [layouts.md](layouts.md) and [applications.md](applications.md). Next, in this sequence:
 
-1. A widget user interface for the other apps. The terminal has one. An app draws it for a tile of 256 points across.
+1. More apps. `AppClient` and the system monitor are the pattern to follow. See [apps.md](apps.md). The design draws a file browser, a notes app and a power reading.
 2. An icon file in a bundle, and an image as a display item. Summon draws a colour mark now.
 3. A pointer position in a handler, and a drag.
-4. A shadow, a blur and a gradient in the display list, for the second mode of the design. `Appearance` holds the values of both modes already. See [toolkit.md](toolkit.md).
+4. A shadow, a blur and a gradient in the display list, for the second mode of the design. `Appearance` holds the values of both modes already. See [toolkit.md](toolkit.md). Decide one thing first: does CPU mode ever draw a shadow? `Appearance` says no. CPU mode separates one surface from the next with a line and a step in the colour. If that answer holds, the software renderer can refuse those items, and the work is one shader for each on the GPU. If it does not hold, a blur on the CPU wants a separable box pass over a buffer of its own. That is most of the cost.
+
+   `SoftwareRenderer.mask` with `TextureCache` is the way to draw a shadow on the GPU. Rasterize it once on the CPU and keep the texture: a shadow under a cell changes no more often than the cell does.
+
+   A test that compares the two modes cannot compare pixels, because the two modes are meant to differ. `tests/gpu.exp` compares the two renderers in one mode, which is a different question.
 5. More than one desktop, and a layout for each one. The design has this as the target, and one desktop is what ships.
 6. A picture of a window in the card that stands in for it. It is a crop of the top left at one pixel to one point. A person turns it on for one app at a time.
 7. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
