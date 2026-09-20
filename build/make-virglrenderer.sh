@@ -45,8 +45,14 @@ sed -i '' -e 's|^directory = venus-protocol-1.1.3|directory = venus-protocol-mai
 PKG_CONFIG_PATH="$(brew --prefix vulkan-loader)/lib/pkgconfig:$(brew --prefix vulkan-headers)/share/pkgconfig:${PKG_CONFIG_PATH:-}"
 export PKG_CONFIG_PATH
 
+# render-server-mode=thread keeps Venus in this process, as a thread. The
+# other mode forks a virgl_render_server program and talks to it over a
+# socket. A thread needs no second program, no path to find it by, and no
+# signature of its own, and Virtualization.framework gives a program that
+# forks a lot of trouble.
 [ -d build ] || meson setup build \
     -Dvenus=true -Dvrend=false -Dplatforms= -Dtests=false \
+    -Drender-server-mode=thread \
     --prefix "$source/install"
 
 # The layout that the Metal helpers expect. meson makes the subproject on

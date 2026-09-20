@@ -71,7 +71,12 @@ enum VirtioGPU {
     /// directly. The specification calls it VIRTIO_GPU_SHM_ID_HOST_VISIBLE.
     /// Mesa's Venus requires it: without the region the guest's driver
     /// reports no VIRTGPU_PARAM_HOST_VISIBLE, and Venus takes no device.
-    static let hostVisibleRegion: UInt8 = 0
+    ///
+    /// The number is 1. Zero is VIRTIO_GPU_SHM_ID_UNDEFINED. The guest's
+    /// driver asks for the region by this number, and it passes over a
+    /// region with another number without a word, so a wrong number here
+    /// looks exactly like a device with no region at all.
+    static let hostVisibleRegion: UInt8 = 1
 
     /// The flag in a command header that asks for a fence: the guest waits
     /// for the answer until the work is done.
@@ -83,6 +88,10 @@ enum VirtioGPU {
         case okCapsetInfo = 0x1102
         case okCapset = 0x1103
         case okEDID = 0x1104
+        case okResourceUUID = 0x1105
+        /// The answer to RESOURCE_MAP_BLOB: how the guest may cache the
+        /// memory it has just been given.
+        case okMapInfo = 0x1106
         case errorUnspecified = 0x1200
         case errorInvalidResourceID = 0x1202
     }
@@ -127,6 +136,29 @@ enum VirtioGPU {
             data.append(contentsOf: [0, 0, 0])  // padding
             return data
         }
+    }
+
+    /// `struct virtio_gpu_resource_map_blob`: the guest asks for a blob to
+    /// appear in the host-visible region, at this offset from its start.
+    struct MapBlob {
+        let resource: UInt32
+        let offset: UInt64
+
+        init?(_ data: Data) {
+            guard data.count >= 16 else { return nil }
+            resource = data.value(at: 0)
+            // 4 bytes of padding follow the resource.
+            offset = data.value(at: 8)
+        }
+    }
+
+    /// `struct virtio_gpu_resp_map_info`: the answer to a map, with the way
+    /// the guest may cache the memory.
+    static func mapInfo(header: Header, info: UInt32) -> Data {
+        var data = header.answer(.okMapInfo)
+        data.append(info)
+        data.append(UInt32(0))   // padding
+        return data
     }
 
     /// `struct virtio_gpu_config`, the device-specific configuration.

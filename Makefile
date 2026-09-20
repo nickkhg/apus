@@ -47,12 +47,20 @@ SWIFT_BUILD       = MYDISTRO_CROSS=1 $(SWIFT_MAC)/usr/bin/swift build --package-
 # GPU device of our own is not in it.
 VIRGL_DIR  := build/cache/virglrenderer
 VIRGL_LIB  := $(VIRGL_DIR)/build/src/libvirglrenderer.dylib
+# The renderer loads Vulkan by name at run time: libvulkan.dylib first, then
+# libMoltenVK.dylib. Neither is on the standard path, and dyld looks for a
+# name with no directory in it along the run paths of the program, so the
+# program carries the two Homebrew directories.
+VULKAN_DIR := $(shell brew --prefix vulkan-loader 2>/dev/null)/lib
+MOLTEN_DIR := $(shell brew --prefix molten-vk 2>/dev/null)/lib
 VIRGL_FLAGS = $(if $(wildcard $(VIRGL_LIB)),\
 	-Xswiftc -DVIRGL \
 	-Xcc -I$(CURDIR)/$(VIRGL_DIR)/src \
 	-Xcc -I$(CURDIR)/$(VIRGL_DIR)/build/src \
 	-Xlinker -L$(CURDIR)/$(VIRGL_DIR)/build/src \
-	-Xlinker -rpath -Xlinker $(CURDIR)/$(VIRGL_DIR)/build/src,)
+	-Xlinker -rpath -Xlinker $(CURDIR)/$(VIRGL_DIR)/build/src \
+	-Xlinker -rpath -Xlinker $(VULKAN_DIR) \
+	-Xlinker -rpath -Xlinker $(MOLTEN_DIR),)
 
 VM_BUILD = xcrun swift build --package-path vm -c release $(VIRGL_FLAGS)
 VM       = $(shell xcrun swift build --package-path vm -c release --show-bin-path)/mydistro-vm

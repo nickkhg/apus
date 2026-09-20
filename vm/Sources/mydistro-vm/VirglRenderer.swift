@@ -40,8 +40,17 @@ final class VirglRenderer {
         // The OpenGL callbacks stay nil: nothing here makes a GL context.
         callbacks.version = 3
 
+        // RENDER_SERVER is what turns Venus on. Without it virglrenderer
+        // answers every capset request with zeros, and the guest's Mesa
+        // reads a wire format version of 0 and takes no device. The build
+        // puts the render server in this process, as a thread, so the flag
+        // starts a thread and not a second program.
+        //
+        // ASYNC_FENCE_CB goes with THREAD_SYNC: the Venus renderer refuses
+        // to start without both.
         let flags = Int32(VIRGL_RENDERER_VENUS | VIRGL_RENDERER_NO_VIRGL
-            | VIRGL_RENDERER_THREAD_SYNC | VIRGL_RENDERER_USE_EXTERNAL_BLOB)
+            | VIRGL_RENDERER_THREAD_SYNC | VIRGL_RENDERER_ASYNC_FENCE_CB
+            | VIRGL_RENDERER_RENDER_SERVER | VIRGL_RENDERER_USE_EXTERNAL_BLOB)
         let result = virgl_renderer_init(nil, flags, &callbacks)
         guard result == 0 else {
             throw .renderer("virgl_renderer_init failed (\(result)); "
@@ -120,6 +129,30 @@ extension VirglRenderer {
         args.iovecs = nil
         args.num_iovs = 0
         return virgl_renderer_resource_create_blob(&args)
+    }
+
+    /// Where a blob is in this process, and how large it is. The guest
+    /// cannot read that memory until it is put in the shared region.
+    static func map(resource: UInt32) -> (address: UnsafeMutableRawPointer, size: UInt64)? {
+        var address: UnsafeMutableRawPointer?
+        var size: UInt64 = 0
+        guard virgl_renderer_resource_map(resource, &address, &size) == 0,
+              let address else { return nil }
+        return (address, size)
+    }
+
+    static func unmap(resource: UInt32) {
+        _ = virgl_renderer_resource_unmap(resource)
+    }
+
+    /// How the guest may cache a blob: none, cached, uncached or
+    /// write-combining. The guest needs it in the answer to a map.
+    static func mapInfo(resource: UInt32) -> UInt32 {
+        var info: UInt32 = 0
+        guard virgl_renderer_resource_get_map_info(resource, &info) == 0 else {
+            return UInt32(VIRGL_RENDERER_MAP_CACHE_CACHED)
+        }
+        return info
     }
 
     static func attach(resource: UInt32, toContext context: UInt32) {

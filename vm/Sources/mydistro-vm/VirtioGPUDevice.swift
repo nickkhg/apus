@@ -32,12 +32,16 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
     /// reads it with GET_CAPSET and gives it to Mesa.
     private let venusCapset: Data
     private var device: VZCustomVirtioDevice?
+    /// The window the guest can see directly. Blobs go in it, and the guest
+    /// then reads and writes them without the device in the way.
+    private var hostVisible: VZVirtioSharedMemoryRegion?
 
     /// What the guest asked for, for the log. The first stage is about
     /// whether the guest binds at all, so it counts the commands.
     private var counts: [UInt32: Int] = [:]
     private var submissions = 0
     private var blobs = 0
+    private var maps = 0
 
     init(width: Int, height: Int, venusCapset: Data) {
         self.width = UInt32(width)
@@ -113,6 +117,9 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
         ) {
             device.delegate = delegate
             delegate.device = device
+            delegate.hostVisible = device.sharedMemoryRegions.first {
+                $0.regionID == VirtioGPU.hostVisibleRegion
+            }
             log("virtio-gpu: the framework made the device")
         }
     }
@@ -146,7 +153,10 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
     // MARK: - Commands
 
     private func handle(_ element: VZVirtioQueueElement, on queue: VZVirtioQueue) {
-        defer { element.returnToQueue() }
+        // A map goes to the framework and answers when the framework is
+        // done, so that command keeps the element and gives it back itself.
+        var answersLater = false
+        defer { if !answersLater { element.returnToQueue() } }
 
         guard element.readBuffersAvailableByteCount >= VirtioGPU.Header.size,
               let bytes = try? element.readBytes(withExactLength: VirtioGPU.Header.size),
@@ -206,6 +216,13 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
 
         case .resourceCreateBlob:
             handleCreateBlob(header, element)
+
+        case .resourceMapBlob:
+            answersLater = handleMapBlob(header, element)
+
+        case .resourceUnmapBlob:
+            let resource: UInt32 = (try? element.readBytes(withExactLength: 8))?.value(at: 0) ?? 0
+            handleUnmapBlob(resource, header, element)
 
         case .resourceUnref:
             let resource: UInt32 = (try? element.readBytes(withExactLength: 8))?.value(at: 0) ?? 0
@@ -294,6 +311,66 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
         write(header.answer(result == 0 ? .okNoData : .errorUnspecified), to: element)
     }
 
+    /// Puts a blob in the window the guest can see, at the offset the guest
+    /// asks for. Gives back true when it keeps the element to answer later.
+    ///
+    /// The framework maps the memory on its own time and calls back on this
+    /// queue, so the answer goes out from the callback and the element goes
+    /// back to the queue there.
+    private func handleMapBlob(
+        _ header: VirtioGPU.Header, _ element: VZVirtioQueueElement
+    ) -> Bool {
+        guard let body = try? element.readBytes(withExactLength: 16),
+              let map = VirtioGPU.MapBlob(body), let hostVisible else {
+            write(header.answer(.errorUnspecified), to: element)
+            return false
+        }
+
+        var found: (address: UnsafeMutableRawPointer, size: UInt64)?
+        var info: UInt32 = 0
+        renderer {
+            found = VirglRenderer.map(resource: map.resource)
+            info = VirglRenderer.mapInfo(resource: map.resource)
+        }
+        guard let found else {
+            log("virtio-gpu: resource \(map.resource) has no memory to map")
+            write(header.answer(.errorUnspecified), to: element)
+            return false
+        }
+
+        // The framework wants the offset and the size in whole host pages.
+        // A blob is not always that large, and the page the memory ends in
+        // is mapped to its end anyway, so the size rounds up.
+        let page = UInt64(getpagesize())
+        let size = (found.size + page - 1) / page * page
+        maps += 1
+        if maps <= 3 {
+            log("VIRTIO-GPU-MAP resource \(map.resource) at offset \(map.offset), "
+                + "\(found.size) bytes as \(size), cache \(info)")
+        }
+
+        hostVisible.mapMemory(found.address, atOffset: map.offset, size: size) { error in
+            if let error {
+                log("virtio-gpu: the map of resource \(map.resource) failed: "
+                    + error.localizedDescription)
+                self.write(header.answer(.errorUnspecified), to: element)
+            } else {
+                self.write(VirtioGPU.mapInfo(header: header, info: info), to: element)
+            }
+            element.returnToQueue()
+        }
+        return true
+    }
+
+    /// Takes a blob out of the window again. The guest asks for this before
+    /// it lets the resource go.
+    private func handleUnmapBlob(
+        _ resource: UInt32, _ header: VirtioGPU.Header, _ element: VZVirtioQueueElement
+    ) {
+        renderer { VirglRenderer.unmap(resource: resource) }
+        write(header.answer(.okNoData), to: element)
+    }
+
     private func write(_ data: Data, to element: VZVirtioQueueElement) {
         guard element.writeBuffersAvailableByteCount >= data.count else {
             log("virtio-gpu: no room for an answer of \(data.count) bytes")
@@ -328,7 +405,13 @@ func makeCustomGPU(
         if venus.size > 0 {
             venusCapset = VirglRenderer.capsetData(.venus, version: venus.version,
                                                    size: venus.size)
+            let head = venusCapset.withUnsafeBytes { raw in
+                stride(from: 0, to: min(32, raw.count), by: 4).map { offset in
+                    String(raw.loadUnaligned(fromByteOffset: offset, as: UInt32.self))
+                }.joined(separator: " ")
+            }
             log("VIRGL-VENUS the renderer offers Venus, \(venusCapset.count) bytes of capset")
+            log("VIRGL-VENUS-CAPSET first words: \(head)")
         } else {
             log("VIRGL-NO-VENUS the renderer answered with no Venus capset")
         }
