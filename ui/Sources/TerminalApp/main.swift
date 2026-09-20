@@ -49,6 +49,15 @@ final class App {
     /// The size of the buffer, in pixels.
     var pixelWidth: Int { width * scale }
     var pixelHeight: Int { height * scale }
+    /// How much room the window has, which says which user interface it
+    /// draws. It comes from the size that the compositor asked for, so the
+    /// app knows what to draw before it draws anything.
+    var sizeClass: SizeClass {
+        SizeClass.of(Proposal(width: Double(width), height: Double(height)))
+    }
+    /// The title that the shell in the terminal set, as the window last
+    /// told the compositor.
+    var sentTitle = ""
     var output: OpaquePointer?
 
     /// The compositor is drawing the last buffer: wait for the frame event.
@@ -126,10 +135,21 @@ func draw(_ app: App) {
     guard let pixels = app.pixels, let surface = app.surface, let buffer = app.buffer else { return }
     let canvas = Canvas(pixels: pixels, width: app.pixelWidth, height: app.pixelHeight,
                         stride: app.pixelWidth)
-    let list = Grid.displayList(for: app.screen, cell: app.cell,
-                                in: Rect(x: 0, y: 0, width: app.pixelWidth, height: app.pixelHeight))
+    let frame = Rect(x: 0, y: 0, width: app.pixelWidth, height: app.pixelHeight)
+    // A tile is too narrow for a grid that a person can work in, so it
+    // shows what the shell is doing instead of a small terminal.
+    let list = app.sizeClass == .widget
+        ? ViewRenderer.displayList(for: TerminalWidget(screen: app.screen, title: app.screen.title),
+                                   in: frame, scale: Double(app.scale))
+        : Grid.displayList(for: app.screen, cell: app.cell, in: frame)
     SoftwareRenderer.render(list, into: canvas)
     app.screen.hasChanged = false
+    // The shell draws the title in the head of the window and in the card
+    // of a window that waits, so a change goes to the compositor.
+    if app.screen.title != app.sentTitle {
+        app.sentTitle = app.screen.title
+        xdg_toplevel_set_title(app.toplevel, app.sentTitle.isEmpty ? "Terminal" : app.sentTitle)
+    }
 
     // The compositor says when the frame is on the screen. Until then, the
     // app draws nothing new.

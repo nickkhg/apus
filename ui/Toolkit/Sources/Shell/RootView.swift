@@ -27,11 +27,17 @@ public struct ShellState: Equatable, Sendable {
     public var summonQuery: String
     /// Which line of Summon Enter chooses.
     public var summonSelection: Int
+    /// The windows that wait for a cell, and the cells that the band holds
+    /// for them.
+    public var standIns: [StandIn]
+    /// The bar over each window that has room for one.
+    public var heads: [WindowHead]
 
     public init(apps: [AppEntry] = [], windows: [WindowEntry] = [],
                 layout: WindowLayoutKind = .principal, clock: Clock = Clock(),
                 mode: RenderMode = .cpu, summonIsOpen: Bool = false,
-                summonQuery: String = "", summonSelection: Int = 0) {
+                summonQuery: String = "", summonSelection: Int = 0,
+                standIns: [StandIn] = [], heads: [WindowHead] = []) {
         self.apps = apps
         self.windows = windows
         self.layout = layout
@@ -40,6 +46,8 @@ public struct ShellState: Equatable, Sendable {
         self.summonIsOpen = summonIsOpen
         self.summonQuery = summonQuery
         self.summonSelection = summonSelection
+        self.standIns = standIns
+        self.heads = heads
     }
 
     /// The ids of the apps that have a window now.
@@ -65,19 +73,27 @@ public struct ShellActions {
     public var nextLayout: () -> Void
     /// Gives the canvas to one layout.
     public var setLayout: (WindowLayoutKind) -> Void
+    /// Asks one window to close.
+    public var closeWindow: (String) -> Void
+    /// Takes a window out of the large cell, so that it becomes a tile.
+    public var makeWidget: (String) -> Void
 
     public init(openApp: @escaping (String) -> Void = { _ in },
                 closeFrontWindow: @escaping () -> Void = {},
                 raiseWindow: @escaping (String) -> Void = { _ in },
                 toggleSummon: @escaping () -> Void = {},
                 nextLayout: @escaping () -> Void = {},
-                setLayout: @escaping (WindowLayoutKind) -> Void = { _ in }) {
+                setLayout: @escaping (WindowLayoutKind) -> Void = { _ in },
+                closeWindow: @escaping (String) -> Void = { _ in },
+                makeWidget: @escaping (String) -> Void = { _ in }) {
         self.openApp = openApp
         self.closeFrontWindow = closeFrontWindow
         self.raiseWindow = raiseWindow
         self.toggleSummon = toggleSummon
         self.nextLayout = nextLayout
         self.setLayout = setLayout
+        self.closeWindow = closeWindow
+        self.makeWidget = makeWidget
     }
 }
 
@@ -93,6 +109,19 @@ public struct RootView: View {
 
     public var body: some View {
         ZStack(alignment: .topLeading) {
+            // The cells that the band holds for windows with no place. They
+            // are in the canvas, so they go under the rail and under Summon.
+            // The bar over each window that has room for one.
+            ForEach(state.heads) { head in
+                WindowHeadView(head: head, actions: actions)
+                    .frame(width: Double(head.cell.width), height: Metrics.headHeight)
+                    .offset(x: Double(head.cell.x), y: Double(head.cell.y))
+            }
+            ForEach(state.standIns) { card in
+                StandInCard(card: card, actions: actions)
+                    .frame(width: Double(card.frame.width), height: Double(card.frame.height))
+                    .offset(x: Double(card.frame.x), y: Double(card.frame.y))
+            }
             HStack(spacing: 0) {
                 RailView(state: state, actions: actions)
                     .padding(Metrics.gap)

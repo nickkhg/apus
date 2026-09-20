@@ -12,27 +12,6 @@ import Toolkit
 // handled, and it is the same rule for an app of the toolkit and for an app
 // that knows nothing about mydistro.
 
-/// How much space a window has, which says which user interface it draws.
-/// The class comes from the proposal, not from the frame, so that a window
-/// knows what to draw while it is still answering.
-public enum SizeClass: String, Sendable {
-    /// A tile in the band. The app draws a user interface made for it.
-    case widget
-    /// A narrow window: half of the screen, or a cell of a large grid.
-    case compact
-    /// A window with room, such as the principal cell.
-    case large
-
-    /// The class for a proposed size. The shorter side decides.
-    public static func of(_ proposal: Proposal) -> SizeClass {
-        let sides = [proposal.width, proposal.height].compactMap { $0 }.filter(\.isFinite)
-        guard let shortest = sides.min() else { return .large }
-        if shortest <= WindowMetrics.widgetLimit { return .widget }
-        if shortest <= WindowMetrics.compactLimit { return .compact }
-        return .large
-    }
-}
-
 /// The sizes that the layouts share, in pixels.
 public enum WindowMetrics {
     /// The width of the rail on the edge of the screen.
@@ -52,11 +31,6 @@ public enum WindowMetrics {
     public static let principalMinimum: Double = 720
     /// The most windows that the grid layout shows.
     public static let gridMaximum = 9
-    /// A proposal this short or shorter makes a window draw its widget UI.
-    public static let widgetLimit: Double = 320
-    /// Above this a window is `large`.
-    public static let compactLimit: Double = 640
-
     /// The length of a tile for the length that a window answered. A window
     /// that wants more than the longest tile gets no tile, so the answer is
     /// `nil` and the window waits in the rail.
@@ -156,13 +130,13 @@ public struct PrincipalAndWidgets: Layout {
                     .replacing(stack, with: nil))
             // A window that needs more room across than a tile gives cannot
             // use one, however long the tile is.
-            guard answer.length(across) <= WindowMetrics.tile,
-                  let length = WindowMetrics.tileLength(for: answer.length(stack)) else {
-                // The window cannot use a tile. It waits in the rail, and the
-                // shell draws a stand-in where it would have been.
-                continue
-            }
-            if used + length > room {
+            let fits = answer.length(across) <= WindowMetrics.tile
+            let length = fits ? WindowMetrics.tileLength(for: answer.length(stack)) : nil
+            // A window that cannot use a tile still holds a square cell. The
+            // window waits in the rail, and the shell draws a stand-in in the
+            // cell, so that the band keeps the shape of the session.
+            let cell = length ?? WindowMetrics.tile
+            if used + cell > room {
                 // This column is full. Start the next one.
                 column += 1
                 used = 0
@@ -172,9 +146,13 @@ public struct PrincipalAndWidgets: Layout {
             let origin: (x: Double, y: Double) = across == .horizontal
                 ? (bounds.x + offsetAcross, bounds.y + used)
                 : (bounds.x + used, bounds.y + offsetAcross)
-            window.place(in: Frame(origin: origin,
-                                   size: .along(stack, length, across: WindowMetrics.tile)))
-            used += length + WindowMetrics.gap
+            let frame = Frame(origin: origin, size: .along(stack, cell, across: WindowMetrics.tile))
+            if length == nil {
+                window.reserve(in: frame)
+            } else {
+                window.place(in: frame)
+            }
+            used += cell + WindowMetrics.gap
         }
     }
 

@@ -90,7 +90,7 @@ public struct RailView: View {
 /// Opens Summon: the one surface that starts an app and moves to a window.
 struct SummonButton: View {
     let actions: ShellActions
-    @State private var isHovered = false
+    @Animated(.quick) private var glow = 0.0
 
     var body: some View {
         Button(action: { actions.toggleSummon() }) {
@@ -102,9 +102,9 @@ struct SummonButton: View {
             .frame(width: Metrics.buttonSize, height: Metrics.buttonSize)
             .background(
                 RoundedRectangle(cornerRadius: Metrics.buttonRadius)
-                    .fill(isHovered ? Palette.accentSurface.opacity(1) : Palette.accentSurface)
+                    .fill(Palette.accentSurface.lightened(by: glow * 0.4))
             )
-            .onHover { isHovered = $0 }
+            .onHover { glow = $0 ? 1 : 0 }
         }
     }
 
@@ -119,7 +119,7 @@ struct SummonButton: View {
 struct LayoutButton: View {
     let kind: WindowLayoutKind
     let actions: ShellActions
-    @State private var isHovered = false
+    @Animated(.quick) private var glow = 0.0
 
     var body: some View {
         Button(action: { actions.nextLayout() }) {
@@ -127,9 +127,9 @@ struct LayoutButton: View {
                 .frame(width: Metrics.buttonSize, height: Metrics.buttonSize)
                 .background(
                     RoundedRectangle(cornerRadius: Metrics.buttonRadius)
-                        .fill(isHovered ? Palette.divider : Palette.control)
+                        .fill(Palette.control.lightened(by: glow * 0.5))
                 )
-                .onHover { isHovered = $0 }
+                .onHover { glow = $0 ? 1 : 0 }
         }
     }
 
@@ -215,7 +215,7 @@ struct Track: View {
 struct TrackBar: View {
     let window: WindowEntry
     let actions: ShellActions
-    @State private var isHovered = false
+    @Animated(.quick) private var glow = 0.0
 
     var body: some View {
         Button(action: { actions.raiseWindow(window.id) }) {
@@ -223,7 +223,7 @@ struct TrackBar: View {
                 .frame(width: Metrics.trackWidth, height: height)
                 .overlay(ring)
                 .padding(Metrics.ringWidth)
-                .onHover { isHovered = $0 }
+                .onHover { glow = $0 ? 1 : 0 }
         }
     }
 
@@ -262,7 +262,8 @@ struct TrackBar: View {
         case .widget: Palette.widget.opacity(0.6)
         case .rail: Palette.dimText.opacity(0.5)
         }
-        return isHovered ? base.opacity(1) : base
+        // A bar under the pointer comes forward.
+        return base.opacity(base.alpha + (1 - base.alpha) * glow)
     }
 }
 

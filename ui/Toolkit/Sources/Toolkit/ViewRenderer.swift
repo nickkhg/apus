@@ -5,8 +5,8 @@ import Render
 public enum ViewRenderer {
     /// Lays out `view` in `rect` and gives the items to draw.
     public static func displayList(for view: some View, in rect: Rect,
-                                   scale: Double = 1) -> DisplayList {
-        render(view, in: rect, scale: scale).list
+                                   scale: Double = 1, now: Double = 0) -> DisplayList {
+        render(view, in: rect, scale: scale, now: now).list
     }
 
     /// Lays out `view` in `rect`. `state` keeps the `@State` values from one
@@ -16,11 +16,16 @@ public enum ViewRenderer {
     /// point. The layout is the same on every screen; only the items that
     /// come out are in pixels.
     public static func render(_ view: some View, in rect: Rect,
-                              state: ViewState? = nil, scale: Double = 1) -> RenderPass {
+                              state: ViewState? = nil, scale: Double = 1,
+                              now: Double = 0) -> RenderPass {
         let state = state ?? ViewState()
         var environment = EnvironmentValues()
         environment.viewState = state
         environment.scale = scale
+        environment.now = now
+        state.now = now
+        // A view that still has somewhere to move sets this again.
+        state.isMoving = false
 
         state.beginPass()
         let node = view.node(environment: environment)

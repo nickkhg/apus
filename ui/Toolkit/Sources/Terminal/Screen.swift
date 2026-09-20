@@ -95,6 +95,12 @@ public final class Screen {
     }
     private var state = State.ground
     private var parameters = ""
+    /// The bytes of the OSC that is being read.
+    private var oscText: [UInt8] = []
+    /// What the program in the terminal calls this window. A shell usually
+    /// sets it to the directory and the command (OSC 0 or OSC 2). The tile
+    /// of the terminal shows it.
+    public private(set) var title = ""
     private var pendingBytes: [UInt8] = []
 
     public init(columns: Int, rows: Int) {
@@ -160,13 +166,31 @@ public final class Screen {
         case .osc:
             // A title and other text: it ends with BEL, or with ESC \.
             if byte == 0x07 {
+                takeOSC()
                 state = .ground
             } else if byte == 0x1B {
+                takeOSC()
                 state = .drop
+            } else if oscText.count < 512 {
+                // The bytes are kept, so that OSC 0 and OSC 2 can set the
+                // title. They are decoded as UTF-8 at the end, because a
+                // title can hold any character. A run that never ends stops
+                // here, so that a program cannot fill memory with it.
+                oscText.append(byte)
             }
         case .drop:
             state = .ground
         }
+    }
+
+    /// Reads an OSC that ended. `0` and `2` set the title of the window.
+    private func takeOSC() {
+        let bytes = oscText
+        oscText = []
+        guard let semicolon = bytes.firstIndex(of: 0x3B) else { return }   // ";"
+        let code = String(decoding: bytes[..<semicolon], as: UTF8.self)
+        guard code == "0" || code == "2" else { return }
+        title = String(decoding: bytes[(semicolon + 1)...], as: UTF8.self)
     }
 
     private func ground(_ byte: UInt8) {
@@ -214,6 +238,7 @@ public final class Screen {
             parameters = ""
         case "]":
             state = .osc
+            oscText = []
         case "(", ")", "*", "+", "#", "%":
             state = .drop               // a character set: one byte more
         case "7":

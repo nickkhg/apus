@@ -12,8 +12,13 @@ import Render
 ///     host.pointerButton(pressed: true)
 public final class ViewHost {
     /// Called when the UI must be drawn again, because a `@State` value
-    /// changed or because the pointer entered or left a view.
+    /// changed, because the pointer entered or left a view, or because
+    /// something is still moving.
     public var needsUpdate: () -> Void = {}
+
+    /// The time of the next frame, in seconds. The owner sets it before it
+    /// draws, from the clock of the system. Tests set it by hand.
+    public var now: Double = 0
 
     private let state = ViewState()
     private var hoverRegions: [HoverRegion] = []
@@ -40,9 +45,11 @@ public final class ViewHost {
     /// `rect` is in points, and `scale` says how many pixels there are to a
     /// point. The pointer positions that this host takes are in points too.
     public func displayList(for view: some View, in rect: Rect, scale: Double = 1) -> DisplayList {
-        let pass = ViewRenderer.render(view, in: rect, state: state, scale: scale)
+        let pass = ViewRenderer.render(view, in: rect, state: state, scale: scale, now: now)
         hoverRegions = pass.hoverRegions
         tapRegions = pass.tapRegions
+        // A move that has not arrived needs the next frame to carry it on.
+        if state.isMoving { requestUpdate() }
         // The frames moved, so the pointer can now be over other views.
         if let pointer { updateHover(at: pointer) }
         return pass.list

@@ -273,3 +273,40 @@ struct SizeTests {
         #expect(ViewRenderer.size(of: red, fitting: .unspecified) == Size(width: 10, height: 10))
     }
 }
+
+@Suite("A spacer in a stack")
+struct SpacerAxisTests {
+    /// The frames of the fills, in the order that they were drawn.
+    private func boxes(_ view: some View, width: Int, height: Int) -> [Rect] {
+        ViewRenderer.displayList(for: view, in: Rect(x: 0, y: 0, width: width, height: height))
+            .compactMap { if case .fill(let rect, _) = $0 { rect } else { nil } }
+    }
+
+    @Test("A spacer in a row does not make the row tall")
+    func aSpacerInARowStaysShort() {
+        // The row holds a box of 8 and a spacer. In a space 200 tall the row
+        // must still be 8 tall, so the box sits at the top of it.
+        let row = HStack(spacing: 0) {
+            Color(hex: 0xFF0000).frame(width: 8, height: 8)
+            Spacer()
+        }
+        let view = VStack(spacing: 0) {
+            row
+            Color(hex: 0x00FF00)
+        }
+        let items = boxes(view, width: 100, height: 200)
+        #expect(items.first == Rect(x: 0, y: 0, width: 8, height: 8))
+    }
+
+    @Test("A spacer in a column still takes the height")
+    func aSpacerInAColumnGrows() {
+        let view = VStack(spacing: 0) {
+            Color(hex: 0xFF0000).frame(width: 8, height: 8)
+            Spacer()
+            Color(hex: 0x00FF00).frame(width: 8, height: 8)
+        }
+        let items = boxes(view, width: 100, height: 200)
+        #expect(items.first?.y == 0)
+        #expect(items.last?.y == 192)
+    }
+}

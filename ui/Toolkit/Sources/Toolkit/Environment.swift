@@ -8,12 +8,55 @@ public struct EnvironmentValues: Sendable {
     /// that it is drawn at, so that the glyphs are sharp on a screen with
     /// more than one pixel to the point. Every layout stays in points.
     public var scale: Double = 1
+    /// The time of this frame, in seconds. Every move in one frame uses the
+    /// same time, so that things that start together stay together.
+    public var now: Double = 0
 
     /// Where the `@State` values of the view tree are. The renderer puts it
     /// here, so that a view needs no global. See State.swift.
     var viewState: ViewState?
 
     public init() {}
+}
+
+/// Reads a value of the environment in a view.
+///
+///     struct Glow: View {
+///         @Environment(\.now) private var now
+///         var body: some View { ... }
+///     }
+@propertyWrapper
+public struct Environment<Value> {
+    final class Box {
+        var value: Value?
+        init() {}
+    }
+
+    let keyPath: KeyPath<EnvironmentValues, Value>
+    let box = Box()
+
+    public init(_ keyPath: KeyPath<EnvironmentValues, Value>) {
+        self.keyPath = keyPath
+    }
+
+    public var wrappedValue: Value {
+        guard let value = box.value else {
+            // A view outside a tree reads the value of a new environment.
+            return EnvironmentValues()[keyPath: keyPath]
+        }
+        return value
+    }
+}
+
+/// What the renderer needs of an `@Environment` property, without its type.
+protocol AnyEnvironmentProperty {
+    func take(from environment: EnvironmentValues)
+}
+
+extension Environment: AnyEnvironmentProperty {
+    func take(from environment: EnvironmentValues) {
+        box.value = environment[keyPath: keyPath]
+    }
 }
 
 /// A view that changes the environment for the views inside it.

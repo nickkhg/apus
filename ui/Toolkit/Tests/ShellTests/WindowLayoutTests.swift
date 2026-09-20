@@ -120,15 +120,27 @@ struct PrincipalAndWidgetsTests {
         #expect(frames[3] == nil)
     }
 
-    @Test("A window that cannot use a tile is not placed")
+    @Test("A window that cannot use a tile is not placed, but it holds a cell")
     func aStubbornWindowIsNotPlaced() {
         // A foreign app that sent a minimum of 600 x 400 cannot fit a tile.
-        let frames = layout.frames(in: laptop, subviews: LayoutSubviews([
+        let windows = LayoutSubviews([
             app(400), stubborn(Size(width: 600, height: 400), id: 1), app(256, id: 2),
-        ]))
+        ])
+        let frames = layout.frames(in: laptop, subviews: windows)
         #expect(frames[1] == nil)
-        // The window after it still gets the free tile.
-        #expect(frames[2] == Frame(x: 944, y: 0, width: 256, height: 256))
+        // The band keeps a square cell for it. The shell draws a stand-in
+        // there, and the window waits in the rail.
+        #expect(windows[1].reservation == Frame(x: 944, y: 0, width: 256, height: 256))
+        // The window after it takes the next cell down, not the held one.
+        #expect(frames[2] == Frame(x: 944, y: 264, width: 256, height: 256))
+    }
+
+    @Test("A window that fits a tile holds no cell of its own")
+    func aFittingWindowReservesNothing() {
+        let windows = LayoutSubviews([app(400), app(256, id: 1)])
+        _ = layout.frames(in: laptop, subviews: windows)
+        #expect(windows[1].reservation == nil)
+        #expect(windows[1].placement != nil)
     }
 
     @Test("A window that needs more width than a tile gives is not placed")

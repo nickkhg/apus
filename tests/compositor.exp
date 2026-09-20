@@ -20,9 +20,13 @@
 #   the rail         56 wide, 8 from every edge: x 8 to 64, y 8 to 792
 #   the Summon key   the button at the top of the rail: x 16 to 56, y 24 to 64
 #   the canvas       x 72 to 1272, y 8 to 792: 1200 x 784
-#   one window       the whole canvas: 1200x784 at 72,8
+#   one window       the whole canvas: a cell of 1200x784 at 72,8
 #   two windows      the large cell is the canvas less a band of tiles:
-#                    1200 - 256 - 8 = 936, so 936x784 at 72,8
+#                    1200 - 256 - 8 = 936, so a cell of 936x784 at 72,8
+#   the head         the top 32 of a cell, which the shell keeps. A window
+#                    gets the rest, less 8 on the other three sides. So a
+#                    cell of 1200x784 at 72,8 gives the window 1184x744
+#                    at 80,40.
 
 set timeout 180
 log_user 1
@@ -133,20 +137,22 @@ expect {
     timeout               { fail "the terminal did not open a pseudo terminal" }
 }
 expect {
-    -re {WINDOW-MAPPED "Terminal" 1200x784 at 72,8} {}
+    -re {WINDOW-MAPPED "Terminal" 1184x744 at 80,40} {}
     timeout { fail "the terminal window did not fill the canvas" }
 }
 act_done
 after 1000
 
-# The window of the terminal: its background, and the prompt of the shell in
-# the first line of it.
-screen terminal 400,400=14111E 80,16-500,40!14111E
+# The head over the window: the accent line that says it has the keyboard,
+# and the bar with the name of the app in it. Then the window of the
+# terminal: its background, and the prompt of the shell in the first line.
+screen terminal 400,9=A9E34B 400,24=12161A 90,16-300,30!12161A \
+    400,400=14111E 88,44-500,70!14111E
 
 # The keyboard reaches the app: the compositor sends the keys to the window
 # in front. The shell in the terminal runs what the test types.
 act --type "echo typed-ok > /tmp/typed\\n"
-screen typing 80,16-700,120!14111E
+screen typing 88,44-700,140!14111E
 send "cat /tmp/typed\r"
 expect {
     "typed-ok" {}
@@ -154,20 +160,26 @@ expect {
 }
 
 # A second app opens. It becomes the principal window and takes the large
-# cell. The window of the terminal answers 784 for a tile that holds 384 at
-# most, so it cannot use one and it waits in the rail.
+# cell. The terminal named no smallest size, so it answers the tile that the
+# band proposes, and it moves into a tile of 256 x 256.
 act_start --key super --type "hello" --key enter
-# The layout runs before the window is mapped, so the rail comes first.
+# The layout runs before the new window is mapped, so the terminal moves
+# first.
 expect {
-    -re {WINDOW-IN-RAIL "Terminal"} {}
-    timeout { fail "the first window did not go to the rail" }
+    -re {WINDOW-CONFIGURED "[^"]*" 256x256} {}
+    timeout { fail "the first window did not move into a tile" }
 }
 expect {
-    -re {WINDOW-MAPPED "Hello from Swift" 936x784 at 72,8} {}
+    -re {WINDOW-MAPPED "Hello from Swift" 920x744 at 80,40} {}
     timeout { fail "the second window did not take the principal cell" }
 }
 act_done
-screen open-hello 400,400=3070F0 76,12=FFFFFF
+after 1000
+# The terminal in a tile does not draw a small grid. It draws a card that
+# states what the shell is doing, on the background of the terminal. The
+# tile is 256 wide at x 1016, and 256 tall from y 8.
+screen open-hello 400,400=3070F0 84,44=FFFFFF \
+    1100,200=14111E 1040,24-1250,44!14111E
 
 # A command of Summon closes the window in front. The window of the terminal
 # is then in front again, and it gets the keys again.
@@ -180,7 +192,7 @@ act_done
 after 1000
 screen close-hello 400,400=14111E
 act --type "echo again-ok > /tmp/again\\n"
-screen typing-again 80,16-700,160!14111E
+screen typing-again 88,44-700,180!14111E
 send "cat /tmp/again\r"
 expect {
     "again-ok" {}

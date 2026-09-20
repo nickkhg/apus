@@ -26,13 +26,19 @@ enum WindowAnswer {
     }
 
     /// One side of the answer. A set side is taken, unless the app needs
-    /// more. A free side is the app's own length: what it asked for, or what
-    /// it last drew, or a tile.
+    /// more.
+    ///
+    /// A free side is the smallest size that the app accepts, and a tile
+    /// when it named none. The size that the app last drew is deliberately
+    /// not used here: an app that drew a large window would then answer a
+    /// large length for a tile, and no app could ever take a tile after it
+    /// drew once. The app answers the real question by drawing: the layout
+    /// gives it the tile, and the app commits a buffer for that size.
     private static func length(_ proposed: Double?, minimum: Double?,
                                committed: Double?) -> Double {
         if let proposed, proposed.isFinite {
             return max(proposed, minimum ?? 0)
         }
-        return minimum ?? committed ?? WindowMetrics.tile
+        return minimum ?? WindowMetrics.tile
     }
 }

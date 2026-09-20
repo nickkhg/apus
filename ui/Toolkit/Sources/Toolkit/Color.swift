@@ -50,6 +50,15 @@ public struct Color: View, Equatable, Sendable {
         return Color(red: red * keep, green: green * keep, blue: blue * keep, alpha: alpha)
     }
 
+    /// The same colour, nearer to white. 0 keeps it, 1 makes it white.
+    public func lightened(by amount: Double) -> Color {
+        let part = Color.clamp(amount)
+        return Color(red: red + (1 - red) * part,
+                     green: green + (1 - green) * part,
+                     blue: blue + (1 - blue) * part,
+                     alpha: alpha)
+    }
+
     public func opacity(_ alpha: Double) -> Color {
         Color(red: red, green: green, blue: blue, alpha: self.alpha * alpha)
     }

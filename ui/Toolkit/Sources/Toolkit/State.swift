@@ -106,6 +106,12 @@ public final class ViewState: @unchecked Sendable {
     /// Called when a state value changes. The compositor asks for a frame.
     public var needsUpdate: () -> Void = {}
 
+    /// The time of the frame that is being drawn, in seconds.
+    public internal(set) var now: Double = 0
+    /// Set by a view that has somewhere still to move. The host then asks
+    /// for another frame.
+    public var isMoving = false
+
     /// One state property: where its view is, and which property it is.
     private struct Key: Hashable {
         let path: [Int]
@@ -164,9 +170,12 @@ public final class ViewState: @unchecked Sendable {
 
     /// Connects the `@State` properties of `view` to their values. A property
     /// that has no value yet keeps the value that the view gave it.
-    func connect(_ view: some View) {
+    func connect(_ view: some View, environment: EnvironmentValues) {
         var slot = 0
         for child in Mirror(reflecting: view).children {
+            if let reader = child.value as? AnyEnvironmentProperty {
+                reader.take(from: environment)
+            }
             guard let property = child.value as? AnyStateProperty else { continue }
             let key = Key(path: path, slot: slot)
             slot += 1

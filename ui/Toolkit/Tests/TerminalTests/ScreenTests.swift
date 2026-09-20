@@ -174,3 +174,64 @@ struct ScreenTests {
         #expect(screen.isCursorVisible)
     }
 }
+
+@Suite("The title of the window")
+struct TitleTests {
+    /// Writes bytes into a screen and gives it back.
+    private func screen(_ text: String, columns: Int = 20, rows: Int = 4) -> Screen {
+        let screen = Screen(columns: columns, rows: rows)
+        screen.write(Array(text.utf8))
+        return screen
+    }
+
+    @Test("A window has no title until a program sets one")
+    func noTitleAtFirst() {
+        #expect(screen("hello").title == "")
+    }
+
+    @Test("OSC 0 sets the title, and BEL ends it")
+    func oscZeroSetsTheTitle() {
+        #expect(screen("\u{1B}]0;~/mydistro — bash\u{07}").title == "~/mydistro — bash")
+    }
+
+    @Test("OSC 2 sets the title as well")
+    func oscTwoSetsTheTitle() {
+        #expect(screen("\u{1B}]2;make ui\u{07}").title == "make ui")
+    }
+
+    @Test("ESC backslash ends a title as BEL does")
+    func stringTerminatorEndsTheTitle() {
+        #expect(screen("\u{1B}]0;done\u{1B}\\").title == "done")
+    }
+
+    @Test("Another OSC code leaves the title alone")
+    func otherCodesAreIgnored() {
+        let screen = screen("\u{1B}]0;kept\u{07}\u{1B}]8;;https://example.com\u{07}")
+        #expect(screen.title == "kept")
+    }
+
+    @Test("The text of an OSC never reaches the grid")
+    func theTitleIsNotDrawn() {
+        let screen = screen("\u{1B}]0;hidden\u{07}ab")
+        let first = String(screen.lines[0].map(\.character)).trimmingCharactersInSpaces()
+        #expect(first == "ab")
+        #expect(screen.title == "hidden")
+    }
+
+    @Test("A title that never ends does not grow without limit")
+    func anEndlessTitleStops() {
+        let screen = Screen(columns: 20, rows: 4)
+        screen.write(Array("\u{1B}]0;".utf8))
+        screen.write([UInt8](repeating: 0x41, count: 4000))
+        // The screen is still usable, and the title is not set until it ends.
+        #expect(screen.title == "")
+    }
+}
+
+extension String {
+    func trimmingCharactersInSpaces() -> String {
+        var text = self
+        while text.last == " " { text.removeLast() }
+        return text
+    }
+}

@@ -27,6 +27,13 @@ public final class LayoutSubview {
     /// it, and a child that the layout never places is not drawn.
     public private(set) var placement: Frame?
 
+    /// A cell that the layout held for this child although the child cannot
+    /// use it. The child gets no frame, and the parent draws something of
+    /// its own there. A window that answers a size no tile can hold is the
+    /// case this exists for: the band keeps its cell, and the shell draws a
+    /// stand-in in it.
+    public private(set) var reservation: Frame?
+
     public init(id: AnyHashable = 0, priority: Double = 0,
                 measure: @escaping (Proposal) -> Size) {
         self.id = id
@@ -45,6 +52,11 @@ public final class LayoutSubview {
         placement = frame
     }
 
+    /// Holds `frame` for the child without giving it to the child.
+    public func reserve(in frame: Frame) {
+        reservation = frame
+    }
+
     /// Puts the child at a point, with `anchor` saying which part of the
     /// child goes there, at the size that it answers for `proposal`.
     public func place(at x: Double, _ y: Double, anchor: Alignment = .topLeading,
@@ -54,9 +66,10 @@ public final class LayoutSubview {
         place(in: Frame(origin: (x + offset.x, y + offset.y), size: size))
     }
 
-    /// Forgets the placement, before a layout runs again.
+    /// Forgets the placement and the reservation, before a layout runs again.
     public func reset() {
         placement = nil
+        reservation = nil
     }
 }
 
