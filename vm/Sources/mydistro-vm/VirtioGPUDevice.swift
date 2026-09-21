@@ -686,6 +686,12 @@ func makeCustomGPU(
 @available(macOS 27, *)
 @MainActor
 func makeGuestView(for objects: [AnyObject]) -> GuestView? {
+    // Off unless asked for. The guest gives the screen of this device to
+    // its framebuffer console, which paints it black and leaves it there,
+    // and a view of that over the display of the framework hides the one
+    // the compositor draws on. The device carries the GPU, and the
+    // framework carries the display.
+    guard getenv("VM_GPU_SCANOUT") != nil else { return nil }
     guard let device = objects.compactMap({ $0 as? VirtioGPUDevice }).first else { return nil }
     let view = GuestView(frame: .zero)
     guard let layer = view.layer else { return nil }
