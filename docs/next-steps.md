@@ -80,7 +80,6 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
 - The GPU renderer sends the pixels of a window to the GPU at each commit. The GPU can read a buffer of the app directly, with `EGL_WL_bind_wayland_display` or with dma-buf. That removes the copy.
 - The GPU renderer draws one quad for each item. Items with the same texture and colour could go into one draw.
 - `make gui` and `make demo` open a window. The automated tests do not test them. `tests/display.exp` and `tests/compositor.exp` test the same display with no window. In a window, the keyboard and the pointer are USB devices of the framework. The tests do not use those devices. They make their own with uinput.
-- The compositor writes "Fatal error: Attempted to read an unowned reference but object ... was already destroyed" as it stops, after COMPOSITOR-EXIT. The tests pass, because the work is over by then. Something that an `unowned` points at goes away before the thing that holds it. The Wayland library and `ViewHost` both hold one (`rg unowned`).
 - The tests use one VM disk in sequence. `tests/display.exp` and `tests/compositor.exp` need the disk from `tests/install.exp`.
 - Old builder images use disk space. On 19 September, `container system df` reported 42 GB that `container image prune` can remove.
 
