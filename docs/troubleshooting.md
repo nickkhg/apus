@@ -150,3 +150,11 @@ Symptom: `cannot find 'VirglRenderer' in scope`, approximately 26 times, in `Vir
 Cause: `VirglRenderer.swift` is inside `#if VIRGL`, and the Makefile defines `VIRGL` only when `build/cache` holds a build of virglrenderer. The device calls the renderer inside `renderer { ... }`, which is empty without `VIRGL`. This looked safe, but it is not: the compiler reads the body of a closure before it knows who calls it. The first Mac always had the renderer, so no build found this.
 
 Solution: two changes. `make vm` now builds the renderer, and the script installs what the build of the renderer needs. `vm/Sources/apus-vm/VirglRendererMissing.swift` gives the names that the closures ask for when a Mac cannot build the renderer.
+
+## "VM exited before login" on a machine that never installed a disk
+
+Symptom: `make demo`, `make demo-dev` or `make gui` stops with `TEST FAILED: VM exited before login`. The log before it shows a machine that starts, shows two screen sizes, and stops.
+
+Cause: those targets boot `out/vm/target.img`, which is the disk that the installer wrote. `tests/install.exp` writes it, and `make test` runs that test. A clone has no such disk. The machine then starts, the firmware finds nothing to boot, and the machine stops.
+
+Solution: `make` now installs the disk when there is none, so these targets work from a clone. `make install-disk` does only that step. The first run takes some minutes, because it builds the image and then installs it.

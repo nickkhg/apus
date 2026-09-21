@@ -78,6 +78,11 @@ VIRGL_FLAGS = $(if $(shell test -f $(VIRGL_LIB) && echo yes),\
 	-Xlinker -rpath -Xlinker $(VULKAN_DIR) \
 	-Xlinker -rpath -Xlinker $(MOLTEN_DIR),)
 
+# The live image that `make build` writes, and the disk that the installer
+# writes into. A machine boots one of the two.
+LIVE_IMG   := out/live.img
+TARGET_IMG := out/vm/target.img
+
 VM_BUILD = xcrun swift build --package-path vm -c release $(VIRGL_FLAGS)
 VM       = $(shell xcrun swift build --package-path vm -c release --show-bin-path)/apus-vm
 # The expect scripts in tests/ and vm/ start the machine through this.
@@ -98,7 +103,7 @@ RUN = container run --rm --cap-add ALL -c $(CPUS) -m $(MEM) \
 	-v $(VOL_PKG):/var/cache/pacman/pkg \
 	-w $(CURDIR)
 
-.PHONY: help preflight virgl builder volumes build sdk ui ui-container protocols shell vm live installed gui demo demo-dev test test-venus test-dev test-ui test-ui-linux bench clean distclean
+.PHONY: help preflight virgl install-disk builder volumes build sdk ui ui-container protocols shell vm live installed gui demo demo-dev test test-venus test-dev test-ui test-ui-linux bench clean distclean
 
 help:
 	@echo "make build      build out/live.img"
@@ -245,25 +250,46 @@ vm: $(VIRGL_LIB)
 	$(VM_BUILD)
 	codesign --force --sign - --entitlements vm/apus-vm.entitlements $(VM)
 
-live: vm
+# The live image, for a target that names it. `make build` writes it.
+$(LIVE_IMG):
+	$(MAKE) build
+
+# The installed disk. `tests/install.exp` boots the live image, runs the
+# installer, and leaves the disk that the installer wrote.
+#
+# A clone has no such disk. Every target below boots one, and a machine with
+# nothing to boot starts, shows the firmware, and stops. The test then says
+# "VM exited before login", which names what happened and not why. This
+# installs the disk one time instead.
+#
+# `vm` comes after the bar, as an order-only prerequisite: the program must
+# be there first, but a new build of the program does not ask for a new
+# install. Without the bar each build of the program would install again,
+# because `vm` is a name and not a file.
+$(TARGET_IMG): $(LIVE_IMG) | vm
+	tests/install.exp
+
+install-disk: $(TARGET_IMG)
+
+live: $(LIVE_IMG) vm
 	$(VM) live
 
-installed: vm
+installed: $(TARGET_IMG) vm
 	$(VM) installed
 
-gui: vm
+gui: $(TARGET_IMG) vm
 	VM_GPU=window VM_CUSTOM_GPU=1 $(VM) installed
 
 # The installed system in a window, with the compositor and a test window
 # running. The compositor draws with the GPU of the Mac when the renderer is
 # built (build/make-virglrenderer.sh) and falls back to the CPU when it is
 # not. See docs/gpu.md.
-demo: vm
+demo: $(TARGET_IMG) vm
 	vm/demo.exp
 
 # The same, but the VM runs the programs from `make ui` through /mnt/host.
 # It builds them first, so that the VM never runs a program of an older build.
-demo-dev: ui vm
+demo-dev: ui $(TARGET_IMG) vm
 	APUS_UI_DIR=/mnt/host/ui vm/demo.exp
 
 test: vm
@@ -275,12 +301,12 @@ test: vm
 # The guest finds the GPU of the Mac. This one needs the renderer, which
 # build/make-virglrenderer.sh builds, so `make test` leaves it out. Needs the
 # installed disk from `make test`. See docs/gpu.md.
-test-venus: vm
+test-venus: $(TARGET_IMG) vm
 	tests/venus.exp
 
 # The compositor test with the programs from `make ui`. Needs the installed
 # disk from `make test`.
-test-dev: ui vm
+test-dev: ui $(TARGET_IMG) vm
 	APUS_UI_DIR=/mnt/host/ui tests/compositor.exp
 
 clean:

@@ -51,7 +51,7 @@ If `out/vm/target.img` does not exist, the program makes an 8 GB disk. To start 
 | `make live` | Boots the live image and the target disk. |
 | `make installed` | Boots only the target disk. |
 | `make gui` | Boots the target disk in a window. The shell starts with the machine. |
-| `make demo` | Boots the target disk in a window and starts the compositor with a test window. |
+| `make demo` | Boots the target disk in a window and starts the compositor with a test window. It installs the disk first, when there is none. |
 | `make test` | Runs the three tests. |
 | `make test-ui` | Runs the unit tests of the toolkit and the shell on the Mac. No VM and no container. |
 | `make test-ui-linux` | Runs the same tests on Apus, in the builder container. |
