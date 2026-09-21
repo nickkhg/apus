@@ -280,6 +280,12 @@ final class GLRenderer {
             glTexImage2D(GLenum(GL_TEXTURE_2D), 0, GL_RGBA,
                          GLsizei(source.width), GLsizei(source.height), 0,
                          GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), nil)
+            // The texture that holds what is behind the blur gets its room
+            // here, once, so that the copy below only writes pixels into it.
+            glBindTexture(GLenum(GL_TEXTURE_2D), scratch.source)
+            glTexImage2D(GLenum(GL_TEXTURE_2D), 0, GL_RGB,
+                         GLsizei(source.width), GLsizei(source.height), 0,
+                         GLenum(GL_RGB), GLenum(GL_UNSIGNED_BYTE), nil)
             scratch.width = source.width
             scratch.height = source.height
             glBindFramebuffer(GLenum(GL_FRAMEBUFFER), scratch.framebuffer)
@@ -297,10 +303,14 @@ final class GLRenderer {
         }
         // The screen counts rows from the top and GL counts them from the
         // bottom, so the copy starts at the bottom edge of the source.
+        // glCopyTexImage2D would give the texture its room again for every
+        // frame, and a texture that is made again while the GPU still draws
+        // into the framebuffer it reads from makes everything stop and wait.
+        // glCopyTexSubImage2D writes into the room that is already there.
         glBindTexture(GLenum(GL_TEXTURE_2D), scratch.source)
-        glCopyTexImage2D(GLenum(GL_TEXTURE_2D), 0, GLenum(GL_RGB),
-                         GLint(source.x), GLint(screen.height - source.y - source.height),
-                         GLsizei(source.width), GLsizei(source.height), 0)
+        glCopyTexSubImage2D(GLenum(GL_TEXTURE_2D), 0, 0, 0,
+                            GLint(source.x), GLint(screen.height - source.y - source.height),
+                            GLsizei(source.width), GLsizei(source.height))
         return true
     }
 
