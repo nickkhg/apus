@@ -74,8 +74,10 @@ What one frame of the shell costs, on the Mac, with Summon open in GPU mode:
 
 | | Before the graph | With it |
 | --- | --- | --- |
-| Lay out and lower | 2.41 ms | 0.63 ms |
-| A plain shell frame | 0.24 ms | 0.22 ms |
+| One frame of Summon opening | 2.41 ms | 0.76 ms |
+| A plain shell frame | 0.24 ms | 0.16 ms |
+
+The frame of a move still costs the most. The graph works out the views that move again for every frame of it, and that is the work that a move is.
 
 Most of that is one thing. A line of text went into a new picture for every frame. The toolkit now keeps the picture of a line under the line, the font, the colour and the width. A frame that draws the same line gets the same object back. The GPU renderer then finds the texture that it made for that object, instead of sending the pixels again.
 
