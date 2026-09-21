@@ -134,3 +134,19 @@ Solution: none is necessary. Look at the other errors.
 Cause: the Swift build prints colour codes. Xcode finds `file:line:column: error:` only in plain text.
 
 Solution: `xcode/make.sh` removes the colour codes.
+
+## A build from Xcode stops, and the container service is not running
+
+Symptom: a build from Xcode stops with a message about a connection. The same build works in a terminal, after `container system start`.
+
+Cause: Apple's `container` runs the build in a Linux VM, and a background service holds that VM. The first start of the service asks a question, and only a person can answer it. Therefore the build does not start the service itself.
+
+Solution: run `container system start` in a terminal one time. `make` now examines the service first and says this, instead of stopping with a message about a connection.
+
+## A clone on a second Mac does not build apus-vm
+
+Symptom: `cannot find 'VirglRenderer' in scope`, approximately 26 times, in `VirtioGPUDevice.swift`.
+
+Cause: `VirglRenderer.swift` is inside `#if VIRGL`, and the Makefile defines `VIRGL` only when `build/cache` holds a build of virglrenderer. The device calls the renderer inside `renderer { ... }`, which is empty without `VIRGL`. This looked safe, but it is not: the compiler reads the body of a closure before it knows who calls it. The first Mac always had the renderer, so no build found this.
+
+Solution: two changes. `make vm` now builds the renderer, and the script installs what the build of the renderer needs. `vm/Sources/apus-vm/VirglRendererMissing.swift` gives the names that the closures ask for when a Mac cannot build the renderer.

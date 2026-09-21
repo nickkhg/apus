@@ -62,14 +62,13 @@ The program adds the device beside the one the framework gives, so nothing that 
 
 ## How to build it
 
-virglrenderer builds for the Mac, with Venus and without the OpenGL renderer. `build/make-virglrenderer.sh` does it, and it takes approximately one minute:
+`make vm` builds the renderer, so a person who clones the repository gets a GPU without a separate step. It takes approximately one minute the first time.
 
-```sh
-brew install meson ninja vulkan-headers vulkan-loader molten-vk
-build/make-virglrenderer.sh
-```
+virglrenderer builds for the Mac, with Venus and without the OpenGL renderer. `build/make-virglrenderer.sh` does it. The script installs the Homebrew formulae that the build needs (`meson`, `ninja`, `vulkan-headers`, `vulkan-loader` and `molten-vk`), and `make virgl` runs the script by itself.
 
-It gives `build/cache/virglrenderer/build/src/libvirglrenderer.dylib`. The Makefile finds that file and builds `apus-vm` with the renderer in it. Without the file the program still builds, and the device carries no 3D.
+The script gives `build/cache/virglrenderer/build/src/libvirglrenderer.dylib`. The Makefile finds that file and builds `apus-vm` with the renderer in it.
+
+A Mac with no Homebrew cannot build the renderer. The build then says so and goes on, and the program carries no 3D. `vm/Sources/apus-vm/VirglRendererMissing.swift` is what the device calls in such a build. It answers each call with "no renderer", so the guest gets a 2D device.
 
 Four things in that build are not the defaults:
 

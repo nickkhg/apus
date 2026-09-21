@@ -55,9 +55,9 @@ SWIFT_BUILD       = APUS_CROSS=1 $(SWIFT_MAC)/usr/bin/swift build --package-path
 # because Virtualization and AppKit are frameworks of the platform. The
 # program needs the com.apple.security.virtualization entitlement, and a
 # local (ad hoc) signature carries it.
-# The renderer of the host side of the GPU, when build/make-virglrenderer.sh
-# has built it. Without it the program builds and runs as before, and the
-# GPU device of our own is not in it.
+# The renderer of the host side of the GPU. `make vm` builds it, so a guest
+# has a GPU without a separate step. A Mac with no Homebrew cannot build it.
+# The build then says so and goes on, and the guest gets a 2D device only.
 VIRGL_DIR  := build/cache/virglrenderer
 VIRGL_LIB  := $(VIRGL_DIR)/build/src/libvirglrenderer.dylib
 # The renderer loads Vulkan by name at run time: libvulkan.dylib first, then
@@ -66,7 +66,10 @@ VIRGL_LIB  := $(VIRGL_DIR)/build/src/libvirglrenderer.dylib
 # program carries the two Homebrew directories.
 VULKAN_DIR := $(shell brew --prefix vulkan-loader 2>/dev/null)/lib
 MOLTEN_DIR := $(shell brew --prefix molten-vk 2>/dev/null)/lib
-VIRGL_FLAGS = $(if $(wildcard $(VIRGL_LIB)),\
+# $(wildcard) reads the directory once for a whole run of make, so it would
+# answer "no renderer" even after the rule below made one. The shell asks
+# again each time the flags are used.
+VIRGL_FLAGS = $(if $(shell test -f $(VIRGL_LIB) && echo yes),\
 	-Xswiftc -DVIRGL \
 	-Xcc -I$(CURDIR)/$(VIRGL_DIR)/src \
 	-Xcc -I$(CURDIR)/$(VIRGL_DIR)/build/src \
@@ -95,7 +98,7 @@ RUN = container run --rm --cap-add ALL -c $(CPUS) -m $(MEM) \
 	-v $(VOL_PKG):/var/cache/pacman/pkg \
 	-w $(CURDIR)
 
-.PHONY: help builder volumes build sdk ui ui-container protocols shell vm live installed gui demo demo-dev test test-venus test-dev test-ui test-ui-linux bench clean distclean
+.PHONY: help preflight virgl builder volumes build sdk ui ui-container protocols shell vm live installed gui demo demo-dev test test-venus test-dev test-ui test-ui-linux bench clean distclean
 
 help:
 	@echo "make build      build out/live.img"
@@ -134,7 +137,22 @@ $(BUILDER_STAMP): build/Containerfile $(ALARM_TARBALL) $(SWIFT_TARBALL)
 	container build -t $(IMAGE) -f build/Containerfile build
 	touch $@
 
-builder: $(BUILDER_STAMP)
+builder: preflight $(BUILDER_STAMP)
+
+# Apple's `container` runs the build in a Linux VM of its own, and its
+# background service must be running first. The first start of that service
+# asks a question that only a person can answer, so this says what to run
+# and stops. A build from Xcode fails with a message about a connection
+# without it.
+preflight:
+	@container system status 2>/dev/null | grep -q running || { \
+	    echo "The Apple container service is not running."; \
+	    echo ""; \
+	    echo "    container system start"; \
+	    echo ""; \
+	    echo "Run that in a terminal, then build again. If the command is"; \
+	    echo "not there, install Apple container 1.0 or later. See README.md."; \
+	    exit 1; }
 
 $(SWIFT_MAC_PKG):
 	mkdir -p $(dir $@)
@@ -161,7 +179,7 @@ $(SDK_STAMP): $(BUILDER_STAMP) build/make-sdk.sh
 
 sdk: $(SWIFT_MAC)/usr/bin/swift volumes $(SDK_STAMP)
 
-volumes:
+volumes: preflight
 	@container volume inspect $(VOL_WORK) >/dev/null 2>&1 || container volume create -s 32G $(VOL_WORK)
 	@container volume inspect $(VOL_PKG)  >/dev/null 2>&1 || container volume create -s 16G $(VOL_PKG)
 
@@ -210,7 +228,20 @@ shell: builder volumes
 
 # The virtual machine. Signing is part of the build: without the
 # entitlement, Virtualization refuses to make a machine.
-vm:
+#
+# The renderer comes first. A Mac that cannot build it says why and gets a
+# program with no 3D in it, rather than no program.
+$(VIRGL_LIB):
+	@build/make-virglrenderer.sh || { \
+	    echo ""; \
+	    echo "==> No GPU: the build of virglrenderer failed (see above)."; \
+	    echo "==> apus-vm still works, and the guest gets a 2D device only."; \
+	    echo "==> See docs/gpu.md."; \
+	    echo ""; }
+
+virgl: $(VIRGL_LIB)
+
+vm: $(VIRGL_LIB)
 	$(VM_BUILD)
 	codesign --force --sign - --entitlements vm/apus-vm.entitlements $(VM)
 
