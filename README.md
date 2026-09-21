@@ -68,5 +68,12 @@ To install software on a running system, use pacman. For example: `pacman -S hto
 | [Decisions](docs/decisions.md) | The main decisions, with the reasons and the evidence |
 | [Troubleshooting](docs/troubleshooting.md) | Problems that occurred, and their solutions |
 | [Next steps](docs/next-steps.md) | Loose ends and the next work |
+| [Licensing](docs/licensing.md) | The license of this code, the code from other projects, and what a published image asks of you |
 
 The documentation uses ASD-STE100 Simplified Technical English.
+
+## License
+
+Apus is under the Apache License 2.0. [LICENSE](LICENSE) holds the full text.
+
+The disk image holds packages from other projects, and each one keeps its own license. See [licensing.md](docs/licensing.md) before you publish an image.

@@ -10,7 +10,7 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc='Apus user interface (Swift)'
 arch=('aarch64')
-license=('custom')
+license=('Apache-2.0')
 depends=(
     gcc-libs glibc
     libdrm mesa            # display, GPU rendering
