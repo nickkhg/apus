@@ -59,26 +59,35 @@ final class TextNode: LayoutNode {
 
     override func render(in frame: Frame, into pass: inout RenderPass) {
         guard !shaped.glyphs.isEmpty, color.alpha > 0 else { return }
-        // A line that is too long for its space ends in "…". The frame is in
-        // points and the glyphs are in pixels.
-        let shaped = fitted(to: frame.width * scale)
-        guard !shaped.glyphs.isEmpty else { return }
-        let width = Int(shaped.width.rounded(.up))
-        let height = Int(shaped.height.rounded(.up))
-        guard width > 0, height > 0 else { return }
+        // The same line in the same colour at the same width is the same
+        // picture, so it is drawn one time. A frame that draws it again
+        // gets the same object back, and with it the texture that the GPU
+        // renderer made for that object.
+        let room = frame.width * scale
+        let picture = FontCache.shared.picture(string, font: font, color: color, room: room) {
+            // A line that is too long for its space ends in "…". The frame
+            // is in points and the glyphs are in pixels.
+            let shaped = fitted(to: room)
+            guard !shaped.glyphs.isEmpty else { return nil }
+            let width = Int(shaped.width.rounded(.up))
+            let height = Int(shaped.height.rounded(.up))
+            guard width > 0, height > 0 else { return nil }
 
-        var pixels = [UInt32](repeating: 0, count: width * height)
-        let baseline = shaped.ascent
-        for glyph in shaped.glyphs {
-            guard let image = FontCache.shared.image(of: glyph.id, font: font) else { continue }
-            draw(image, x: glyph.x + Double(image.left), y: baseline + glyph.y - Double(image.top),
-                 into: &pixels, width: width, height: height)
+            var pixels = [UInt32](repeating: 0, count: width * height)
+            let baseline = shaped.ascent
+            for glyph in shaped.glyphs {
+                guard let image = FontCache.shared.image(of: glyph.id, font: font) else { continue }
+                draw(image, x: glyph.x + Double(image.left),
+                     y: baseline + glyph.y - Double(image.top),
+                     into: &pixels, width: width, height: height)
+            }
+            return Bitmap(width: width, height: height, isOpaque: false, pixels: pixels)
         }
-        let bitmap = Bitmap(width: width, height: height, isOpaque: false, pixels: pixels)
+        guard let picture else { return }
         // The text sits at the top-left of its frame; a frame or a stack has
         // already put the frame where the alignment wants it. The frame is in
         // points and the bitmap is in pixels.
-        pass.list.append(.bitmap(bitmap, x: Int((frame.x * pass.scale).rounded()),
+        pass.list.append(.bitmap(picture, x: Int((frame.x * pass.scale).rounded()),
                                  y: Int((frame.y * pass.scale).rounded())))
     }
 

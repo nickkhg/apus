@@ -39,13 +39,30 @@ public struct State<Value> {
         /// finished. Both come from the environment.
         var now: Double = 0
         var state: ViewState?
+        /// This value in the graph. A body that reads the value depends on
+        /// it from then on, and a write marks that body out of date.
+        var attribute: Attribute<Value>?
 
         init(_ value: Value) { self.value = value }
 
+        /// The value in the graph, made the first time it is needed.
+        func attribute(in graph: Graph) -> Attribute<Value> {
+            if let attribute { return attribute }
+            let made = graph.source(value)
+            attribute = made
+            return made
+        }
+
         /// Where the value is now: on its way if a move is running.
+        ///
+        /// The read goes through the graph, so the body that reads it now
+        /// depends on it: a later write marks that body out of date and
+        /// nothing else.
         var shown: Value {
+            var target = value
+            if let graph = state?.graph { target = graph.value(of: attribute(in: graph)) }
             guard let motion, motion.isMoving(now: now),
-                  let moving = motion.value(now: now) as? Value else { return value }
+                  let moving = motion.value(now: now) as? Value else { return target }
             // A value on its way needs the frame after this one.
             state?.isMoving = true
             return moving
@@ -68,6 +85,9 @@ public struct State<Value> {
                 motion = nil
             }
             value = newValue
+            if let graph = state?.graph {
+                graph.set(attribute(in: graph), to: newValue)
+            }
             onChange()
         }
     }
@@ -116,6 +136,21 @@ public struct Binding<Value> {
 // MARK: - The store
 
 /// What the toolkit knows about a state property, without its value type.
+/// A state value that can still be on its way, without its type. The store
+/// asks every value this at the start of a frame.
+protocol AnyMovingBox: AnyObject {
+    func isMoving(now: Double) -> Bool
+    var anyAttribute: AnyAttribute? { get }
+}
+
+extension State.Box: AnyMovingBox {
+    func isMoving(now: Double) -> Bool {
+        motion?.isMoving(now: now) ?? false
+    }
+
+    var anyAttribute: AnyAttribute? { attribute }
+}
+
 protocol AnyStateProperty {
     var anyBox: AnyObject { get }
     /// Copies the value of an earlier box of the same property into this one.
@@ -136,8 +171,10 @@ extension State: AnyStateProperty {
     func adopt(_ other: AnyObject) {
         guard let other = other as? Box else { return }
         box.value = other.value
-        // The move that the store kept is the one that goes on running.
+        // The move that the store kept is the one that goes on running, and
+        // the value in the graph is the one that other views depend on.
         box.motion = other.motion
+        box.attribute = other.attribute
     }
 
     func onChange(_ action: @escaping () -> Void) {
@@ -166,7 +203,44 @@ public final class ViewState: @unchecked Sendable {
         let slot: Int
     }
 
+    /// What a view made last time, and what it was made from.
+    ///
+    /// A pass that finds the same view value in the same place, in the same
+    /// environment, keeps these nodes. It then never asks the view for its
+    /// body, and everything that hangs off those nodes stays as well: the
+    /// size they worked out, the glyphs of a line of text, the picture of
+    /// that line.
+    private final class Entry {
+        let attribute: Attribute<[LayoutNode]>
+        /// The view value and the environment that the nodes came from.
+        let holder: Holder
+        /// The state that lives under this view. A pass that keeps the
+        /// nodes keeps that state with them.
+        var keys: Set<Key> = []
+
+        init(attribute: Attribute<[LayoutNode]>, holder: Holder) {
+            self.attribute = attribute
+            self.holder = holder
+        }
+    }
+
+    /// What the rule of an entry reads. The rule holds this and not the
+    /// view, so a new view value needs no new rule.
+    private final class Holder {
+        var view: Any
+        var environment: EnvironmentValues
+
+        init(view: Any, environment: EnvironmentValues) {
+            self.view = view
+            self.environment = environment
+        }
+    }
+
+    /// The values of this tree, and what each one depends on.
+    let graph = Graph()
+
     private var boxes: [Key: AnyObject] = [:]
+    private var entries: [Key: Entry] = [:]
     private var seen: Set<Key> = []
     /// The path to the view that the renderer is in now.
     private var path: [Int] = []
@@ -182,13 +256,85 @@ public final class ViewState: @unchecked Sendable {
         path.removeAll(keepingCapacity: true)
         counts = [[:]]
         seen.removeAll(keepingCapacity: true)
+        // A value that is still on its way has a new value in this frame,
+        // so whatever reads it must be worked out again.
+        for box in boxes.values {
+            guard let moving = box as? AnyMovingBox, moving.isMoving(now: now),
+                  let attribute = moving.anyAttribute else { continue }
+            graph.spoil(attribute)
+        }
     }
 
     /// The renderer calls this after it lowers the view tree. The state of a
-    /// view that is no longer in the tree goes away.
+    /// view that is no longer in the tree goes away, and so do the values
+    /// that the graph kept for it.
     func endPass() {
-        guard seen.count != boxes.count else { return }
+        // `seen` holds the name of each view as well as the name of each
+        // state value, so the two counts say nothing about each other.
         boxes = boxes.filter { seen.contains($0.key) }
+        for (key, entry) in entries where !seen.contains(key) {
+            graph.forget(entry.attribute)
+            entries[key] = nil
+        }
+    }
+
+    /// The nodes of one view.
+    ///
+    /// `make` lowers the view. It runs only when this is the first pass for
+    /// this view, or when the view value changed, or when the environment
+    /// changed, or when something that the body read changed. Otherwise the
+    /// nodes of the last pass come back as they are.
+    func nodes<V: View>(for view: V, environment: EnvironmentValues,
+                        make: @escaping (V, EnvironmentValues) -> [LayoutNode]) -> [LayoutNode] {
+        // One entry for each view. The slot of -1 is not the slot of any
+        // state property, so the two never meet.
+        let key = Key(path: path, slot: -1)
+        seen.insert(key)
+
+        let entry: Entry
+        if let existing = entries[key] {
+            entry = existing
+            if !isSameView(existing.holder.view, view)
+                || !existing.holder.environment.isSame(as: environment) {
+                existing.holder.view = view
+                existing.holder.environment = environment
+                graph.invalidate(existing.attribute)
+            }
+        } else {
+            let holder = Holder(view: view, environment: environment)
+            let attribute = graph.rule { _ -> [LayoutNode] in
+                guard let view = holder.view as? V else { return [] }
+                return make(view, holder.environment)
+            }
+            entry = Entry(attribute: attribute, holder: holder)
+            entries[key] = entry
+        }
+
+        let runs = graph.evaluations
+        let before = seen
+        let nodes = graph.value(of: entry.attribute)
+        if graph.evaluations == runs {
+            // The nodes are the ones from an earlier pass, so the state
+            // under them is in this tree as well.
+            seen.formUnion(entry.keys)
+        } else {
+            entry.keys = seen.subtracting(before)
+        }
+        return nodes
+    }
+
+    /// True when a view is the same value as the one that made the nodes.
+    ///
+    /// A view that is not Equatable is never the same one. It says nothing
+    /// about itself, so the toolkit asks it for its body again.
+    private func isSameView(_ old: Any, _ new: some View) -> Bool {
+        guard let old = old as? any Equatable else { return false }
+        return isEqual(old, new)
+    }
+
+    private func isEqual<Value: Equatable>(_ old: Value, _ new: Any) -> Bool {
+        guard let new = new as? Value else { return false }
+        return old == new
     }
 
     // MARK: Position in the tree

@@ -137,9 +137,11 @@ public struct Animation: Equatable, Sendable {
 /// The move that the state changes of this moment belong to.
 ///
 /// This is SwiftUI's transaction, with the one thing in it that the toolkit
-/// uses. The UI runs on one thread, so one value holds for all of it.
+/// uses. It is a task value, not a global one: `withAnimation` binds it for
+/// the work inside it alone, so two trees on two threads never see each
+/// other's moves.
 public enum Transaction {
-    nonisolated(unsafe) static var animation: Animation?
+    @TaskLocal public static var animation: Animation?
 }
 
 /// Moves the state that `body` changes, instead of letting it jump.
@@ -156,10 +158,7 @@ public enum Transaction {
 @discardableResult
 public func withAnimation<Result>(_ animation: Animation? = .default,
                                   _ body: () throws -> Result) rethrows -> Result {
-    let saved = Transaction.animation
-    Transaction.animation = animation
-    defer { Transaction.animation = saved }
-    return try body()
+    try Transaction.$animation.withValue(animation, operation: body)
 }
 
 /// A value that moves to its target instead of jumping to it.

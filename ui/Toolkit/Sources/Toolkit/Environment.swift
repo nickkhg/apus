@@ -21,6 +21,17 @@ public struct EnvironmentValues: Sendable {
     var viewState: ViewState?
 
     public init() {}
+
+    /// True when two environments draw the same view the same way.
+    ///
+    /// The time and the state store are left out. The time changes every
+    /// frame, and a view that keeps its nodes over a frame must not be
+    /// made again for that alone. What moves over time is in the graph,
+    /// and it holds itself out of date while it moves.
+    func isSame(as other: EnvironmentValues) -> Bool {
+        foregroundColor == other.foregroundColor && font == other.font
+            && scale == other.scale && renderMode == other.renderMode
+    }
 }
 
 /// Reads a value of the environment in a view.

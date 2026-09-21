@@ -124,3 +124,14 @@ public struct StandInCard: View {
         .padding(.bottom, 8)
     }
 }
+
+// A view says when it is the same view as before, so that the graph can keep
+// the nodes that it made. `@State` and `@Environment` are left out of that:
+// the store keeps the state by the place of the view in the tree, and the
+// environment is compared on its own. See Graph.swift.
+
+extension StandInCard: Equatable {
+    public static func == (a: StandInCard, b: StandInCard) -> Bool {
+        a.card == b.card && a.actions == b.actions
+    }
+}

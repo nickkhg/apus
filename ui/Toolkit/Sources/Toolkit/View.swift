@@ -1,10 +1,13 @@
 import Render
 
 // A declarative user interface layer, in the shape of SwiftUI: a view is a
-// value, and its `body` describes what it contains. There is no dependency
-// graph behind it (see docs/decisions.md). Each frame lowers the view tree to
-// layout nodes, and the nodes lay out and draw themselves. A shell UI is
-// small enough that a complete rebuild costs less than tracking changes.
+// value, and its `body` describes what it contains. A view tree lowers to
+// layout nodes, and the nodes lay out and draw themselves.
+//
+// A dependency graph holds what each view made (see Graph.swift). A body
+// runs again only when the view value, the environment or a `@State` value
+// that it read changed. A frame that changes one control therefore lowers
+// that control, and keeps the rest of the tree as it is.
 
 /// A piece of user interface.
 public protocol View {
@@ -24,11 +27,18 @@ extension View {
             return
         }
         // The position of this view in the tree is the name of its @State
-        // values. See State.swift.
+        // values, and of what it made. See State.swift.
         state.enter(Self.self)
         defer { state.leave() }
-        state.connect(self, environment: environment)
-        body.makeNodes(into: &nodes, environment: environment)
+        // The body runs only when something that it depends on changed. A
+        // view that is the same value in the same place keeps the nodes
+        // that it made before, and everything that hangs off them.
+        nodes += state.nodes(for: self, environment: environment) { view, environment in
+            state.connect(view, environment: environment)
+            var made: [LayoutNode] = []
+            view.body.makeNodes(into: &made, environment: environment)
+            return made
+        }
     }
 
     /// The one node for this view. Several nodes go in a stack, and no node

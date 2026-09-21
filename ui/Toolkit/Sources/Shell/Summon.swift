@@ -413,3 +413,18 @@ struct SummonRow: View {
             .padding(.horizontal, 6)
     }
 }
+
+// A view says when it is the same view as before, so that the graph can keep
+// the nodes that it made. `@State` and `@Environment` are left out of that:
+// the store keeps the state by the place of the view in the tree, and the
+// environment is compared on its own. See Graph.swift.
+
+extension SummonView: Equatable {
+    public static func == (a: SummonView, b: SummonView) -> Bool {
+        a.state == b.state && a.actions == b.actions
+    }
+}
+
+extension GroupHeader: Equatable {
+    static func == (a: GroupHeader, b: GroupHeader) -> Bool { a.title == b.title }
+}

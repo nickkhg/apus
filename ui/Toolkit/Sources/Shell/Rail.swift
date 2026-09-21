@@ -334,3 +334,40 @@ struct Status: View {
         .frame(width: Metrics.dividerWidth, alignment: .leading)
     }
 }
+
+// A view says when it is the same view as before, so that the graph can keep
+// the nodes that it made. `@State` and `@Environment` are left out of that:
+// the store keeps the state by the place of the view in the tree, and the
+// environment is compared on its own. See Graph.swift.
+
+extension RailView: Equatable {
+    public static func == (a: RailView, b: RailView) -> Bool {
+        a.state == b.state && a.actions == b.actions
+    }
+}
+
+extension SummonButton: Equatable {
+    static func == (a: SummonButton, b: SummonButton) -> Bool { a.actions == b.actions }
+}
+
+extension LayoutButton: Equatable {
+    static func == (a: LayoutButton, b: LayoutButton) -> Bool {
+        a.kind == b.kind && a.actions == b.actions
+    }
+}
+
+extension Track: Equatable {
+    static func == (a: Track, b: Track) -> Bool {
+        a.windows == b.windows && a.actions == b.actions
+    }
+}
+
+extension TrackBar: Equatable {
+    static func == (a: TrackBar, b: TrackBar) -> Bool {
+        a.window == b.window && a.actions == b.actions
+    }
+}
+
+extension Status: Equatable {
+    static func == (a: Status, b: Status) -> Bool { a.clock == b.clock }
+}

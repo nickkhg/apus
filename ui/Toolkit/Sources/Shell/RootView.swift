@@ -63,31 +63,41 @@ public struct ShellState: Equatable, Sendable {
 
 /// What the shell can ask the compositor to do. The compositor fills these
 /// in, because the shell knows nothing about windows, processes or Wayland.
-public struct ShellActions {
+///
+/// This is one object and not a value, so that a view can say whether it is
+/// looking at the same actions as before. The graph then keeps the nodes of
+/// a view whose data did not change, and the handlers in those nodes still
+/// reach the compositor. See Graph.swift.
+public final class ShellActions: Equatable {
+    /// Two sets of actions are the same set only when they are one object.
+    /// A new object holds new closures, and a view that kept its nodes
+    /// would then call the old ones.
+    public static func == (a: ShellActions, b: ShellActions) -> Bool { a === b }
+
     /// Starts the app with this id, or brings its window to the front if the
     /// app is open already.
-    public var openApp: (String) -> Void
+    public let openApp: (String) -> Void
     /// Asks the front window to close (xdg_toplevel.close). The app decides
     /// what it does with that.
-    public var closeFrontWindow: () -> Void
+    public let closeFrontWindow: () -> Void
     /// Brings a window to the front, which makes it the principal.
-    public var raiseWindow: (String) -> Void
+    public let raiseWindow: (String) -> Void
     /// Opens Summon, or closes it when it is open.
-    public var toggleSummon: () -> Void
+    public let toggleSummon: () -> Void
     /// Moves to the next layout.
-    public var nextLayout: () -> Void
+    public let nextLayout: () -> Void
     /// Gives the canvas to one layout.
-    public var setLayout: (WindowLayoutKind) -> Void
+    public let setLayout: (WindowLayoutKind) -> Void
     /// Asks one window to close.
-    public var closeWindow: (String) -> Void
+    public let closeWindow: (String) -> Void
     /// Takes a window out of the large cell, so that it becomes a tile.
-    public var makeWidget: (String) -> Void
+    public let makeWidget: (String) -> Void
     /// Takes a message away.
-    public var dismissNotice: (String) -> Void
+    public let dismissNotice: (String) -> Void
     /// Starts an app that did not start, again.
-    public var retryLaunch: (String) -> Void
+    public let retryLaunch: (String) -> Void
     /// Takes the cell of an app that did not start away.
-    public var dismissLaunch: (String) -> Void
+    public let dismissLaunch: (String) -> Void
 
     public init(openApp: @escaping (String) -> Void = { _ in },
                 closeFrontWindow: @escaping () -> Void = {},
@@ -115,7 +125,7 @@ public struct ShellActions {
 }
 
 /// The screen: the rail on the left, and the canvas beside it.
-public struct RootView: View {
+public struct RootView: View, Equatable {
     let state: ShellState
     let actions: ShellActions
 

@@ -1,5 +1,6 @@
 import CFreeType
 import CHarfBuzz
+import Render
 #if canImport(Glibc)
 import Glibc
 #else
@@ -52,7 +53,22 @@ final class FontCache {
 
     private var library: FT_Library?
     private var faces: [String: LoadedFace] = [:]
+    private var pictures: [PictureKey: Bitmap] = [:]
     private let lock = Lock()
+
+    /// How many pictures of lines the cache holds. A shell draws a few tens
+    /// of them. A terminal that scrolls makes a new line every time, so the
+    /// cache empties itself instead of growing without end.
+    private static let pictureLimit = 256
+
+    /// Everything that a picture of a line depends on.
+    private struct PictureKey: Hashable {
+        let string: String
+        let font: Font
+        let color: Color
+        /// The width that the line was cut to, in pixels.
+        let room: Double
+    }
 
     /// The font files to look for. The first one that opens wins. On
     /// mydistro the ttf-dejavu package installs the DejaVu files, and the
@@ -79,6 +95,24 @@ final class FontCache {
 
     /// Shapes `string` and gives the glyphs to draw. An empty result means
     /// that no font opened.
+    /// The picture of a line of text, drawn one time.
+    ///
+    /// Two frames that draw the same line in the same colour at the same
+    /// width get the same picture, and the same object. The CPU renderer
+    /// then draws pixels that are ready, and the GPU renderer finds the
+    /// texture that it made for that object in `TextureCache`.
+    func picture(_ string: String, font: Font, color: Color, room: Double,
+                 make: () -> Bitmap?) -> Bitmap? {
+        let key = PictureKey(string: string, font: font, color: color, room: room)
+        if let picture = lock.locked({ pictures[key] }) { return picture }
+        guard let picture = make() else { return nil }
+        lock.locked {
+            if pictures.count >= FontCache.pictureLimit { pictures.removeAll(keepingCapacity: true) }
+            pictures[key] = picture
+        }
+        return picture
+    }
+
     func shape(_ string: String, font: Font) -> ShapedText {
         lock.locked {
             guard !string.isEmpty, let face = face(for: font) else { return .empty }

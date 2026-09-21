@@ -1,7 +1,7 @@
 /// A font: which face to use and at which size. `Text` asks the font cache
 /// for the face, and the cache loads it with FreeType.
-public struct Font: Sendable, Equatable {
-    public enum Weight: Sendable {
+public struct Font: Sendable, Equatable, Hashable {
+    public enum Weight: Sendable, Hashable {
         case regular
         case bold
     }

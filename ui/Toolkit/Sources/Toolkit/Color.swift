@@ -2,7 +2,7 @@ import Render
 
 /// A colour, with values from 0 to 1. A Color is also a view: it fills the
 /// space that it gets.
-public struct Color: View, Equatable, Sendable {
+public struct Color: View, Equatable, Hashable, Sendable {
     public typealias Body = Never
 
     public var red: Double
