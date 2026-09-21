@@ -6,12 +6,12 @@ Apple's Virtualization framework gives a Linux guest no GPU. This document says 
 
 `VZVirtioGraphicsDeviceConfiguration` is a 2D scanout. It never offers the 3D feature bit, so Mesa in the guest falls back to llvmpipe and draws with the CPU. The 3D graphics device of the framework, `VZMacGraphicsDeviceConfiguration`, accepts macOS guests only.
 
-The compositor can draw with a GPU (see [ui.md](ui.md#the-two-renderers)), but in a VM it has none. These are the times of one frame, measured with `APUS_FRAME_LOG`:
+The compositor can draw with a GPU (see [ui.md](ui.md#the-two-renderers)), but in a VM it has none. These are the costs of one frame, measured with `APUS_FRAME_LOG`:
 
-| Renderer | Size | Average | Frames a second |
-|---|---|---|---|
-| `cpu` | 2560x1600 | 37.1 ms | 27 |
-| `gpu` | 2560x1600 | 49.4 ms | 20 |
+| Renderer | Size | Average |
+|---|---|---|
+| `cpu` | 2560x1600 | 37.1 ms |
+| `gpu` | 2560x1600 | 49.4 ms |
 
 The GPU renderer is the slower one, because llvmpipe is under it.
 

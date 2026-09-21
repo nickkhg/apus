@@ -27,6 +27,20 @@ protocol Screen: AnyObject {
     /// Asks for a new frame. Several requests before the next vertical blank
     /// produce one frame.
     func setNeedsFrame()
+    /// Draws the frame that was asked for, if one was. The compositor calls
+    /// this once for each pass of its loop, and never from inside an event:
+    /// all the input that arrived together therefore goes into one frame.
+    func drawIfNeeded()
+
+    /// True when the display puts the pointer over the frame itself. The
+    /// compositor then leaves the pointer out of the display list, and
+    /// moving it costs no frame at all.
+    var drawsPointer: Bool { get }
+    /// Gives the display the picture of the pointer, and asks it to draw it.
+    /// A display that cannot leaves `drawsPointer` false.
+    func usePointer(_ bitmap: Bitmap)
+    /// Moves the pointer to a place on the screen, in pixels.
+    func movePointer(toX x: Int, y: Int)
     /// The display reported a change: a monitor that a person connected, or
     /// a virtual screen that took a new size.
     func displayChanged()
@@ -137,6 +151,8 @@ final class SoftwareScreen: Screen, PageFlipHandler {
     private var canPageFlip = true
     /// True while a frame is being drawn.
     private var isDrawing = false
+    /// The pointer, on a plane of the display when the display has one.
+    private var pointer = ScreenPointer()
     private var timer: FrameTimer
     /// Set when the display reported a change. The new size is taken between
     /// frames, because a buffer that the screen is showing cannot go away.
@@ -193,7 +209,22 @@ final class SoftwareScreen: Screen, PageFlipHandler {
     private var front: DumbFramebuffer { buffers[1 - back] }
 
     func writePicture(to path: String) throws {
-        try front.writePPM(to: path)
+        // The display puts the pointer over the frame, so the buffer holds
+        // no pointer. The picture is what a person sees, so it goes back in.
+        guard let (bitmap, left, top) = pointer.picture else {
+            return try front.writePPM(to: path)
+        }
+        let (pixels, stride) = front.withPixels { ($0, $1) }
+        try PPM.write(width: width, height: height, to: path) { x, y in
+            let column = x - left, row = y - top
+            if column >= 0, column < bitmap.width, row >= 0, row < bitmap.height {
+                let over = bitmap.pixels[row * bitmap.width + column]
+                // The pointer is drawn in whole pixels: each one covers the
+                // frame or leaves it, and none is part of the way.
+                if over >> 24 >= 0x80 { return over & 0xFFFFFF }
+            }
+            return pixels[y * stride + x] & 0xFFFFFF
+        }
     }
 
     func release() {
@@ -201,13 +232,23 @@ final class SoftwareScreen: Screen, PageFlipHandler {
         restore = nil
     }
 
-    func setNeedsFrame() {
-        needsFrame = true
-        // A frame that is being drawn must not start another one. Something
-        // that moves asks for the next frame while this one is drawn, and
-        // the flip that follows picks it up.
-        if !flipPending, !isDrawing { drawFrame() }
+    func setNeedsFrame() { needsFrame = true }
+
+    /// A frame that is being drawn must not start another one, and a frame
+    /// that the display has not taken yet must not be replaced. The flip
+    /// that follows picks the request up.
+    func drawIfNeeded() {
+        guard needsFrame, !flipPending, !isDrawing else { return }
+        drawFrame()
     }
+
+    var drawsPointer: Bool { pointer.isOnDisplay }
+
+    func usePointer(_ bitmap: Bitmap) {
+        pointer.use(bitmap, device: device, output: output)
+    }
+
+    func movePointer(toX x: Int, y: Int) { pointer.move(toX: x, y: y) }
 
     private func drawFrame() {
         isDrawing = true
@@ -240,6 +281,7 @@ final class SoftwareScreen: Screen, PageFlipHandler {
         frameShown()
         // The old buffers are free now, so a new size can be taken.
         if displayMayHaveChanged { takeNewMode() }
-        if needsFrame { drawFrame() }
+        // A frame that is wanted is drawn by drawIfNeeded, at the end of
+        // this pass of the loop, with everything else that arrived.
     }
 }

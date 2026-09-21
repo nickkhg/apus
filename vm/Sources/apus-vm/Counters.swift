@@ -42,7 +42,7 @@ final class Counters: @unchecked Sendable {
 
     /// Reads a line of the guest console. Two of them are interesting.
     ///
-    /// `FRAME gpu 1280x800 average 6.1ms longest 9.0ms (163 frames a second)`
+    /// `FRAME gpu 1280x800 average 6.1ms longest 9.0ms worst gap 21.4ms (38 frames a second)`
     /// `GPU-RENDERER zink Vulkan 1.4(...) OpenGL ES 2.0 ... (offscreen)`
     func read(_ line: String) {
         guard let start = line.range(of: "FRAME ") ?? line.range(of: "GPU-RENDERER ") else {
@@ -67,7 +67,11 @@ final class Counters: @unchecked Sendable {
         let frames: String?
         let renderer: String?
 
-        /// `gpu 1280x800 average 6.1ms longest 9.0ms (163 frames a second)`
+        /// `gpu 1280x800 average 6.1ms longest 9.0ms worst gap 21.4ms (38 frames a second)`
+        ///
+        /// This one is measured against the clock: it is how often a frame
+        /// reached the screen, and not 1 divided by the time one frame took
+        /// to draw. See FrameTimer.
         var framesASecond: String? {
             guard let frames, let open = frames.lastIndex(of: "("),
                   let close = frames.lastIndex(of: ")"), open < close else { return nil }
@@ -76,9 +80,17 @@ final class Counters: @unchecked Sendable {
                 ? String(inside.dropLast(" frames a second".count)) : String(inside)
         }
 
-        var frameTime: String? {
-            guard let frames, let word = frames.range(of: "average ") else { return nil }
-            let rest = frames[word.upperBound...]
+        /// How long the drawing of one frame took, on average.
+        var frameTime: String? { word(after: "average ") }
+
+        /// The longest the screen went without a new frame. A number much
+        /// larger than the frame time is what a person sees as a stutter.
+        var worstGap: String? { word(after: "worst gap ") }
+
+        /// The word that comes after `phrase` in the line of the compositor.
+        private func word(after phrase: String) -> String? {
+            guard let frames, let found = frames.range(of: phrase) else { return nil }
+            let rest = frames[found.upperBound...]
             guard let end = rest.firstIndex(of: " ") else { return String(rest) }
             return String(rest[..<end])
         }

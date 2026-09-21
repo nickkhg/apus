@@ -32,13 +32,15 @@ The serial console is always in the terminal. To stop the VM, push Ctrl-A in the
 
 A window follows its own size when a person changes it, and it counts pixels, not points. A Mac with small pixels therefore gives the guest two times the pixels in each direction, which is four times the work for each frame. `VM_RESIZE=off` keeps the size that `VM_SCREEN` gave.
 
-`APUS_FRAME_LOG` times the frames. `APUS_FRAME_LOG=20` writes one line for each 20 frames: the average, the longest, and the size of the screen. These are the times of the shell with nothing open, in a VM, where Mesa renders with the CPU:
+`APUS_FRAME_LOG` times the frames. `APUS_FRAME_LOG=20` writes one line for each 20 frames: the cost of a frame, the longest gap between two frames, the rate, and the size of the screen. These are the costs of the shell with nothing open, in a VM, where Mesa renders with the CPU:
 
-| Renderer | Size | Average | Longest | Frames a second |
-|---|---|---|---|---|
-| `cpu` | 1280x800 | 14.2 ms | 17.0 ms | 71 |
-| `cpu` | 2560x1600 | 37.1 ms | 46.9 ms | 27 |
-| `gpu` | 2560x1600 | 49.4 ms | 186.5 ms | 20 |
+| Renderer | Size | Average | Longest |
+|---|---|---|---|
+| `cpu` | 1280x800 | 14.2 ms | 17.0 ms |
+| `cpu` | 2560x1600 | 37.1 ms | 46.9 ms |
+| `gpu` | 2560x1600 | 49.4 ms | 186.5 ms |
+
+The average and the longest are the cost of the drawing alone. The rate in the line is a different measurement: it counts the frames against the clock, so the waiting for a page flip, for input, and for an app is in it. A frame that costs 6 ms does not make 163 frames a second if the compositor then waits 20 ms for the next thing to do. `worst gap`, beside the rate, is the longest the screen went without a new frame, and a stutter is in that number and not in the average.
 
 The GPU renderer is the slower one in a VM, because the VM has no GPU. Mesa renders with the CPU (llvmpipe). The GPU path then adds work of its own: a texture for each window, and a new framebuffer for each frame. On hardware with a GPU the numbers are not these. The compositor draws the whole screen for each frame, so the size of the screen is what counts most.
 

@@ -220,6 +220,7 @@ public final class Compositor {
         if let path = getenv("APUS_SCREENSHOT_SOCKET").map({ String(cString: $0) }) {
             screenshot = Screenshot(path: path, loop: loop, screen: screen)
         }
+        usePointer()
         screen.setNeedsFrame()
     }
 
@@ -227,6 +228,12 @@ public final class Compositor {
     /// screen back.
     public func run() {
         while running {
+            // Everything that arrived together is in one frame: the events of
+            // a pass all run before this, so a frame holds the newest pointer
+            // position and not the first of the batch. Drawing from inside an
+            // event would hold the loop for the whole of a frame, and the
+            // input behind it would arrive late.
+            screen.drawIfNeeded()
             server.flush()
             loop.dispatch()
         }
@@ -296,9 +303,13 @@ public final class Compositor {
         list += host.displayList(for: RootView(state: state, actions: shellActions),
                                  in: screenRect, scale: scale)
         // The pointer is kept in pixels, because that is what the mouse and
-        // the screen work in.
-        list.append(.bitmap(Cursor.bitmap(scale: Int(scale.rounded())),
-                            x: Int(pointer.x), y: Int(pointer.y)))
+        // the screen work in. A display with a plane for it draws it itself,
+        // and then it is not in the frame at all: moving the mouse over an
+        // empty desktop costs no frame.
+        if !screen.drawsPointer {
+            list.append(.bitmap(Cursor.bitmap(scale: Int(scale.rounded())),
+                                x: Int(pointer.x), y: Int(pointer.y)))
+        }
         return list
     }
 
@@ -449,8 +460,16 @@ public final class Compositor {
         pointer.x = min(pointer.x, Double(max(0, screen.width - 1)))
         pointer.y = min(pointer.y, Double(max(0, screen.height - 1)))
         host.pointerMoved(to: pointer.x / scale, y: pointer.y / scale)
+        usePointer()
         server.screenChanged(to: screenInfo)
         arrange()
+    }
+
+    /// Gives the display the picture of the pointer, at the scale in use. A
+    /// display that takes it draws the pointer from then on.
+    private func usePointer() {
+        screen.usePointer(Cursor.bitmap(scale: Int(scale.rounded())))
+        screen.movePointer(toX: Int(pointer.x), y: Int(pointer.y))
     }
 
     /// Where a window that is about to appear will go. The new window goes
@@ -771,8 +790,13 @@ public final class Compositor {
     private func movePointer(to position: (x: Double, y: Double)) {
         pointer = (min(max(position.x, 0), Double(screen.width - 1)),
                    min(max(position.y, 0), Double(screen.height - 1)))
+        screen.movePointer(toX: Int(pointer.x), y: Int(pointer.y))
         routePointer()
-        screen.setNeedsFrame()
+        // A display that draws the pointer needs no frame for a move. What
+        // the move changed asks for its own: a view that lights up under the
+        // pointer asks through needsUpdate, and an app that took the pointer
+        // asks when it commits.
+        if !screen.drawsPointer { screen.setNeedsFrame() }
     }
 
     /// The window under the pointer, or nil when the shell wants it.
