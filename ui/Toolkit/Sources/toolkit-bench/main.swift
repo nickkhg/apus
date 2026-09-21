@@ -78,6 +78,22 @@ measure("a surface: shadow") {
 measure("a surface: blur") {
     SoftwareRenderer.render(full + [.blur(outline, radius: 20)], into: canvas)
 }
+// What one frame of a move costs. Summon opening in GPU mode is the
+// heaviest frame the shell has: it has the blur, and a move draws it again
+// for every frame until it arrives.
+let open = ShellState(apps: state.apps, windows: state.windows,
+                      clock: state.clock, mode: .gpu, summonIsOpen: true,
+                      canvas: RootView.windowArea(screen: screen))
+let openHost = ViewHost()
+var openList = openHost.displayList(for: RootView(state: open), in: screen)
+print("--- Summon open in GPU mode: \(openList.count) items")
+measure("summon: lay out and lower") {
+    openList = openHost.displayList(for: RootView(state: open), in: screen)
+}
+measure("summon: draw the items") {
+    SoftwareRenderer.render(openList, into: canvas)
+}
+
 // Which item costs what.
 print("--- each item")
 for (index, item) in list.enumerated() {
