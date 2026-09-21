@@ -28,8 +28,16 @@ if [ -n "$missing" ]; then
         exit 1
     }
     echo "==> installing the build requirements of the renderer:$missing"
+    # `brew install` asks for "y" before it installs, and that is the
+    # default of Homebrew 7. A build from Xcode has nobody to answer, so it
+    # stops there. The line above says what this installs, so the question
+    # adds nothing. HOMEBREW_NO_ASK does the same as the -y option, and an
+    # older Homebrew that does not know the name ignores it, where it would
+    # stop at an option it does not know.
+    #
+    # HOMEBREW_NO_AUTO_UPDATE keeps a build from updating Homebrew itself.
     # shellcheck disable=SC2086
-    brew install $missing
+    HOMEBREW_NO_ASK=1 HOMEBREW_NO_AUTO_UPDATE=1 brew install $missing
 fi
 
 # The Venus protocol generator is Python with mako. It goes in a virtual
