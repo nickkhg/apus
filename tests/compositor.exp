@@ -28,9 +28,9 @@
 #                    cell of 1200x784 at 72,8 gives the window 1184x744
 #                    at 80,40.
 
-set timeout 180
 log_user 1
 source [file dirname [info script]]/lib.exp
+set timeout $slow
 
 set bin ""
 set uienv ""
@@ -98,14 +98,7 @@ proc act {args} {
 
 # Writes the screen in the guest, then checks the pixels on the Mac.
 proc screen {name args} {
-    global bin
-    send "${bin}apus-screen shot /mnt/screens/$name.ppm\r"
-    expect {
-        "apus-screen:" { fail "$name: the compositor gave no picture" }
-        -re {ok [0-9]+ [0-9]+} {}
-        timeout            { fail "$name: no picture" }
-    }
-    expect -re {# $}
+    settledShot $name $name
     if {[catch {exec python3 tests/screen.py out/vm/screens/$name.ppm {*}$args} result]} {
         fail "$name check: $result"
     }
@@ -120,7 +113,7 @@ login
 # its place says that it did not start. The compositor reads /Applications
 # when it starts, so the bundle goes there first.
 send "mkdir -p /Applications/Broken.app && printf 'id = org.apus.broken\\nname = Broken\\nexec = /bin/true\\ncolor = E0574B\\n' > /Applications/Broken.app/app.conf\r"
-expect -re "# $"
+mark "the bundle of the broken app"
 
 # Root on the serial console has no seat session: libseat opens devices directly.
 send "LIBSEAT_BACKEND=noop APUS_SCREENSHOT_SOCKET=/run/apus-screenshot.sock ${uienv}${bin}apus-compositor &\r"
@@ -129,7 +122,6 @@ expect {
     "apus-compositor:" { fail "compositor reported an error" }
     timeout                { fail "compositor didn't start" }
 }
-after 1000
 
 # The desktop, the rail on the left edge, and the Summon button at the top
 # of it. The pointer is in the middle of the screen.
@@ -146,7 +138,6 @@ act --key super
 # Summon comes in over 160 ms, so the screen is read after it arrives. The
 # pixels of a picture are checked, and a picture of a move is not a picture
 # of the design.
-after 500
 # The surface is 720 wide and in the middle of the screen, so x 280 to 1000.
 # A point to the left of it shows the desktop with the dim layer over it.
 screen summon 640,120=12161A 150,400=020203
@@ -168,7 +159,6 @@ expect {
     timeout { fail "the terminal window did not fill the canvas" }
 }
 act_done
-after 1000
 
 # The head over the window: the accent line that says it has the keyboard,
 # and the bar with the name of the app in it. Then the window of the
@@ -201,7 +191,6 @@ expect {
     timeout { fail "the second window did not take the principal cell" }
 }
 act_done
-after 1000
 # The terminal in a tile does not draw a small grid. It draws a card that
 # states what the shell is doing, on the background of the terminal. The
 # tile is 256 wide at x 1016, and 256 tall from y 8.
@@ -244,7 +233,6 @@ expect {
     timeout { fail "the window that cannot fit a tile did not go to the rail" }
 }
 act_done
-after 1000
 # The card is in the first cell of the band: 256 wide at x 1016, 256 tall
 # from y 8. Its background is the colour of an empty cell, and its head
 # names the app.
@@ -260,7 +248,6 @@ expect {
     timeout { fail "the window in the rail did not come back to the large cell" }
 }
 act_done
-after 1000
 
 # A command of Summon gives the canvas to another layout. Side by side
 # splits the canvas in two: each half is (1200 - 8) / 2 = 596 wide, and the
@@ -275,7 +262,6 @@ expect {
     timeout { fail "the windows did not take half of the canvas each" }
 }
 act_done
-after 1000
 # Two windows, side by side: the terminal on one half and hello on the
 # other. The head of each one sits over its own half.
 screen side-by-side 300,400=3070F0 900,400=14111E
@@ -287,7 +273,6 @@ expect {
     timeout { fail "Summon did not go back to the principal layout" }
 }
 act_done
-after 1000
 
 # A command of Summon closes the window in front. The window of the terminal
 # is then in front again, and it gets the keys again.
@@ -297,7 +282,6 @@ expect {
     timeout             { fail "the compositor sent no close to the window" }
 }
 act_done
-after 1000
 screen close-hello 400,400=14111E
 act --type "echo again-ok > /tmp/again\\n"
 screen typing-again 88,44-700,180!14111E
@@ -315,7 +299,6 @@ expect {
     timeout             { fail "the compositor sent no close to the last window" }
 }
 act_done
-after 1000
 # Nothing is open, so the canvas says how to open something. The message is
 # in the middle of the canvas, which is 1200 x 784 at 72,8.
 screen close-terminal 400,400=07080A 36,400=12161A \
@@ -334,7 +317,6 @@ expect {
     timeout { fail "the system monitor did not take the canvas" }
 }
 act_done
-after 1500
 # It has the whole canvas, so it draws the user interface of a window.
 screen system-window 400,400=171C21 120,60-600,110!0E1114
 
@@ -346,7 +328,6 @@ expect {
     timeout { fail "the monitor did not move into a tile" }
 }
 act_done
-after 1500
 # The tile has the background of the app, and its head names the app.
 screen system-tile 1100,70=0E1114 1030,20-1250,40!0E1114
 
@@ -360,30 +341,26 @@ expect {
 }
 act_done
 # While it starts, the cell says so, and the desktop is not bare.
-after 1000
 screen starting 400,400=0E1114
 # Ten seconds later the cell says that it did not start.
-set timeout 30
+set timeout $slow
 expect {
     "APP-DID-NOT-START org.apus.broken" {}
     timeout { fail "the shell did not give up on the app that never opened a window" }
 }
-set timeout 180
-after 1000
+set timeout $slow
 # The cell names the app, says what went wrong, and shows the program that
 # the bundle names. The two controls of the card are covered by a test of
 # the shell, which can find them without a place on the screen.
 screen did-not-start 400,400=0E1114 300,300-1000,500!0E1114
 
-send "\r"
-expect -re "# $"
+mark "the shell"
 send "kill %1\r"
 expect {
     "COMPOSITOR-EXIT" {}
     timeout           { fail "compositor didn't exit on SIGTERM" }
 }
-send "\r"
-expect -re "# $"
+mark "the shell"
 send "poweroff\r"
 expect eof
 wait

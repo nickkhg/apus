@@ -4,23 +4,31 @@
 #
 # Drives the VM's serial console. Run via `make test`.
 
-set timeout 180
 log_user 1
 
 source [file dirname [info script]]/lib.exp
+# Every step of this test is slow: the installer writes a disk, and a boot
+# follows it. There is no short step here to hurry, so the wait stays long.
+set timeout 180
 
 exec rm -f out/vm/target.img
 
 send_user "\n=== Stage 1: install from live image ===\n"
 spawn $env(APUS_VM) live
 login
-send "apus-install -y /dev/vdb\r"
+# The mark is on the same line as the installer, so the shell prints it when
+# the installer ends. A line sent while the installer still runs can be
+# eaten by it.
+send "apus-install -y /dev/vdb; printf 'INSTALL-%s\\n' done\r"
 expect {
     "Installation complete" {}
     "apus-install:"     { fail "installer reported an error" }
     timeout                 { fail "installer timed out" }
 }
-expect -re "# $"
+expect {
+    "INSTALL-done" {}
+    timeout        { fail "the installer did not give the shell back" }
+}
 send "poweroff\r"
 expect {
     eof     {}
@@ -40,10 +48,10 @@ expect {
     "INSTALLED-2" {}
     timeout          { fail "installed system checks failed" }
 }
-expect -re "# $"
-# Informational: any failed units show up in the log.
-send "systemctl is-system-running --wait; systemctl --failed --no-legend\r"
-expect -re "# $"
+# Informational: any failed units show up in the log. The wait for the
+# system to settle can take a while, so the mark goes on the same line.
+guest "systemctl is-system-running --wait; systemctl --failed --no-legend" \
+    "the units of the system"
 send "poweroff\r"
 expect eof
 wait

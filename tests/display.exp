@@ -7,9 +7,9 @@
 # on the Mac): no compositor runs in this test, and Apple's Virtualization
 # framework gives the host no way to photograph the screen of a guest.
 
-set timeout 120
 log_user 1
 source [file dirname [info script]]/lib.exp
+set timeout $slow
 
 # This is the first test of the installed system, so it is the one that holds
 # that the machine starts into its shell. `login` then stops the shell, and
@@ -24,7 +24,7 @@ expect {
     "SHARE-2" {}
     timeout   { fail "host share /mnt/host not available" }
 }
-expect -re "# $"
+mark "the share"
 
 send "apus-ui-check\r"
 expect {
@@ -32,24 +32,29 @@ expect {
     "UI-CHECK-FAILED" { fail "apus-ui-check reported failures" }
     timeout           { fail "apus-ui-check timed out" }
 }
-expect -re "# $"
+mark "apus-ui-check"
 
-send "apus-display-probe --hold 15 --write /mnt/screens/screen.ppm\r"
+# The picture of the last run must not answer for this one.
+file delete -force out/vm/screens/screen.ppm
+# The hold is for a person who watches the screen. The test reads the file
+# as soon as it arrives, so a long hold is time that nothing uses.
+send "apus-display-probe --hold 1 --write /mnt/screens/screen.ppm\r"
 expect {
     -re {PROBE-READY [0-9]+x[0-9]+} {}
     "apus-display-probe:"       { fail "display probe reported an error" }
     timeout                         { fail "display probe timed out" }
 }
-after 1000
+waitForFile out/vm/screens/screen.ppm "the picture of the probe"
 if {[catch {exec python3 tests/screen.py out/vm/screens/screen.ppm 0.125,0.125=965ADC 0.5,0.5=FFFFFF} result]} {
     fail "screenshot check: $result"
 }
 send_user "\n$result\n"
+set timeout $slow
 expect {
     "PROBE-DONE" {}
     timeout      { fail "display probe didn't finish" }
 }
-expect -re "# $"
+mark "the probe"
 send "poweroff\r"
 expect eof
 wait
