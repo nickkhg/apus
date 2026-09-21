@@ -158,3 +158,25 @@ Symptom: `make demo`, `make demo-dev` or `make gui` stops with `TEST FAILED: VM 
 Cause: those targets boot `out/vm/target.img`, which is the disk that the installer wrote. `tests/install.exp` writes it, and `make test` runs that test. A clone has no such disk. The machine then starts, the firmware finds nothing to boot, and the machine stops.
 
 Solution: `make` now installs the disk when there is none, so these targets work from a clone. `make install-disk` does only that step. The first run takes some minutes, because it builds the image and then installs it.
+
+## apus-vm stops in Metal: "bytesPerRow must be a multiple of pixel bytes"
+
+Symptom: from Xcode, `make demo-dev` or `make gui` stops with
+
+```
+_validateReplaceRegion:252: failed assertion `Replace Region Validation
+bytesPerRow(6619) must be a multiple of MTLPixelFormatBGRA8Unorm pixel bytes(4).
+```
+
+and then `expect: spawn id exp5 not open`, because the machine is gone. The same command in a terminal works.
+
+Cause: two things together.
+
+1. Zink binds memory to an image, and MoltenVK writes that memory into a Metal texture. MoltenVK computes the length of a row, and the number it computes is not a whole count of pixels. The number follows the size of the screen: 6619 on a screen of one size, 13238 on a screen of two times the pixels.
+2. Xcode turns Metal API Validation on for the programs that it runs, with `METAL_DEVICE_WRAPPER_TYPE`. A child of `make` keeps the variable. Validation stops the program at the row above, where Metal alone accepts it.
+
+The frames are correct. A picture of the shell in GPU mode, through Venus, shows the rail, the glow, the clock and the text, with nothing out of place.
+
+Solution: the Makefile takes `METAL_DEVICE_WRAPPER_TYPE` away from the machine (`unexport`). To look at this again, set `MTL_DEBUG_LAYER=1`, which turns validation on for one run.
+
+`tests/venus.exp` now draws the shell in its GPU mode as well. Before, every step of it pinned `APUS_SHELL_MODE=cpu`, so the shadow, the blur and the gradient never went through Venus in any test.

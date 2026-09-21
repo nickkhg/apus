@@ -50,6 +50,8 @@ GPU0:
 
 `make test-venus` checks this. It also starts the compositor on that GPU and compares the picture with the one the CPU draws. It needs the renderer, which the next section builds, so `make test` leaves it out.
 
+The comparison pins `APUS_SHELL_MODE=cpu`, because the two modes of the shell draw different pictures on purpose. Therefore the test draws the GPU mode one more time at the end, and asks only that the frame arrives. Without that step the shadow, the blur and the gradient went through Venus in no test at all.
+
 The device also draws. It carries the 2D commands, so the compositor runs on it alone:
 
 ```sh

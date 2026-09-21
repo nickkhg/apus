@@ -91,6 +91,18 @@ export APUS_VM := $(VM)
 # Xcode and other GUI apps start make with a minimal PATH.
 export PATH := /usr/local/bin:/opt/homebrew/bin:$(PATH)
 
+# Xcode turns Metal API Validation on for what it runs, with this variable,
+# and a child of make keeps it. Validation then stops apus-vm in MoltenVK:
+# "bytesPerRow(6619) must be a multiple of MTLPixelFormatBGRA8Unorm pixel
+# bytes(4)". MoltenVK computes that number for an image that Zink binds, and
+# the number is not a whole count of pixels. The frames are right, and
+# validation makes a fault of another project fatal here.
+#
+# So a build from Xcode ran no machine at all, and the same build in a
+# terminal worked. This takes the variable away from the machine.
+# MTL_DEBUG_LAYER=1 turns validation on again, for a person who wants it.
+unexport METAL_DEVICE_WRAPPER_TYPE
+
 # Work files live in container volumes (ext4): macOS file systems are
 # case-insensitive and don't keep Linux ownership. The package cache volume
 # means packages are downloaded once. The repository has the same path in the
