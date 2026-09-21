@@ -37,27 +37,82 @@ protocol Screen: AnyObject {
     func writePicture(to path: String) throws
 }
 
+/// Turns a display list into pixels. The screen owns the buffers and the
+/// display; this makes the picture that goes in them.
+///
+/// The CPU rasterizer draws with SoftwareRenderer. The offscreen one draws
+/// with the GPU and reads the frame back. GPUScreen has neither, because
+/// there the GPU draws into the buffer that the display reads.
+protocol FrameRasterizer: AnyObject {
+    /// Whether a GPU draws the frames. The shell asks, because it holds
+    /// different values for depth in each mode (see Theme.swift).
+    var usesGPU: Bool { get }
+    /// For the frame times of MYDISTRO_FRAME_LOG.
+    var name: String { get }
+
+    func render(_ list: DisplayList, into pixels: UnsafeMutablePointer<UInt32>,
+                width: Int, height: Int, stride: Int)
+}
+
+/// Draws with the CPU. Its pixels are the same on every run, which is what
+/// the tests check.
+final class CPURasterizer: FrameRasterizer {
+    let usesGPU = false
+    let name = "cpu"
+
+    func render(_ list: DisplayList, into pixels: UnsafeMutablePointer<UInt32>,
+                width: Int, height: Int, stride: Int) {
+        SoftwareRenderer.render(list, into: Canvas(pixels: pixels, width: width,
+                                                  height: height, stride: stride))
+    }
+}
+
 /// The screen that `MYDISTRO_RENDERER` asks for. The default is the CPU,
 /// because its pixels are the same on every run and the tests check exact
 /// colours.
+///
+/// `gpu` draws through GBM, which is how a compositor normally reaches the
+/// display. That needs a driver that can export a dma-buf, and a virtual
+/// machine on a Mac has none, so `gpu` falls back to drawing offscreen and
+/// reading each frame back. `offscreen` asks for that way from the start.
+/// See docs/gpu.md.
 func makeScreen(device: DRMDevice) throws -> any Screen {
     let wanted = getenv("MYDISTRO_RENDERER").map { String(cString: $0) } ?? "cpu"
     switch wanted {
     case "cpu", "software":
         return try SoftwareScreen(device: device)
     case "gpu", "gl":
-        return try GPUScreen(device: device)
+        do {
+            return try GPUScreen(device: device)
+        } catch {
+            log("screen: the GPU cannot draw straight into the display "
+                + "(\(error)); drawing offscreen instead")
+        }
+        do {
+            return try SoftwareScreen(device: device, rasterizer: OffscreenRasterizer())
+        } catch {
+            log("screen: no GPU draws here (\(error)); using the CPU")
+            return try SoftwareScreen(device: device)
+        }
+    case "offscreen":
+        return try SoftwareScreen(device: device, rasterizer: OffscreenRasterizer())
     default:
-        log("screen: MYDISTRO_RENDERER must be 'cpu' or 'gpu', not '\(wanted)'; using cpu")
+        log("screen: MYDISTRO_RENDERER must be 'cpu', 'gpu' or 'offscreen', "
+            + "not '\(wanted)'; using cpu")
         return try SoftwareScreen(device: device)
     }
 }
 
-/// Draws with the CPU into dumb buffers, double-buffered: we draw into the
-/// back buffer and flip it to the front at the next vertical blank. Frames
-/// are drawn only when something changed.
+/// Draws into dumb buffers, double-buffered: we draw into the back buffer
+/// and flip it to the front at the next vertical blank. Frames are drawn
+/// only when something changed.
+///
+/// The rasterizer makes the picture. With the CPU one this is the whole of
+/// the software path. With the offscreen one the GPU draws the frame and
+/// the screen still owns the buffers and the flips.
 final class SoftwareScreen: Screen, PageFlipHandler {
-    let usesGPU = false
+    var usesGPU: Bool { rasterizer.usesGPU }
+    private let rasterizer: any FrameRasterizer
 
     let device: DRMDevice
     private(set) var output: Output
@@ -82,14 +137,19 @@ final class SoftwareScreen: Screen, PageFlipHandler {
     private var canPageFlip = true
     /// True while a frame is being drawn.
     private var isDrawing = false
+    private var timer: FrameTimer
     /// Set when the display reported a change. The new size is taken between
     /// frames, because a buffer that the screen is showing cannot go away.
     private var displayMayHaveChanged = false
 
-    init(device: DRMDevice) throws(DRMError) {
+    init(device: DRMDevice, rasterizer: any FrameRasterizer = CPURasterizer())
+        throws(DRMError)
+    {
         guard let output = try device.connectedOutputs().first else { throw .noDevice }
         self.device = device
         self.output = output
+        self.rasterizer = rasterizer
+        self.timer = FrameTimer(name: rasterizer.name)
         let (w, h) = (output.mode.width, output.mode.height)
         buffers = [try DumbFramebuffer(device: device, width: w, height: h),
                    try DumbFramebuffer(device: device, width: w, height: h)]
@@ -151,13 +211,14 @@ final class SoftwareScreen: Screen, PageFlipHandler {
 
     private func drawFrame() {
         isDrawing = true
-        defer { isDrawing = false }
+        timer.began()
+        defer { isDrawing = false; timer.ended(width: width, height: height) }
         needsFrame = false
         let buffer = buffers[back]
         let list = displayList()
         buffer.withPixels { pixels, stride in
-            SoftwareRenderer.render(list, into: Canvas(pixels: pixels, width: width,
-                                                      height: height, stride: stride))
+            rasterizer.render(list, into: pixels, width: width, height: height,
+                              stride: stride)
         }
         if canPageFlip {
             do {

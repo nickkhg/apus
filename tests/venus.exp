@@ -1,0 +1,154 @@
+#!/usr/bin/expect -f
+# Venus test: the guest finds the GPU of the Mac.
+#
+# mydistro-vm is the virtio-gpu device itself (VM_CUSTOM_GPU=1), with
+# virglrenderer and Venus behind it. This test asks the guest what Vulkan
+# it has. The answer has to name the GPU of this Mac, through Venus.
+#
+# It needs the renderer, which `build/make-virglrenderer.sh` builds. Without
+# it the device carries no 3D and this test fails at the first step. That is
+# why `make test` does not run it: see docs/gpu.md.
+#
+# Nothing in tests/ besides this one turns the device on, so the rest of the
+# tests say whether the machine without it still works.
+
+set timeout 30
+log_user 1
+source [file dirname [info script]]/lib.exp
+
+proc sh {command what {seconds 10}} {
+    set timeout $seconds
+    send "$command\r"
+    expect {
+        -re {# $} {}
+        timeout   { fail "$what: the guest did not answer" }
+    }
+    set timeout 10
+}
+
+spawn env VM_GPU=headless VM_CUSTOM_GPU=1 $env(MYDISTRO_VM) installed
+login
+
+# The device says what it offers before the guest asks for it.
+send "dmesg | grep -F '\[drm\]' | tail -8\r"
+expect {
+    "+virgl" {}
+    timeout  { fail "the guest driver did not take the 3D device" }
+}
+expect {
+    -re {# $} {}
+    timeout   { fail "the guest did not answer" }
+}
+
+# Venus needs all of these. Each one was a day of work; see docs/gpu.md.
+#
+# The word that says a feature is absent is written in two pieces, so the
+# shell's echo of the command line cannot answer for the command: only the
+# output of the command puts the two pieces together.
+send "for f in resource_blob host_visible context_init blob_alignment;"
+send " do dmesg | grep -q -- \"+\$f\" || echo \"MISS\"\"ING \$f\"; done;"
+send " echo CHECKED-\$((1))\r"
+expect {
+    -re {MISSING ([a-z_]+)} {
+        fail "the guest reports no $expect_out(1,string)"
+    }
+    "CHECKED-1" {}
+    timeout { fail "the guest did not answer about the features" }
+}
+expect { -re {# $} {} timeout { fail "no prompt after the features" } }
+
+# The name of the GPU comes from the Mac, through MoltenVK and Venus.
+send "vulkaninfo --summary 2>/dev/null | grep -E 'deviceName|driverID'\r"
+expect {
+    "DRIVER_ID_MESA_VENUS" {}
+    "ERROR"                { fail "Vulkan did not start in the guest" }
+    timeout                { fail "the guest found no Vulkan device" }
+}
+expect { -re {# $} {} timeout { fail "no prompt after vulkaninfo" } }
+
+# The compositor draws with that GPU, and draws the same picture as the CPU.
+#
+# The two run one after the other, and each writes its screen to the share.
+# tests/renderers.py then compares them, as tests/gpu.exp does for the GBM
+# path. A renderer that draws the right picture with the wrong device, or
+# the right device with the wrong picture, fails here.
+set marks 0
+
+proc settle {what} {
+    global marks
+    incr marks
+    send "echo MARK-\$(($marks))\r"
+    expect { "MARK-$marks" {} timeout { fail "$what: the guest did not answer" } }
+}
+
+proc drawWith {command name} {
+    send "$command LIBSEAT_BACKEND=noop MYDISTRO_SHELL_MODE=cpu "
+    send "MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock "
+    send "mydistro-compositor &\r"
+    expect {
+        "COMPOSITOR-READY"     {}
+        "mydistro-compositor:" { fail "$name: the compositor reported an error" }
+        timeout                { fail "$name: the compositor did not start" }
+    }
+    after 1500
+    send "mydistro-screen shot /mnt/screens/$name.ppm\r"
+    expect {
+        -re {ok [0-9]+ [0-9]+} {}
+        "mydistro-screen:"     { fail "$name: the compositor gave no picture" }
+        timeout                { fail "$name: no picture" }
+    }
+    settle "$name: the picture"
+    send "kill %%\r"
+    expect { "COMPOSITOR-EXIT" {} timeout { fail "$name: the compositor did not stop" } }
+    settle "$name: the exit"
+    send "wait; echo GONE-\$(($::marks))\r"
+    expect { "GONE-$::marks" {} timeout { fail "$name: the compositor did not go away" } }
+}
+
+drawWith "MYDISTRO_RENDERER=cpu" "venus-cpu"
+
+# mydistro-gpu puts Zink and its Vulkan in front of the compositor. The
+# renderer line has to name Venus: with anything else the GPU of the Mac is
+# not what drew the frame.
+send "MYDISTRO_RENDERER=gpu LIBSEAT_BACKEND=noop MYDISTRO_SHELL_MODE=cpu "
+send "MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock "
+send "mydistro-gpu mydistro-compositor &\r"
+expect {
+    -re {GPU-RENDERER [^\r\n]*Venus[^\r\n]*} {
+        send_user "\n$expect_out(0,string)\n"
+    }
+    -re {GPU-RENDERER [^\r\n]*} {
+        fail "the GPU of the Mac did not draw: $expect_out(0,string)"
+    }
+    "mydistro-compositor:" { fail "the compositor reported an error" }
+    timeout                { fail "the compositor did not say what drew" }
+}
+expect {
+    "COMPOSITOR-READY"     {}
+    "mydistro-compositor:" { fail "the compositor reported an error" }
+    timeout                { fail "the compositor did not start" }
+}
+after 1500
+send "mydistro-screen shot /mnt/screens/venus-gpu.ppm\r"
+expect {
+    -re {ok [0-9]+ [0-9]+} {}
+    timeout { fail "the GPU gave no picture" }
+}
+settle "the picture of the GPU"
+send "kill %%\r"
+expect { "COMPOSITOR-EXIT" {} timeout { fail "the compositor did not stop" } }
+settle "the exit of the GPU"
+send "wait; echo GONE-\$(($marks))\r"
+expect { "GONE-$marks" {} timeout { fail "the compositor did not go away" } }
+
+if {[catch {exec python3 tests/renderers.py \
+        out/vm/screens/venus-cpu.ppm out/vm/screens/venus-gpu.ppm} result]} {
+    fail "the GPU of the Mac draws a different picture: $result"
+}
+send_user "\nthe GPU and the CPU agree: $result\n"
+
+send "poweroff\r"
+expect eof
+wait
+
+send_user "\n\nVENUS TEST PASSED\n"

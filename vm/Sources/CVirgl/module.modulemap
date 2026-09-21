@@ -1,0 +1,10 @@
+// virglrenderer, the renderer of the host side of the GPU.
+//
+// build/make-virglrenderer.sh builds it into build/cache. The Makefile
+// gives the compiler its include directory and the linker its library, so
+// this module map needs no path of its own.
+module CVirgl [system] {
+    header "shim.h"
+    link "virglrenderer"
+    export *
+}

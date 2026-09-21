@@ -134,7 +134,7 @@ private func console() -> VZSerialPortConfiguration {
     let port = VZVirtioConsoleDeviceSerialPortConfiguration()
     port.attachment = VZFileHandleSerialPortAttachment(
         fileHandleForReading: Terminal.guestInput,
-        fileHandleForWriting: FileHandle.standardOutput)
+        fileHandleForWriting: GuestConsole.guestOutput)
     return port
 }
 

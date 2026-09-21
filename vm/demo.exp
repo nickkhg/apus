@@ -23,17 +23,43 @@ if {[info exists env(MYDISTRO_UI_DIR)]} {
 if {[info exists env(MYDISTRO_SCALE)]} {
     append uienv "MYDISTRO_SCALE=$env(MYDISTRO_SCALE) "
 }
+# Which renderer draws. The demo asks for the GPU, because this is the one
+# place that shows what the machine can do. The tests keep the CPU, whose
+# pixels are the same on every run. `gpu` falls back to the CPU on a machine
+# with no GPU behind it, so this is safe everywhere. See docs/ui.md and
+# docs/gpu.md.
+set renderer "gpu"
+if {[info exists env(MYDISTRO_RENDERER)]} {
+    set renderer $env(MYDISTRO_RENDERER)
+}
+append uienv "MYDISTRO_RENDERER=$renderer "
 
-spawn env VM_GPU=window $env(MYDISTRO_VM) installed
+# The compositor times its own frames and writes a line for every 60 of
+# them, which is about one line a second. The Debug menu of the window
+# reads those lines. MYDISTRO_FRAME_LOG names another number, or 0 for none.
+set frameLog 60
+if {[info exists env(MYDISTRO_FRAME_LOG)]} {
+    set frameLog $env(MYDISTRO_FRAME_LOG)
+}
+if {$frameLog ne "0"} {
+    append uienv "MYDISTRO_FRAME_LOG=$frameLog "
+}
+
+# VM_CUSTOM_GPU adds the virtio-gpu device that this program makes, which
+# is the one that carries the GPU of the Mac. mydistro-gpu then puts the
+# compositor on it. Without the renderer on the host, or without the Zink
+# package in the guest, both fall back and the compositor draws with the
+# CPU. See docs/gpu.md.
+spawn env VM_GPU=window VM_CUSTOM_GPU=1 $env(MYDISTRO_VM) installed
 login
-send "LIBSEAT_BACKEND=noop ${uienv}${bin}mydistro-compositor &\r"
+send "LIBSEAT_BACKEND=noop ${uienv}mydistro-gpu ${bin}mydistro-compositor &\r"
 expect {
     "COMPOSITOR-READY"     {}
     "mydistro-compositor:" { fail "compositor reported an error" }
 }
-send_user "\n\n>>> mydistro compositor is running in the QEMU window.\n"
-send_user ">>> Click the T in the dock to open the terminal, and type in it.\n"
+send_user "\n\n>>> mydistro is running in the window.\n"
+send_user ">>> Press Super to open Summon, and type the name of an app.\n"
 send_user ">>> Ctrl+Alt+Backspace stops the compositor.\n"
-send_user ">>> Close the QEMU window to stop the VM.\n\n"
+send_user ">>> Close the window to stop the VM.\n\n"
 set timeout -1
 expect eof

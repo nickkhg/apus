@@ -22,6 +22,18 @@ rm -rf "$STAGE" "$IMG"
 mkdir -p "$ROOT" "$ESP"
 mount --bind "$ROOT" "$ROOT"     # pacstrap wants the root to be a mount point
 
+step "Installing package build requirements"
+# What packages/*/PKGBUILD need to build, but the target does not need to
+# run. They are here and not in the builder image because the image adds the
+# two toolchain tarballs, and a rebuild of it has to send them both to the
+# container tool, which truncates a context that large. /var/cache/pacman/pkg
+# is a volume, so this downloads once.
+pacman -Sy --noconfirm --needed \
+    meson ninja cmake python-mako python-packaging python-yaml \
+    glslang spirv-tools expat zlib zstd vulkan-headers vulkan-icd-loader \
+    libx11 libxext libxdamage libxfixes libxshmfence libxxf86vm libxrandr \
+    xorgproto libxcb
+
 step "Building mydistro packages"
 # Every packages/<name>/PKGBUILD becomes a package in the local [mydistro]
 # repository. makepkg won't run as root, so it runs as `builder`.

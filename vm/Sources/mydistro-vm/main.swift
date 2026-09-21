@@ -46,13 +46,22 @@ do {
 // Runner, which put it back.
 Terminal.onQuit = { Runner.requestStop() }
 Terminal.start()
+// Everything the guest writes goes out as before, and the window reads the
+// frame times out of it on the way.
+GuestConsole.start()
+
+// The custom device is held here: the framework's provider keeps only a
+// weak reference to its delegate.
+let customGPU = makeCustomGPU(options, configuration)
 
 let runner = Runner(configuration: configuration)
 runner.start()
 
 switch options.display {
 case .window:
-    Window(runner: runner, size: options.screen).run()
+    Window(runner: runner, size: options.screen,
+           followsWindow: options.followsWindow, customGPU: customGPU).run()
 case .none, .headless:
+    if #available(macOS 27, *) { attachSnapshot(to: customGPU) }
     RunLoop.main.run()
 }

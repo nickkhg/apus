@@ -74,7 +74,7 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
   |---|---|
   | libkrun | It uses Hypervisor.framework, not Virtualization. It has virtio-gpu with Venus on Metal. |
   | QEMU with Venus | A build of our own. The QEMU of Homebrew does not have it. |
-  | A virtio-gpu device of our own | `VZCustomVirtioDevice`, on macOS 26 or later. We must then write a Venus decoder on MoltenVK. |
+  | A virtio-gpu device of our own | `VZCustomVirtioDevice`, on macOS 27 or later. We must then write a Venus decoder on MoltenVK. |
 
 - The GPU renderer draws a `path` from a coverage texture. The CPU makes that texture. `TextureCache` keeps it, so a shape that stays costs nothing after the first frame. A shape that moves or changes size goes to the CPU again. To fill an outline on the GPU, use a stencil pass and then a cover pass, with more than one sample for the smooth edges.
 - The GPU renderer sends the pixels of a window to the GPU at each commit. The GPU can read a buffer of the app directly, with `EGL_WL_bind_wayland_display` or with dma-buf. That removes the copy.

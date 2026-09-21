@@ -35,14 +35,41 @@ SDK_STAMP        := $(SWIFT_SDKS)/$(SWIFT_SDK).artifactbundle/info.json
 # MYDISTRO_CROSS tells ui/Toolkit/Package.swift not to run pkg-config: the
 # Swift SDK has the include directories, and pkg-config would answer with the
 # macOS libraries of Homebrew.
+# The compositor draws every pixel of every frame, and a debug build of it
+# is several times slower than the one the image carries, which makepkg
+# builds with -c release. `make demo-dev` would then look slow for a reason
+# that has nothing to do with the machine. UI_CONFIG=debug asks for the
+# other one.
+UI_CONFIG        ?= release
 SWIFT_BUILD       = MYDISTRO_CROSS=1 $(SWIFT_MAC)/usr/bin/swift build --package-path ui \
-	--swift-sdks-path $(SWIFT_SDKS) --swift-sdk $(SWIFT_SDK) --static-swift-stdlib
+	--swift-sdks-path $(SWIFT_SDKS) --swift-sdk $(SWIFT_SDK) --static-swift-stdlib \
+	-c $(UI_CONFIG)
 
 # mydistro-vm boots the images. It builds with the Swift toolchain of Xcode,
 # because Virtualization and AppKit are frameworks of the platform. The
 # program needs the com.apple.security.virtualization entitlement, and a
 # local (ad hoc) signature carries it.
-VM_BUILD = xcrun swift build --package-path vm -c release
+# The renderer of the host side of the GPU, when build/make-virglrenderer.sh
+# has built it. Without it the program builds and runs as before, and the
+# GPU device of our own is not in it.
+VIRGL_DIR  := build/cache/virglrenderer
+VIRGL_LIB  := $(VIRGL_DIR)/build/src/libvirglrenderer.dylib
+# The renderer loads Vulkan by name at run time: libvulkan.dylib first, then
+# libMoltenVK.dylib. Neither is on the standard path, and dyld looks for a
+# name with no directory in it along the run paths of the program, so the
+# program carries the two Homebrew directories.
+VULKAN_DIR := $(shell brew --prefix vulkan-loader 2>/dev/null)/lib
+MOLTEN_DIR := $(shell brew --prefix molten-vk 2>/dev/null)/lib
+VIRGL_FLAGS = $(if $(wildcard $(VIRGL_LIB)),\
+	-Xswiftc -DVIRGL \
+	-Xcc -I$(CURDIR)/$(VIRGL_DIR)/src \
+	-Xcc -I$(CURDIR)/$(VIRGL_DIR)/build/src \
+	-Xlinker -L$(CURDIR)/$(VIRGL_DIR)/build/src \
+	-Xlinker -rpath -Xlinker $(CURDIR)/$(VIRGL_DIR)/build/src \
+	-Xlinker -rpath -Xlinker $(VULKAN_DIR) \
+	-Xlinker -rpath -Xlinker $(MOLTEN_DIR),)
+
+VM_BUILD = xcrun swift build --package-path vm -c release $(VIRGL_FLAGS)
 VM       = $(shell xcrun swift build --package-path vm -c release --show-bin-path)/mydistro-vm
 # The expect scripts in tests/ and vm/ start the machine through this.
 export MYDISTRO_VM := $(VM)
@@ -62,7 +89,7 @@ RUN = container run --rm --cap-add ALL -c $(CPUS) -m $(MEM) \
 	-v $(VOL_PKG):/var/cache/pacman/pkg \
 	-w $(CURDIR)
 
-.PHONY: help builder volumes build sdk ui ui-container protocols shell vm live installed gui demo demo-dev test test-dev test-ui test-ui-linux bench clean distclean
+.PHONY: help builder volumes build sdk ui ui-container protocols shell vm live installed gui demo demo-dev test test-venus test-dev test-ui test-ui-linux bench clean distclean
 
 help:
 	@echo "make build      build out/live.img"
@@ -77,6 +104,7 @@ help:
 	@echo "make sdk        the macOS Swift toolchain and the mydistro Swift SDK (make ui does this)"
 	@echo "make test       install, display, compositor and GPU tests"
 	@echo "make test-ui    unit tests of the toolkit and the shell, on the Mac (seconds)"
+	@echo "make test-venus  the guest finds the GPU of the Mac (needs the renderer)"
 	@echo "make test-ui-linux  the same tests in the builder container"
 	@echo "make bench      how long one frame of the shell takes"
 	@echo "make test-dev   the compositor test, with the programs from 'make ui'"
@@ -134,7 +162,7 @@ volumes:
 build: builder volumes
 	$(RUN) $(IMAGE) build/build.sh
 
-# Fast Swift loop: no image rebuild. Debug build, Swift runtime linked in.
+# Fast Swift loop: no image rebuild. The Swift runtime is linked in.
 ui: sdk
 	$(SWIFT_BUILD)
 	mkdir -p out/ui
@@ -187,9 +215,12 @@ installed: vm
 	$(VM) installed
 
 gui: vm
-	VM_GPU=window $(VM) installed
+	VM_GPU=window VM_CUSTOM_GPU=1 $(VM) installed
 
-# The installed system in a window, with the compositor and a test window running.
+# The installed system in a window, with the compositor and a test window
+# running. The compositor draws with the GPU of the Mac when the renderer is
+# built (build/make-virglrenderer.sh) and falls back to the CPU when it is
+# not. See docs/gpu.md.
 demo: vm
 	vm/demo.exp
 
@@ -203,6 +234,12 @@ test: vm
 	tests/display.exp
 	tests/compositor.exp
 	tests/gpu.exp
+
+# The guest finds the GPU of the Mac. This one needs the renderer, which
+# build/make-virglrenderer.sh builds, so `make test` leaves it out. Needs the
+# installed disk from `make test`. See docs/gpu.md.
+test-venus: vm
+	tests/venus.exp
 
 # The compositor test with the programs from `make ui`. Needs the installed
 # disk from `make test`.

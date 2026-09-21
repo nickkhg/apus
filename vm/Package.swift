@@ -17,6 +17,10 @@ let package = Package(
     name: "mydistro-vm",
     platforms: [.macOS(.v14)],
     targets: [
-        .executableTarget(name: "mydistro-vm", path: "Sources/mydistro-vm"),
+        // virglrenderer. The Makefile passes the include directory and the
+        // library, and defines VIRGL, when build/cache holds a build of it.
+        .systemLibrary(name: "CVirgl", path: "Sources/CVirgl"),
+        .executableTarget(name: "mydistro-vm", dependencies: ["CVirgl"],
+                          path: "Sources/mydistro-vm"),
     ]
 )

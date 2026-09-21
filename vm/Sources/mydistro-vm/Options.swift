@@ -25,6 +25,11 @@ struct Options {
     var targetSize: UInt64
     /// The size of the screen, in pixels.
     var screen: (width: Int, height: Int)
+    /// Whether a resize of the window resizes the screen of the guest.
+    var followsWindow: Bool
+    /// Whether to add a virtio-gpu device of our own, beside the one the
+    /// framework gives. See VirtioGPUDevice.
+    var customGPU: Bool
 
     static let usage = """
         usage: mydistro-vm live|installed
@@ -36,6 +41,12 @@ struct Options {
         TARGET_SIZE sets the size of the target disk (default 8G).
         VM_SCREEN sets the size of the screen, for example 1920x1200
         (default 1280x800; the pixel tests need that size).
+        VM_RESIZE=off keeps that size when the window changes size. The
+        default follows the window, and a Mac with small pixels then gives
+        the guest twice the pixels in each direction.
+        VM_CUSTOM_GPU=1 adds a virtio-gpu device that this program is the
+        implementation of, beside the one the framework gives. It is the way
+        to a guest that has a GPU; the framework's own device has none.
         """
 
     static func parse(
@@ -61,7 +72,15 @@ struct Options {
         let wanted = environment["VM_SCREEN"] ?? "1280x800"
         guard let screen = screenSize(wanted) else { throw .badScreen(wanted) }
 
-        return Options(mode: mode, display: display, targetSize: targetSize, screen: screen)
+        // A window on a Mac with small pixels has twice as many pixels in
+        // each direction as it has points. The guest then draws four times
+        // the pixels, which the CPU renderer feels. VM_RESIZE=off keeps the
+        // size that VM_SCREEN asked for.
+        let followsWindow = (environment["VM_RESIZE"] ?? "on") != "off"
+        let customGPU = environment["VM_CUSTOM_GPU"] == "1"
+
+        return Options(mode: mode, display: display, targetSize: targetSize,
+                       screen: screen, followsWindow: followsWindow, customGPU: customGPU)
     }
 
     /// A size as WIDTHxHEIGHT.

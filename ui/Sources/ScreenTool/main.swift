@@ -49,7 +49,16 @@ func ask(_ request: String) -> String {
     let joined = withUnsafePointer(to: &address) {
         $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, size) }
     }
-    guard joined == 0 else { fail("no compositor on \(socketPath) (errno \(errno))") }
+    guard joined == 0 else {
+        // Every command needs the socket, `input` as much as `shot`: the
+        // pointer reports where it is from 0 to 32767, so the tool must ask
+        // the compositor how wide the screen is before it can move to a
+        // pixel. A compositor without the variable has no socket at all.
+        fail("""
+            no compositor on \(socketPath) (errno \(errno)).
+            Start it with MYDISTRO_SCREENSHOT_SOCKET=\(socketPath).
+            """)
+    }
 
     let line = request + "\n"
     _ = line.withCString { write(fd, $0, strlen($0)) }
