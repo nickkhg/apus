@@ -145,7 +145,14 @@ One fault in this program is worth writing down. virglrenderer keeps the pointer
 
 1. The read back of each frame is a copy of the screen. A frame that the GPU drew into memory the guest can see, and that the device then scans out, would cost nothing. That needs the device to carry `SET_SCANOUT_BLOB`, and the compositor to draw into a blob.
 2. The 2D command set carries a picture, and no more. The device takes a resource of any size and shows it, and it reads every transfer as a whole rectangle. Cursors go through the second queue, and the device does not answer them.
-3. Frame times with the GPU are not measured yet. The table at the top is the CPU renderer against llvmpipe, which is what the guest had before.
+3. The GPU is not yet faster than the CPU for what the shell draws. With an empty desktop at 2560x1600, and the shell drawing its shadows and gradients, one frame takes:
+
+| Renderer | Average | Longest | Frames a second |
+|---|---|---|---|
+| `cpu` | 14.9 ms | 19.1 ms | 67 |
+| `gpu` (Venus, Metal) | 16.5 ms | 23.0 ms | 61 |
+
+   The GPU draws the frame and the compositor then reads it back. That read copies the whole screen, whatever the frame holds. An empty desktop is little work to draw, so the copy is most of the time. Item 1 takes the copy away.
 
 ## The other way
 
