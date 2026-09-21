@@ -177,7 +177,7 @@ Cause: two things together.
 
 The frames are correct. A picture of the shell in GPU mode, through Venus, shows the rail, the glow, the clock and the text, with nothing out of place.
 
-Solution: `apus-vm` takes the validation switches out of itself, before it makes a Metal device. See `vm/Sources/apus-vm/MetalValidation.swift`. The Makefile also takes `METAL_DEVICE_WRAPPER_TYPE` away from the machine (`unexport`), and that alone was not enough: a build from Xcode stopped here again, because Xcode turns validation on with a name that the Makefile did not know.
+Solution: `apus-vm` takes the validation switches out of itself, before it makes a Metal device. See `vm/Sources/apus-vm/MetalValidation.swift`. The Makefile also takes `METAL_DEVICE_WRAPPER_TYPE` away from the machine (`unexport`). That alone was not sufficient. A build from Xcode stopped here again, because Xcode turns validation on with a name that the Makefile does not know.
 
 Therefore the program says what it did:
 
@@ -186,7 +186,9 @@ apus-vm: Metal validation off for this machine: METAL_DEVICE_WRAPPER_TYPE MTL_DE
 apus-vm: Metal names that this program leaves alone: ...
 ```
 
-The second line names every other `MTL_` and `METAL_` name in the environment. A Mac that stops here again names the switch that the list does not have, so the next step is not a guess. The program leaves those names alone, because a name that no test has seen is not one to take away in silence.
+The second line names every other `MTL_` and `METAL_` name in the environment. A Mac that stops here again names the switch that the list does not have, so the next step is not a guess. The program leaves those names alone. A name that no test examined is not a name to take away in silence.
+
+Xcode has the same switch in the scheme: Product, Edit Scheme, Run, Diagnostics, Metal API Validation. Turning it off there stops the fault as well. The program does not need it: it takes the switches out of itself, whatever starts it.
 
 `APUS_METAL_VALIDATION=1` keeps validation on, to look at this again.
 
