@@ -7,8 +7,8 @@ import Render
 public struct FrameView<Content: View>: View {
     public typealias Body = Never
     let content: Content
-    let width: Double?
-    let height: Double?
+    var width: Double?
+    var height: Double?
     let minWidth: Double?
     let minHeight: Double?
     let maxWidth: Double?
@@ -16,11 +16,24 @@ public struct FrameView<Content: View>: View {
     let alignment: Alignment
 
     public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
+        let shown = shown(in: environment)
         nodes.append(FrameNode(child: content.node(environment: environment),
-                               width: width, height: height,
+                               width: shown.width, height: shown.height,
                                minWidth: minWidth, minHeight: minHeight,
                                maxWidth: maxWidth, maxHeight: maxHeight,
                                alignment: alignment))
+    }
+}
+
+extension FrameView: Animatable {
+    /// The width and the height move. A side that the view did not fix
+    /// stays as it is: there is no number there to move.
+    public var animatableData: AnimatablePair<Double, Double> {
+        get { AnimatablePair(width ?? 0, height ?? 0) }
+        set {
+            if width != nil { width = newValue.first }
+            if height != nil { height = newValue.second }
+        }
     }
 }
 
@@ -51,11 +64,23 @@ public struct BackgroundView<Content: View, Background: View>: View {
 public struct OffsetView<Content: View>: View {
     public typealias Body = Never
     let content: Content
-    let dx: Double
-    let dy: Double
+    var dx: Double
+    var dy: Double
 
     public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
-        nodes.append(OffsetNode(child: content.node(environment: environment), dx: dx, dy: dy))
+        let shown = shown(in: environment)
+        nodes.append(OffsetNode(child: content.node(environment: environment),
+                                dx: shown.dx, dy: shown.dy))
+    }
+}
+
+extension OffsetView: Animatable {
+    public var animatableData: AnimatablePair<Double, Double> {
+        get { AnimatablePair(dx, dy) }
+        set {
+            dx = newValue.first
+            dy = newValue.second
+        }
     }
 }
 

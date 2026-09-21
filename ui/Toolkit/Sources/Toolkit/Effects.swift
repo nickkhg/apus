@@ -62,7 +62,7 @@ public struct ShadowStyle: Equatable, Sendable {
 public struct Blur: View {
     public typealias Body = Never
     /// How far a pixel spreads, in points.
-    public let radius: Double
+    public var radius: Double
     /// The corner of the area that is made soft.
     public let cornerRadius: Double
 
@@ -72,7 +72,15 @@ public struct Blur: View {
     }
 
     public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
-        nodes.append(BlurNode(radius: radius, cornerRadius: cornerRadius))
+        let shown = shown(in: environment)
+        nodes.append(BlurNode(radius: shown.radius, cornerRadius: cornerRadius))
+    }
+}
+
+extension Blur: Animatable {
+    public var animatableData: Double {
+        get { radius }
+        set { radius = newValue }
     }
 }
 
@@ -92,8 +100,8 @@ public struct LinearGradient: View, Equatable, Sendable {
         case downRight
     }
 
-    public let from: Color
-    public let to: Color
+    public var from: Color
+    public var to: Color
     public let direction: Direction
 
     public init(from: Color, to: Color, direction: Direction = .down) {
@@ -119,11 +127,23 @@ public struct LinearGradient: View, Equatable, Sendable {
     }
 
     public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
-        nodes.append(GradientNode(gradient: self, makePath: { frame in
+        nodes.append(GradientNode(gradient: shown(in: environment), makePath: { frame in
             var path = Path()
             path.addRectangle(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
             return path
         }))
+    }
+}
+
+extension LinearGradient: Animatable {
+    /// The two ends move. The direction is not a number, so it changes at
+    /// once.
+    public var animatableData: AnimatablePair<Color.AnimatableData, Color.AnimatableData> {
+        get { AnimatablePair(from.animatableData, to.animatableData) }
+        set {
+            from.animatableData = newValue.first
+            to.animatableData = newValue.second
+        }
     }
 }
 
@@ -138,10 +158,19 @@ extension Shape {
 public struct GradientShape<S: Shape>: View {
     public typealias Body = Never
     let shape: S
-    let gradient: LinearGradient
+    var gradient: LinearGradient
 
     public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
-        nodes.append(GradientNode(gradient: gradient, makePath: { shape.path(in: $0) }))
+        let shown = shown(in: environment)
+        nodes.append(GradientNode(gradient: shown.gradient,
+                                  makePath: { shown.shape.path(in: $0) }))
+    }
+}
+
+extension GradientShape: Animatable {
+    public var animatableData: LinearGradient.AnimatableData {
+        get { gradient.animatableData }
+        set { gradient.animatableData = newValue }
     }
 }
 
@@ -149,7 +178,7 @@ public struct GradientShape<S: Shape>: View {
 public struct ShadowView<Content: View>: View {
     public typealias Body = Never
     let content: Content
-    let style: ShadowStyle
+    var style: ShadowStyle
     let cornerRadius: Double
 
     public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
@@ -157,7 +186,21 @@ public struct ShadowView<Content: View>: View {
         content.makeNodes(into: &children, environment: environment)
         let child = children.count == 1 ? children[0]
             : ZStackNode(alignment: .center, children: children)
-        nodes.append(ShadowNode(child: child, style: style, cornerRadius: cornerRadius))
+        nodes.append(ShadowNode(child: child, style: shown(in: environment).style,
+                                cornerRadius: cornerRadius))
+    }
+}
+
+extension ShadowView: Animatable {
+    /// The colour, how far the edge fades, and how far down it is.
+    public var animatableData: AnimatablePair<Color.AnimatableData,
+                                              AnimatablePair<Double, Double>> {
+        get { AnimatablePair(style.color.animatableData, AnimatablePair(style.radius, style.y)) }
+        set {
+            style.color.animatableData = newValue.first
+            style.radius = newValue.second.first
+            style.y = newValue.second.second
+        }
     }
 }
 

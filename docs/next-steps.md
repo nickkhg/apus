@@ -29,10 +29,10 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
    - CPU mode asks for none of the three. A slow machine in GPU mode has no way to say "the shadows only", and `Appearance` has no middle mode.
 5. More than one desktop, and a layout for each one. The design has this as the target, and one desktop is what ships.
 6. A picture of a window in the card that stands in for it. It is a crop of the top left at one pixel to one point. A person turns it on for one app at a time.
-7. A cell that moves. `Animation.window` names the move, and `Frame` is Animatable. A card, a message or the cell of a starting app can then slide to its new place instead of jumping. The window itself cannot: the compositor gives an app its size over Wayland, and an app that redraws at 60 different sizes is not free. So the chrome would move while the window jumps, which is worse than both jumping.
+7. A cell that moves. `Animation.window` names the move, and a frame moves already. A card, a message or the cell of a starting app can then slide to its new place instead of jumping. The window itself cannot: the compositor gives an app its size over Wayland, and an app that redraws at 60 different sizes is not free. So the chrome would move while the window jumps, which is worse than both jumping.
 
    A screen that moves also makes the pixel tests uncertain: a picture taken in the middle of a move is a different picture each run. `mydistro-screen shot` could wait for the screen to settle first. `ViewHost` knows when nothing is moving.
-8. `.animation(_:value:)` of SwiftUI. A move starts with `withAnimation` now, which covers the same ground for a value that a handler changes. The modifier needs the dependency graph of SwiftUI: it watches a value and moves the views that read it. See [toolkit.md](toolkit.md#motion).
+8. The display list of a view that did not change. The graph keeps the nodes of such a view. The frame still walks every node, to lay it out and to ask it for its items. A frame of the shell is 0.22 ms of that walk. An attribute for the items of a subtree, under its frame and the scale, would take most of it away.
 9. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
 
 ## The terminal

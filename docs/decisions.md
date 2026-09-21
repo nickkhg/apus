@@ -93,7 +93,9 @@ Thus OpenSwiftUI on Linux does not need a correction. It needs a new attribute g
 
 mydistro needs a panel, window title bars and a settings UI. It does not need all of SwiftUI. Decision: write the toolkit in this repository. It keeps the API shape of SwiftUI (`View`, `body`, `VStack`, `Text`, `.padding`). It lowers the views to the display list for each frame. The first version is approximately 1300 lines, and 40 unit tests cover it. See [toolkit.md](toolkit.md).
 
-An incremental dependency graph saves work in a large app. A shell is small: a complete layout of the panel takes microseconds. If a later UI needs incremental updates, the view API does not change.
+An incremental dependency graph saves work in a large app. A shell is small, so the first version worked the whole tree out for every frame.
+
+**21 September:** the toolkit has that graph now. A move made the cost of a whole frame the cost of each of its frames. Most of that cost was text: every frame drew every line into a new picture. `Graph.swift` holds the model of AttributeGraph, and a view that is the same value keeps what it made. One frame of Summon opening went from 2.41 ms to 0.63 ms. The view API did not change, as this decision said it would not. See [toolkit.md](toolkit.md#the-graph).
 
 ## A GPU renderer beside the CPU renderer (20 September)
 

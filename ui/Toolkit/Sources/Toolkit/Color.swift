@@ -84,6 +84,6 @@ public struct Color: View, Equatable, Hashable, Sendable {
     }
 
     public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
-        nodes.append(FillNode(color: self))
+        nodes.append(FillNode(color: shown(in: environment)))
     }
 }

@@ -163,9 +163,9 @@ public func withAnimation<Result>(_ animation: Animation? = .default,
 
 /// A value that moves to its target instead of jumping to it.
 ///
-/// `@State` uses one of these for a value that changes inside
-/// `withAnimation`. A view can also hold one itself, for a value that the
-/// view moves without a state change.
+/// The toolkit keeps one of these for each view that is on its way from one
+/// value to another. See AnimatedValue.swift. A view can also hold one
+/// itself, for a value that it moves without a change of state.
 public final class Motion<Value: Animatable>: @unchecked Sendable {
     private var from: Value
     private var to: Value
@@ -211,39 +211,6 @@ public final class Motion<Value: Animatable>: @unchecked Sendable {
         startedAt = other.startedAt
         animation = other.animation
     }
-}
-
-/// A move without its type, so that `@State` can hold one for any value.
-protocol AnyMotion: AnyObject {
-    func value(now: Double) -> Any
-    func isMoving(now: Double) -> Bool
-}
-
-final class TypedMotion<Value: Animatable>: AnyMotion {
-    let motion: Motion<Value>
-
-    init(_ motion: Motion<Value>) {
-        self.motion = motion
-    }
-
-    func value(now: Double) -> Any { motion.value(now: now) }
-    func isMoving(now: Double) -> Bool { motion.isMoving(now: now) }
-}
-
-/// A move from where a value is now to where it is going. Nil when the two
-/// values are of different types, or when the value is there already.
-func startMotion<Start: Animatable>(from start: Start, to target: any Animatable,
-                                    with animation: Animation, now: Double) -> AnyMotion? {
-    guard let target = target as? Start else { return nil }
-    let motion = Motion(start)
-    guard motion.move(to: target, with: animation, now: now) else { return nil }
-    return TypedMotion(motion)
-}
-
-/// True when a value is already on its way to this target.
-func sameTarget<Going: Animatable>(_ going: Going, _ target: any Animatable) -> Bool {
-    guard let target = target as? Going else { return false }
-    return going.arrived(at: target)
 }
 
 /// The square root, the power and the rest come from the standard library on

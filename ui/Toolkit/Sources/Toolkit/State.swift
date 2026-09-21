@@ -22,22 +22,21 @@
 /// Only a view with a `body` can have state. A view that draws itself
 /// (`Body == Never`) cannot.
 ///
-/// A change inside `withAnimation` moves to its new value instead of
-/// jumping to it, if the type of the value is Animatable. A read then gives
-/// where the value is now, not where it is going, so a view may name the
-/// same target again and start nothing. See Motion.swift.
+/// A change inside `withAnimation` names a move. The value itself goes to
+/// its new value at once, as it does in SwiftUI, and the views that draw it
+/// move instead of jumping. See AnimatedValue.swift.
+///
+/// A change made while the tree is being laid out lands after that work, so
+/// a body that names a target draws the value that the frame started with
+/// and the target in the frame after it.
 @propertyWrapper
 public struct State<Value> {
     final class Box {
         /// Where the value is going. A read gives this one when nothing is
         /// moving, and it is what another write starts from.
         var value: Value
-        /// The move that a `withAnimation` started, while it lasts.
-        var motion: AnyMotion?
         var onChange: () -> Void = {}
-        /// The time of this frame, and where to say that a move is not
-        /// finished. Both come from the environment.
-        var now: Double = 0
+        /// Where to reach the graph of this tree.
         var state: ViewState?
         /// This value in the graph. A body that reads the value depends on
         /// it from then on, and a write marks that body out of date.
@@ -53,40 +52,23 @@ public struct State<Value> {
             return made
         }
 
-        /// Where the value is now: on its way if a move is running.
+        /// The value.
         ///
         /// The read goes through the graph, so the body that reads it now
         /// depends on it: a later write marks that body out of date and
         /// nothing else.
         var shown: Value {
-            var target = value
-            if let graph = state?.graph { target = graph.value(of: attribute(in: graph)) }
-            guard let motion, motion.isMoving(now: now),
-                  let moving = motion.value(now: now) as? Value else { return target }
-            // A value on its way needs the frame after this one.
-            state?.isMoving = true
-            return moving
+            guard let graph = state?.graph else { return value }
+            return graph.value(of: attribute(in: graph))
         }
 
+        /// Gives the value a new value. Inside `withAnimation`, the views
+        /// that draw it move to it instead of jumping.
         func set(_ newValue: Value) {
-            // A change inside `withAnimation` moves from where the value is
-            // now, so a move that turns around does not jump.
-            if let animation = Transaction.animation,
-               let target = newValue as? any Animatable {
-                // The same target again is not a new move, and it must not
-                // ask for a frame: a view that names its target in its body
-                // would then draw for ever.
-                if let going = value as? any Animatable, sameTarget(going, target) { return }
-                if let start = shown as? any Animatable {
-                    motion = startMotion(from: start, to: target, with: animation, now: now)
-                    if motion != nil { state?.isMoving = true }
-                }
-            } else {
-                motion = nil
-            }
             value = newValue
             if let graph = state?.graph {
-                graph.set(attribute(in: graph), to: newValue)
+                graph.set(attribute(in: graph), to: newValue,
+                          animation: Transaction.animation)
             }
             onChange()
         }
@@ -136,21 +118,6 @@ public struct Binding<Value> {
 // MARK: - The store
 
 /// What the toolkit knows about a state property, without its value type.
-/// A state value that can still be on its way, without its type. The store
-/// asks every value this at the start of a frame.
-protocol AnyMovingBox: AnyObject {
-    func isMoving(now: Double) -> Bool
-    var anyAttribute: AnyAttribute? { get }
-}
-
-extension State.Box: AnyMovingBox {
-    func isMoving(now: Double) -> Bool {
-        motion?.isMoving(now: now) ?? false
-    }
-
-    var anyAttribute: AnyAttribute? { attribute }
-}
-
 protocol AnyStateProperty {
     var anyBox: AnyObject { get }
     /// Copies the value of an earlier box of the same property into this one.
@@ -160,7 +127,6 @@ protocol AnyStateProperty {
 
 extension State: AnyEnvironmentProperty {
     func take(from environment: EnvironmentValues) {
-        box.now = environment.now
         box.state = environment.viewState
     }
 }
@@ -171,9 +137,7 @@ extension State: AnyStateProperty {
     func adopt(_ other: AnyObject) {
         guard let other = other as? Box else { return }
         box.value = other.value
-        // The move that the store kept is the one that goes on running, and
-        // the value in the graph is the one that other views depend on.
-        box.motion = other.motion
+        // The value in the graph is the one that other views depend on.
         box.attribute = other.attribute
     }
 
@@ -241,6 +205,11 @@ public final class ViewState: @unchecked Sendable {
 
     private var boxes: [Key: AnyObject] = [:]
     private var entries: [Key: Entry] = [:]
+    /// Where each view that can move is on its way. The key is the place of
+    /// the view in the tree, as it is for state.
+    private var motions: [Key: AnyViewMotion] = [:]
+    /// The values that `.animation(_:value:)` watches, from the last pass.
+    private var watched: [Key: Any] = [:]
     private var seen: Set<Key> = []
     /// The path to the view that the renderer is in now.
     private var path: [Int] = []
@@ -256,12 +225,11 @@ public final class ViewState: @unchecked Sendable {
         path.removeAll(keepingCapacity: true)
         counts = [[:]]
         seen.removeAll(keepingCapacity: true)
-        // A value that is still on its way has a new value in this frame,
-        // so whatever reads it must be worked out again.
-        for box in boxes.values {
-            guard let moving = box as? AnyMovingBox, moving.isMoving(now: now),
-                  let attribute = moving.anyAttribute else { continue }
-            graph.spoil(attribute)
+        // A view that is on its way is drawn differently in this frame, so
+        // the view that made it must make it again.
+        for (key, motion) in motions where motion.isMoving(now: now) {
+            guard let entry = entries[Key(path: key.path, slot: -1)] else { continue }
+            graph.invalidate(entry.attribute)
         }
     }
 
@@ -276,6 +244,66 @@ public final class ViewState: @unchecked Sendable {
             graph.forget(entry.attribute)
             entries[key] = nil
         }
+        // A move belongs to the view that made it, not to one pass. A view
+        // whose body did not run this time keeps it, so that the move it
+        // makes next is a move and not a jump.
+        motions = motions.filter { entries[Key(path: $0.key.path, slot: -1)] != nil }
+        watched = watched.filter { entries[Key(path: $0.key.path, slot: -1)] != nil }
+    }
+
+    /// The view as it is now, on its way to what it says it is.
+    ///
+    /// A view that can move calls this while it lowers itself. The first
+    /// call writes down where the view is. A later call with another value
+    /// starts a move, if a move is in the air, and gives back the view part
+    /// of the way there.
+    func animating<V: View & Animatable>(_ view: V) -> V {
+        let key = Key(path: path, slot: animationSlot())
+        let target = view.animatableData
+        guard let motion = motions[key] as? ViewMotion<V> else {
+            motions[key] = ViewMotion<V>(target)
+            return view
+        }
+        if motion.target != target {
+            motion.move(to: target, with: graph.animation, now: now)
+        }
+        guard motion.isMoving(now: now) else { return view }
+        // The view has somewhere still to go, so the frame after this one
+        // must be drawn.
+        isMoving = true
+        return motion.shown(view, now: now)
+    }
+
+    /// True when the value that a `.animation(_:value:)` watches is not
+    /// the value that it had when this place was last lowered.
+    ///
+    /// The first time is not a change: a view that arrives is drawn as it
+    /// is, and only what happens to it after that moves.
+    func animationValueChanged(_ value: some Equatable) -> Bool {
+        let key = Key(path: path, slot: watchSlot())
+        defer { watched[key] = value }
+        guard let old = watched[key] else { return false }
+        return !isEqual(old, value)
+    }
+
+    private func watchSlot() -> Int {
+        let index = counts[counts.count - 1][-3] ?? 0
+        counts[counts.count - 1][-3] = index + 1
+        return index
+    }
+
+    private func isEqual(_ old: Any, _ new: some Equatable) -> Bool {
+        guard let old = old as? any Equatable else { return false }
+        return isEqual(old, new as Any)
+    }
+
+    /// Which view that can move this is, among the ones in this body. The
+    /// count lives with the other counts of the level, so a view inside a
+    /// branch of an `if` has a count of its own.
+    private func animationSlot() -> Int {
+        let index = counts[counts.count - 1][-2] ?? 0
+        counts[counts.count - 1][-2] = index + 1
+        return index
     }
 
     /// The nodes of one view.

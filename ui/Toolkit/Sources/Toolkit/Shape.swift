@@ -45,10 +45,18 @@ extension Shape {
 public struct FilledShape<S: Shape>: View {
     public typealias Body = Never
     let shape: S
-    let color: Color
+    var color: Color
 
     public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
-        nodes.append(ShapeNode(shape: shape, color: color))
+        let shown = shown(in: environment)
+        nodes.append(ShapeNode(shape: shown.shape, color: shown.color))
+    }
+}
+
+extension FilledShape: Animatable {
+    public var animatableData: Color.AnimatableData {
+        get { color.animatableData }
+        set { color.animatableData = newValue }
     }
 }
 
@@ -142,11 +150,24 @@ final class ShapeNode: LayoutNode {
 public struct StrokedShape<S: Shape>: View {
     public typealias Body = Never
     let shape: S
-    let color: Color
-    let lineWidth: Double
+    var color: Color
+    var lineWidth: Double
 
     public func makeNodes(into nodes: inout [LayoutNode], environment: EnvironmentValues) {
-        nodes.append(StrokeNode(shape: shape, color: color, lineWidth: lineWidth))
+        let shown = shown(in: environment)
+        nodes.append(StrokeNode(shape: shown.shape, color: shown.color,
+                                lineWidth: shown.lineWidth))
+    }
+}
+
+extension StrokedShape: Animatable {
+    /// The colour and the width of the line move together.
+    public var animatableData: AnimatablePair<Color.AnimatableData, Double> {
+        get { AnimatablePair(color.animatableData, lineWidth) }
+        set {
+            color.animatableData = newValue.first
+            lineWidth = newValue.second
+        }
     }
 }
 

@@ -35,14 +35,49 @@ Thus, mydistro has a toolkit of its own. It is much smaller, it is complete for 
 
 ## How it works
 
-There is no dependency graph. Each frame lowers the view tree to layout nodes, and the nodes lay out and draw themselves:
+A frame lowers the view tree to layout nodes, and the nodes lay out and draw themselves:
 
 1. The compositor makes a view, for example `RailView(state:)`.
 2. `ViewRenderer` asks the view for its layout nodes. A composite view gives the nodes of its `body`. A primitive view (`Color`, `Text`, a stack, a modifier) makes its own node.
 3. The root node gets the rectangle to fill. It asks each child for a size, then gives each child a frame.
 4. Each node adds items to the display list: a fill or a bitmap. See [compositor.md](compositor.md#the-display-list).
 
-A complete frame of the rail takes microseconds, because the shell is small. A dependency graph saves work in a large app. It costs much more code.
+Step 2 happens only where something changed. See [The graph](#the-graph).
+
+### The graph
+
+`Graph.swift` holds the model of SwiftUI's AttributeGraph. A value is an attribute. An attribute with a rule works its value out from other attributes, and the graph writes down which ones the rule read while it ran. A change to one attribute therefore knows what it spoiled: the attributes that read it, the ones that read those, and no others.
+
+Each view is an attribute whose value is the nodes that it made. Its rule runs again for one of three reasons:
+
+- The view value changed.
+- The environment changed, in anything that a view draws with.
+- A `@State` value that the body read changed.
+
+A view that is the same value in the same place keeps its nodes. Everything that hangs off those nodes stays as well. That is the size they worked out, the glyphs of a line of text, and the picture of that line.
+
+A view says whether it is the same value with `Equatable`:
+
+```swift
+extension RailView: Equatable {
+    public static func == (a: RailView, b: RailView) -> Bool {
+        a.state == b.state && a.actions == b.actions
+    }
+}
+```
+
+A view that is not `Equatable` is never the same one, so its body runs every frame. That is why `ShellActions` is one object and not a value: a view can then compare it. A view that says it is the same must mean it. The toolkit keeps the nodes that the earlier value made, with the handlers that were in it.
+
+A change reaches the root. The attributes above the one that changed are out of date as well, because they hold the nodes that it made. Their bodies run again. Every other view that they hold gives back the nodes that it already had.
+
+What one frame of the shell costs, on the Mac, with Summon open in GPU mode:
+
+| | Before the graph | With it |
+| --- | --- | --- |
+| Lay out and lower | 2.41 ms | 0.63 ms |
+| A plain shell frame | 0.24 ms | 0.22 ms |
+
+Most of that is one thing. A line of text went into a new picture for every frame. The toolkit now keeps the picture of a line under the line, the font, the colour and the width. A frame that draws the same line gets the same object back. The GPU renderer then finds the texture that it made for that object, instead of sending the pixels again.
 
 ### Layout: a proposal and an answer
 
@@ -359,13 +394,15 @@ position of the mouse by the scale before it gives it to the host.
 - A shadow is the frame of a view with round corners, not the outline of
   what the view drew. The renderer draws each item as it comes and keeps no
   picture of a view to take a shape from.
-- `.animation(_:value:)` of SwiftUI is not here. A move starts with
-  `withAnimation`. To read a value and move the views that use it, SwiftUI
-  needs its dependency graph, and the toolkit has none.
+- The toolkit finds a view that moves by its place among the views of one
+  body. A body whose shape changes from one frame to the next can therefore
+  give a move to the view beside the one that had it. Views in the branches
+  of an `if` are separate, so this needs two views of one shape in one
+  body, with one of them coming and going.
 
 ## Motion
 
-A value moves instead of jumping. This is the API of SwiftUI: `withAnimation` names the move, and the `@State` that changes inside it moves to its new value.
+A view moves instead of jumping. This is the API of SwiftUI: `withAnimation` names the move, and the views that draw what changed inside it move to their new picture.
 
 ```swift
 struct SummonButton: View {
@@ -385,7 +422,16 @@ struct SummonButton: View {
 - `withAnimation(nil)` takes the move away, for a change inside a move that must not move.
 - A value moves only if its type is Animatable. A number, a colour, a size and a frame are. Anything else changes at once.
 - A type says what moves with `animatableData`, as in SwiftUI. A type of one number needs no more than `extension Double: Animatable {}`. A type of four numbers puts them in two `AnimatablePair`s. See Animatable.swift.
-- Reading a `@State` value that is moving gives where the value is now, not where it is going. Writing the same target again therefore changes nothing, and a view may name its target in its body.
+- The move is in the view, not in the value. A `@State` value goes to its new value at once, and a read of it gives that value, as in SwiftUI. The view that draws it is the thing that is part of the way there. `AnimatedValue.swift` keeps that move for the place of the view in the tree. The graph works that view out again for every frame while it is on its way.
+- A view moves if it conforms to Animatable. `Color`, a shape with a colour or a line, a frame, an offset, a shadow, a blur and a gradient do.
+- `.animation(_:value:)` moves everything inside a view when a value changes:
+
+  ```swift
+  Row(item: item).animation(.quick, value: isSelected)
+  ```
+
+  The value that a view arrives with is not a change, so a view that comes into the tree is drawn as it is.
+- A change made while the tree is laid out lands after that work, as a change of state does in SwiftUI. A body that names a target therefore draws the value that the frame started with, and the target in the frame after it. That is what lets Summon come in: the frame that opens it draws it at the start of its move.
 - Every move in one frame reads the same time, so things that start together stay together. The time comes from `ViewHost.now`, which the compositor sets from the clock of the system.
 - A value that still has somewhere to go asks for the next frame. A value that arrived asks for nothing, so a screen that does not move costs no frames.
 - `@Environment(\.now)` reads that time in a view, and any other value of the environment.

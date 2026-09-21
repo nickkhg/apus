@@ -85,6 +85,9 @@ public final class Graph {
     private var running: [AnyAttribute] = []
     /// The moves that the running rules belong to.
     private var animations: [Animation?] = []
+    /// The changes that a rule made while it ran. They land when the work
+    /// is over. See `set(_:to:animation:)`.
+    private var waiting: [() -> Void] = []
 
     /// How many rules have run. A test and the bench read it: a frame that
     /// changes nothing must run none.
@@ -141,10 +144,23 @@ public final class Graph {
 
     /// Writes a source, and marks what read it as out of date.
     ///
-    /// `animation` is the move that the change belongs to. Every rule that
-    /// runs again because of this change has that move in the air.
+    /// A change made while a rule is running lands when the work is over,
+    /// as a change of state does in SwiftUI. The values of this frame are
+    /// therefore the values that the frame started with, whatever a body
+    /// does while it runs, and the change is drawn in the frame after it.
     public func set<Value>(_ attribute: Attribute<Value>, to value: Value,
                            animation: Animation? = nil) {
+        guard running.isEmpty else {
+            waiting.append { [weak self] in
+                self?.write(attribute, value, animation)
+            }
+            return
+        }
+        write(attribute, value, animation)
+    }
+
+    private func write<Value>(_ attribute: Attribute<Value>, _ value: Value,
+                              _ animation: Animation?) {
         attribute.cached = value
         attribute.hasValue = true
         spoil(attribute, animation: animation)
@@ -220,6 +236,13 @@ public final class Graph {
         running.removeLast()
         attribute.isRunning = false
         attribute.isDirty = false
+
+        // The work is over, so the changes that it made can land.
+        if running.isEmpty, !waiting.isEmpty {
+            let changes = waiting
+            waiting.removeAll()
+            for change in changes { change() }
+        }
     }
 
     /// Forgets what an attribute read, on both ends of each edge.

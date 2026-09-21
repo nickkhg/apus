@@ -117,10 +117,13 @@ struct AppearanceTests {
             let state = ShellState(apps: sampleApps, mode: mode, summonIsOpen: true,
                                    canvas: Rect(x: 72, y: 8, width: 1200, height: 784))
             let host = ViewHost()
-            // Summon comes in, so the first frame draws nothing of the layer.
+            // Summon comes in. The first frame gives the move its target,
+            // the second starts it, and the third is after it arrived.
             host.now = 0
             _ = host.displayList(for: RootView(state: state), in: screen)
             host.now = 1
+            _ = host.displayList(for: RootView(state: state), in: screen)
+            host.now = 2
             let list = host.displayList(for: RootView(state: state), in: screen)
             // The layer is a black fill across the whole screen.
             for item in list {
@@ -148,6 +151,9 @@ struct AppearanceTests {
         let first = host.displayList(for: RootView(state: state),
                                      in: Rect(x: 0, y: 0, width: 1280, height: 800))
         host.now = 1
+        _ = host.displayList(for: RootView(state: state),
+                             in: Rect(x: 0, y: 0, width: 1280, height: 800))
+        host.now = 2
         let later = host.displayList(for: RootView(state: state),
                                      in: Rect(x: 0, y: 0, width: 1280, height: 800))
         #expect(later.count > first.count)

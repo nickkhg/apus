@@ -170,16 +170,19 @@ struct MotionTests {
 
 @Suite("A view that moves")
 struct AnimatedViewTests {
-    /// A box whose width follows a value that the test sets.
+    /// Where the test keeps the handler of the view. A handler is where a
+    /// move starts: a person did something, and the screen answers.
+    private final class Hold: @unchecked Sendable {
+        var set: (Double, Animation?) -> Void = { _, _ in }
+    }
+
+    /// A box whose width follows a value that a handler sets.
     private struct Box: View {
         @State private var width = 10.0
-        let target: Double
-        /// Nil sets the value with no move at all.
-        let animation: Animation?
+        let hold: Hold
 
         var body: some View {
-            // Setting it in the body is what a handler would do.
-            if width != target {
+            hold.set = { target, animation in
                 withAnimation(animation) { width = target }
             }
             return Color.white.frame(width: width, height: 4)
@@ -201,12 +204,21 @@ struct AnimatedViewTests {
         let asked = Count()
         let host = ViewHost()
         host.needsUpdate = { asked.frames += 1 }
-        let view = Box(target: 100, animation: .linear(duration: 1))
+        let hold = Hold()
+        let view = Box(hold: hold)
 
         host.now = 0
-        _ = host.displayList(for: view, in: box)
-        // The value has not moved yet, and the host was asked for a frame.
-        #expect(asked.frames > 0)
+        #expect(width(host.displayList(for: view, in: box)) == 10)
+
+        // The handler names the move. The state goes to its new value at
+        // once, and the view has somewhere to go.
+        hold.set(100, .linear(duration: 1))
+        asked.frames = 0
+        #expect(asked.frames == 0)
+
+        host.now = 0
+        #expect(width(host.displayList(for: view, in: box)) == 10)
+        #expect(asked.frames > 0, "the host was not asked for the next frame")
 
         host.now = 0.5
         let middle = width(host.displayList(for: view, in: box))
@@ -222,8 +234,12 @@ struct AnimatedViewTests {
         let asked = Count()
         let host = ViewHost()
         host.needsUpdate = { asked.frames += 1 }
-        let view = Box(target: 100, animation: .linear(duration: 1))
+        let hold = Hold()
+        let view = Box(hold: hold)
 
+        host.now = 0
+        _ = host.displayList(for: view, in: box)
+        hold.set(100, .linear(duration: 1))
         host.now = 0
         _ = host.displayList(for: view, in: box)
         host.now = 2
@@ -239,8 +255,43 @@ struct AnimatedViewTests {
         let host = ViewHost()
         host.needsUpdate = {}
         host.now = 0
-        let view = Box(target: 100, animation: nil)
+        let hold = Hold()
+        let view = Box(hold: hold)
+        _ = host.displayList(for: view, in: box)
+        hold.set(100, nil)
         #expect(width(host.displayList(for: view, in: box)) == 100)
+    }
+
+    @Test("The state is at its target while the view is still on its way")
+    func theStateDoesNotWait() {
+        // This is the SwiftUI rule: a value goes to its new value at once,
+        // and the picture of it arrives later.
+        final class Seen: @unchecked Sendable { var width = 0.0 }
+        let seen = Seen()
+        struct Watcher: View {
+            @State private var width = 10.0
+            let hold: Hold
+            let seen: Seen
+
+            var body: some View {
+                hold.set = { target, animation in
+                    withAnimation(animation) { width = target }
+                }
+                seen.width = width
+                return Color.white.frame(width: width, height: 4)
+            }
+        }
+        let host = ViewHost()
+        host.needsUpdate = {}
+        let hold = Hold()
+        let view = Watcher(hold: hold, seen: seen)
+        host.now = 0
+        _ = host.displayList(for: view, in: box)
+        hold.set(100, .linear(duration: 1))
+        host.now = 0
+        let list = host.displayList(for: view, in: box)
+        #expect(seen.width == 100, "the value waited for the move")
+        #expect(width(list) == 10, "the picture did not wait for the move")
     }
 
     @Test("A move inside another move takes the inner one")
@@ -252,14 +303,14 @@ struct AnimatedViewTests {
             withAnimation(nil) { inside = Transaction.animation }
         }
         #expect(inside == nil)
-        #expect(Transaction.animation == nil, "the move must not outlast its closure")
+        #expect(Transaction.animation == nil, "the move outlasted its closure")
     }
 }
 
 @Suite("A value that changes while the tree is laid out")
 struct LayoutTimeChangeTests {
-    /// A view that gives a value a target in its body, which is what an
-    /// animation that starts on its own does.
+    /// A view that gives a value a target in its body, which is what a
+    /// move that starts on its own does.
     private struct Arriving: View {
         @State private var amount = 0.0
 
@@ -278,24 +329,24 @@ struct LayoutTimeChangeTests {
         return nil
     }
 
-    @Test("The tree survives a value that changes while it is laid out")
-    func theTreeSurvives() {
-        // Setting a value during layout asks for a frame. The renderer must
-        // finish its pass first: it keeps the path to the view it is in, and
-        // starting again in the middle of that loses the place.
+    @Test("A change made while the tree is laid out lands in the next frame")
+    func theChangeLandsAfterTheWork() {
+        // The values of a frame are the values that the frame started with,
+        // whatever a body does while it runs. This is the rule of SwiftUI,
+        // and it is what lets a view name its target in its body: the frame
+        // that names it draws the value before it.
         let host = ViewHost()
         let box = Rect(x: 0, y: 0, width: 100, height: 20)
         host.needsUpdate = {}
         host.now = 0
-        _ = host.displayList(for: Arriving(), in: box)
+        #expect(width(host.displayList(for: Arriving(), in: box)) == 10)
+        // The target landed, so the view has somewhere to go.
+        host.now = 0
+        #expect(width(host.displayList(for: Arriving(), in: box)) == 10)
         host.now = 0.5
-        let middle = host.displayList(for: Arriving(), in: box)
+        #expect(width(host.displayList(for: Arriving(), in: box)) == 15)
         host.now = 1
-        let end = host.displayList(for: Arriving(), in: box)
-        // The value went from 10 to 20 over the second, and the state of the
-        // view carried it across the frames.
-        #expect(width(middle) == 15)
-        #expect(width(end) == 20)
+        #expect(width(host.displayList(for: Arriving(), in: box)) == 20)
     }
 
     @Test("A value that changed during layout still gets its frame")
