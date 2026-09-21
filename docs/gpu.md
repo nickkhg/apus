@@ -48,7 +48,7 @@ GPU0:
 
 `0x106b` is Apple. Every call the guest makes goes through Venus to MoltenVK and then to Metal.
 
-`make test-venus` checks this. It needs the renderer, which the next section builds, so `make test` leaves it out.
+`make test-venus` checks this. It also starts the compositor on that GPU and compares the picture with the one the CPU draws. It needs the renderer, which the next section builds, so `make test` leaves it out.
 
 The device also draws. It carries the 2D commands, so the compositor runs on it alone:
 
@@ -100,9 +100,9 @@ Nothing on the host can mend this. A mapping can only start on a page boundary. 
 
 virtio-gpu has a feature for exactly this: `VIRTIO_GPU_F_BLOB_ALIGNMENT`. The device states the step in its configuration, and the guest then rounds every blob up to it. Linux carries its half as `VIRTGPU_PARAM_BLOB_ALIGNMENT`. Mesa never asks for the number. `packages/vulkan-virtio` adds the half that was missing, as a patch of about ten lines over Mesa 26.2.3. The build takes the Vulkan driver alone, so it needs neither LLVM nor Rust, and it finishes in approximately one minute.
 
-## What the compositor cannot do yet
+## How the compositor reaches the GPU
 
-The compositor draws with GLES (see [ui.md](ui.md#the-two-renderers)). The usual way to put GLES on Vulkan is Zink. Two walls stand in front of that, and the second one has no way around it.
+The compositor draws with GLES, and Zink is Mesa's OpenGL on Vulkan. Two things stood in the way, and a third was in this program.
 
 **Zink asks for a feature that MoltenVK does not have.**
 
@@ -116,26 +116,36 @@ MESA: error: Zink requires the nullDescriptor feature of KHR/EXT robustness2.
 robustness2Features->nullDescriptor = false;
 ```
 
-`MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS=1` does not change it, and neither does a newer MoltenVK. A patched Zink starts without the feature. The compositor's shaders bind everything they read, so the feature has nothing to say about them.
+The feature says what a shader reads from a descriptor that has nothing bound. A shader that binds everything it reads never asks the question. The compositor's four shaders bind everything they read. So `packages/mydistro-zink` builds Zink without the check, and `tests/venus.exp` compares what it draws with what the CPU draws, pixel by pixel. The driver goes in a directory of its own, and `mydistro-gpu` puts a program on it. A driver with a check removed is not for everything on the system.
 
-**GBM needs a dma-buf, and this Vulkan has none.** That is the wall. The compositor hands each frame to the screen through GBM. A GBM buffer is a dma-buf with a DRM format modifier. Venus offers those only when the renderer on the host can export one, and Metal has no dma-buf to export. The guest device therefore reports none of the four extensions that GBM needs:
+**GBM needs a dma-buf, and this Vulkan has none.** A compositor normally hands each frame to the screen through GBM. A GBM buffer is a dma-buf with a DRM format modifier. Venus offers those only when the renderer on the host can export one, and Metal has nothing to export. The device in the guest reports none of `VK_EXT_external_memory_dma_buf`, `VK_EXT_image_drm_format_modifier`, `VK_EXT_queue_family_foreign` or `VK_KHR_external_memory_fd`.
 
-| Extension | Reported |
-|---|---|
-| `VK_EXT_external_memory_dma_buf` | no |
-| `VK_EXT_image_drm_format_modifier` | no |
-| `VK_EXT_queue_family_foreign` | no |
-| `VK_KHR_external_memory_fd` | no |
+So the GPU draws into memory instead. EGL takes a device with no window, GLES draws into a texture, and the compositor reads that frame back into the buffer the screen shows. That costs one copy of the screen for each frame and needs nothing that is missing. `OffscreenRasterizer` holds it, and the GLES renderer above it is the same `GLRenderer` that GPUScreen uses. `MYDISTRO_RENDERER=gpu` tries GBM first, falls back to this, and then to the CPU.
 
-`gbm_create_device` fails, and no patch mends that: the thing it asks for is not there.
+**EGL took the wrong device.** A machine with our device has two, and only one of them carries Venus. The surfaceless platform takes the first it finds. Zink then looks for a Vulkan device with the same DRM number, finds none, and EGL ends with no driver at all. The device platform names the device instead, so the compositor asks EGL for its devices and takes the first that draws with a GPU. `MYDISTRO_RENDER_NODE` names one and stops the search.
 
-So a program in the guest that speaks Vulkan gets the GPU, and a program that draws through GBM does not. To give the compositor the GPU, it has to draw with Vulkan, beside the GLES renderer it has. Each frame then goes in a blob, and the device scans that blob out. This way needs no dma-buf, because the blob is the shared memory that carries the frame. It is approximately the size of `GLRenderer.swift`, with the shaders built to SPIR-V.
+With those, `make demo` draws the shell with the GPU of the Mac:
+
+```
+GPU-RENDERER zink Vulkan 1.4(Virtio-GPU Venus (Apple M2 Pro) (MOLTENVK))
+```
+
+## Fences
+
+A command with `VIRTIO_GPU_FLAG_FENCE` asks the device to answer only once the renderer finishes the work behind it. An answer at once tells the guest that the GPU finished when it did not. A frame read back then is half drawn, and it was: the picture stopped at a line across the middle of the screen.
+
+The device now holds the answer until virglrenderer says it finished the work. Two things about that on a Mac:
+
+- The renderer would ring an eventfd, and macOS has none: virglrenderer builds with `HAVE_EVENTFD_H` undefined, so `create_eventfd` answers -1 and no fence is ever reported. So `VIRGL_RENDERER_THREAD_SYNC` and `VIRGL_RENDERER_ASYNC_FENCE_CB` are not set, and the device reads the numbers out of shared memory itself, once a millisecond, and only while an answer waits.
+- It reads them for the contexts it knows. `virgl_renderer_poll` walks every context the renderer holds, and it walks into ones that are gone.
+
+One fault in this program is worth writing down. virglrenderer keeps the pointer to its callbacks. A structure on the stack of the function that starts it therefore looks right until the first fence. Then the renderer calls whatever the stack holds by then, and the program stops with its program counter in the stack.
 
 ## The work that remains
 
-1. The 2D command set of the device: resources, backing pages, transfers to the host, scanout and flush. The device answers `GET_DISPLAY_INFO` and accepts the rest without doing the work. Until someone writes it, the window shows the graphics device of the framework, and the device we make draws nothing.
-2. Fences. The device answers at once, so a guest that waits for work to finish is told it already has.
-3. A Vulkan renderer for the compositor, which is where the frame times above would change. See the section before this one for why GLES cannot take that place.
+1. The read back of each frame is a copy of the screen. A frame that the GPU drew into memory the guest can see, and that the device then scans out, would cost nothing. That needs the device to carry `SET_SCANOUT_BLOB`, and the compositor to draw into a blob.
+2. The 2D command set carries a picture, and no more. The device takes a resource of any size and shows it, and it reads every transfer as a whole rectangle. Cursors go through the second queue, and the device does not answer them.
+3. Frame times with the GPU are not measured yet. The table at the top is the CPU renderer against llvmpipe, which is what the guest had before.
 
 ## The other way
 

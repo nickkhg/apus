@@ -66,6 +66,87 @@ expect {
 }
 expect { -re {# $} {} timeout { fail "no prompt after vulkaninfo" } }
 
+# The compositor draws with that GPU, and draws the same picture as the CPU.
+#
+# The two run one after the other, and each writes its screen to the share.
+# tests/renderers.py then compares them, as tests/gpu.exp does for the GBM
+# path. A renderer that draws the right picture with the wrong device, or
+# the right device with the wrong picture, fails here.
+set marks 0
+
+proc settle {what} {
+    global marks
+    incr marks
+    send "echo MARK-\$(($marks))\r"
+    expect { "MARK-$marks" {} timeout { fail "$what: the guest did not answer" } }
+}
+
+proc drawWith {command name} {
+    send "$command LIBSEAT_BACKEND=noop MYDISTRO_SHELL_MODE=cpu "
+    send "MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock "
+    send "mydistro-compositor &\r"
+    expect {
+        "COMPOSITOR-READY"     {}
+        "mydistro-compositor:" { fail "$name: the compositor reported an error" }
+        timeout                { fail "$name: the compositor did not start" }
+    }
+    after 1500
+    send "mydistro-screen shot /mnt/screens/$name.ppm\r"
+    expect {
+        -re {ok [0-9]+ [0-9]+} {}
+        "mydistro-screen:"     { fail "$name: the compositor gave no picture" }
+        timeout                { fail "$name: no picture" }
+    }
+    settle "$name: the picture"
+    send "kill %%\r"
+    expect { "COMPOSITOR-EXIT" {} timeout { fail "$name: the compositor did not stop" } }
+    settle "$name: the exit"
+    send "wait; echo GONE-\$(($::marks))\r"
+    expect { "GONE-$::marks" {} timeout { fail "$name: the compositor did not go away" } }
+}
+
+drawWith "MYDISTRO_RENDERER=cpu" "venus-cpu"
+
+# mydistro-gpu puts Zink and its Vulkan in front of the compositor. The
+# renderer line has to name Venus: with anything else the GPU of the Mac is
+# not what drew the frame.
+send "MYDISTRO_RENDERER=gpu LIBSEAT_BACKEND=noop MYDISTRO_SHELL_MODE=cpu "
+send "MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock "
+send "mydistro-gpu mydistro-compositor &\r"
+expect {
+    -re {GPU-RENDERER [^\r\n]*Venus[^\r\n]*} {
+        send_user "\n$expect_out(0,string)\n"
+    }
+    -re {GPU-RENDERER [^\r\n]*} {
+        fail "the GPU of the Mac did not draw: $expect_out(0,string)"
+    }
+    "mydistro-compositor:" { fail "the compositor reported an error" }
+    timeout                { fail "the compositor did not say what drew" }
+}
+expect {
+    "COMPOSITOR-READY"     {}
+    "mydistro-compositor:" { fail "the compositor reported an error" }
+    timeout                { fail "the compositor did not start" }
+}
+after 1500
+send "mydistro-screen shot /mnt/screens/venus-gpu.ppm\r"
+expect {
+    -re {ok [0-9]+ [0-9]+} {}
+    timeout { fail "the GPU gave no picture" }
+}
+settle "the picture of the GPU"
+send "kill %%\r"
+expect { "COMPOSITOR-EXIT" {} timeout { fail "the compositor did not stop" } }
+settle "the exit of the GPU"
+send "wait; echo GONE-\$(($marks))\r"
+expect { "GONE-$marks" {} timeout { fail "the compositor did not go away" } }
+
+if {[catch {exec python3 tests/renderers.py \
+        out/vm/screens/venus-cpu.ppm out/vm/screens/venus-gpu.ppm} result]} {
+    fail "the GPU of the Mac draws a different picture: $result"
+}
+send_user "\nthe GPU and the CPU agree: $result\n"
+
 send "poweroff\r"
 expect eof
 wait
