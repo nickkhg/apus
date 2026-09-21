@@ -35,8 +35,15 @@ SDK_STAMP        := $(SWIFT_SDKS)/$(SWIFT_SDK).artifactbundle/info.json
 # MYDISTRO_CROSS tells ui/Toolkit/Package.swift not to run pkg-config: the
 # Swift SDK has the include directories, and pkg-config would answer with the
 # macOS libraries of Homebrew.
+# The compositor draws every pixel of every frame, and a debug build of it
+# is several times slower than the one the image carries, which makepkg
+# builds with -c release. `make demo-dev` would then look slow for a reason
+# that has nothing to do with the machine. UI_CONFIG=debug asks for the
+# other one.
+UI_CONFIG        ?= release
 SWIFT_BUILD       = MYDISTRO_CROSS=1 $(SWIFT_MAC)/usr/bin/swift build --package-path ui \
-	--swift-sdks-path $(SWIFT_SDKS) --swift-sdk $(SWIFT_SDK) --static-swift-stdlib
+	--swift-sdks-path $(SWIFT_SDKS) --swift-sdk $(SWIFT_SDK) --static-swift-stdlib \
+	-c $(UI_CONFIG)
 
 # mydistro-vm boots the images. It builds with the Swift toolchain of Xcode,
 # because Virtualization and AppKit are frameworks of the platform. The
@@ -155,7 +162,7 @@ volumes:
 build: builder volumes
 	$(RUN) $(IMAGE) build/build.sh
 
-# Fast Swift loop: no image rebuild. Debug build, Swift runtime linked in.
+# Fast Swift loop: no image rebuild. The Swift runtime is linked in.
 ui: sdk
 	$(SWIFT_BUILD)
 	mkdir -p out/ui
