@@ -70,7 +70,10 @@ public final class Display {
     }
 
     deinit {
-        for client in Array(clients.values) { client.disconnect() }
+        // This display is going away, so a client must not reach back into
+        // it to take itself out of a table that goes with it.
+        for client in Array(clients.values) { client.disconnect(displayIsGoing: true) }
+        clients.removeAll()
         socketWatch?.cancel()
         close(socketFD)
         unlink(socketPath)

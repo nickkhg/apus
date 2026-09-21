@@ -57,12 +57,21 @@ public class AnyResource {
         fatalError("AnyResource.dispatch is abstract")
     }
 
-    func markDestroyed() {
+    /// Marks the object gone and tells whoever asked to be told.
+    ///
+    /// `tellingHandlers` is false when the display is being torn down. A
+    /// handler belongs to whatever made the object, and that is on its way
+    /// out too: the compositor holds itself in those handlers without
+    /// owning itself, so calling one then reads an object that is already
+    /// destroyed.
+    func markDestroyed(tellingHandlers: Bool = true) {
         guard !isDestroyed else { return }
         isDestroyed = true
         let handlers = destroyHandlers
         destroyHandlers.removeAll()
-        for handler in handlers { handler() }
+        if tellingHandlers {
+            for handler in handlers { handler() }
+        }
         data = nil
     }
 

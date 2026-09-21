@@ -97,7 +97,14 @@ public final class Client {
 
     /// Closes the connection. Destroys every object of the client, newest
     /// first, and runs their destroy handlers.
-    public func disconnect() {
+    /// Closes the connection and lets every object of this client go.
+    ///
+    /// `displayIsGoing` is true only while the display tears itself down.
+    /// A client must not reach back into the display then, and the handlers
+    /// that its objects registered must not run: both belong to things that
+    /// are already on their way out, and a client holds them without owning
+    /// them, because they outlive a client in every other case.
+    public func disconnect(displayIsGoing: Bool = false) {
         guard !isDisconnected else { return }
         isDisconnected = true
         watch?.cancel()
@@ -108,8 +115,8 @@ public final class Client {
         outputFDs.removeAll()
         let resources = objects.values.sorted { $0.id > $1.id }
         objects.removeAll()
-        for resource in resources { resource.markDestroyed() }
-        display.remove(self)
+        for resource in resources { resource.markDestroyed(tellingHandlers: !displayIsGoing) }
+        if !displayIsGoing { display.remove(self) }
     }
 
     // MARK: - Input
