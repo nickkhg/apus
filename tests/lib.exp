@@ -5,7 +5,17 @@ proc fail {msg} {
     exit 1
 }
 
+# An installed system starts the shell when it finishes booting, so it owns
+# the screen, the keyboard and the pointer. A test drives those itself, so it
+# takes them back after it logs in.
+#
+# Set this to 1 before `login` in a test of an installed system. The test
+# then also holds that the shell was running, which is the one place that
+# says the machine starts into its user interface.
+set expectShell 0
+
 proc login {} {
+    global expectShell
     expect {
         "login:" { send "root\r" }
         timeout  { fail "no login prompt" }
@@ -15,4 +25,48 @@ proc login {} {
         -re "# $" {}
         timeout   { fail "no shell prompt" }
     }
+    if {$expectShell} { waitForShell }
+    stopShell
+}
+
+# Waits for the shell to be running. It starts beside the login, so a test
+# that logs in quickly can be there first.
+#
+# A shell that starts and fails is "active" for the moment between the two,
+# so a test that asked only that would pass on a shell that never reaches
+# the screen. This asks for a shell that never had to start again.
+proc waitForShell {} {
+    # The command line reads SHELL-$((1+1)), so only real output matches.
+    # Reading the word that systemctl prints would not work: the console
+    # puts escape sequences between the lines, so the word has no newline
+    # in front of it.
+    for {set try 0} {$try < 30} {incr try} {
+        send "systemctl is-active --quiet mydistro-shell.service && test \"\$(systemctl show -p NRestarts --value mydistro-shell.service)\" = 0 && echo SHELL-\$((1+1))\r"
+        expect {
+            "SHELL-2" {
+                expect -re "# $"
+                return
+            }
+            -re "# $" {}
+            timeout   { fail "systemctl did not answer" }
+        }
+        sleep 1
+    }
+    # Say why, so that the log of a failure holds the reason.
+    send "systemctl status mydistro-shell.service --no-pager -l | head -12\r"
+    expect -re "# $"
+    send "journalctl -b -u mydistro-shell.service --no-pager | tail -20\r"
+    expect -re "# $"
+    fail "the shell did not start at boot"
+}
+
+# Stops the shell, so that the test owns the screen. A system where the shell
+# never started answers this as well.
+proc stopShell {} {
+    send "systemctl stop mydistro-shell.service; echo STOPPED-\$((1+1))\r"
+    expect {
+        "STOPPED-2" {}
+        timeout     { fail "the shell did not stop" }
+    }
+    expect -re "# $"
 }

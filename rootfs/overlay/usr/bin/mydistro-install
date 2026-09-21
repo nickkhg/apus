@@ -105,6 +105,15 @@ default mydistro.conf
 timeout 1
 EOF
 
+# --- The shell starts the machine -------------------------------------------------
+# The live system keeps its console, because the installer is what it is for.
+# An installed system shows the shell.
+step "Starting the shell at boot"
+ln -sf /usr/lib/systemd/system/graphical.target "$WORK/target/etc/systemd/system/default.target"
+mkdir -p "$WORK/target/etc/systemd/system/graphical.target.wants"
+ln -sf /usr/lib/systemd/system/mydistro-shell.service \
+    "$WORK/target/etc/systemd/system/graphical.target.wants/mydistro-shell.service"
+
 date -u +%Y-%m-%dT%H:%M:%SZ > "$WORK/target/etc/mydistro-installed"
 
 cleanup

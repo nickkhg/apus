@@ -82,7 +82,7 @@ Symptom: `libseat can't open a seat`.
 
 Cause: the session has no seat. This occurs on the serial console.
 
-Solution: as root, set `LIBSEAT_BACKEND=noop`. In a login session on a VT (for example tty1 in `make gui`), libseat uses logind.
+Solution: as root, set `LIBSEAT_BACKEND=noop`. The shell of an installed system needs none of this: `mydistro-shell.service` starts seatd, and libseat takes the seat from it. See [compositor.md](compositor.md#it-starts-the-machine).
 
 ## libinput: "Assertion `interface->open_restricted != NULL' failed"
 

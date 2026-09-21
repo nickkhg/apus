@@ -1,0 +1,52 @@
+# The shell: what a person sees when the machine finishes starting.
+#
+# The installer turns this on for the system that it installs, and it leaves
+# it off in the live system, where a console and the installer are the point.
+#
+# The compositor takes the screen, the keyboard and the pointer from seatd.
+# systemd starts seatd for it, so seatd needs no unit of its own turned on.
+[Unit]
+Description=The mydistro shell
+# A machine with no screen never finishes the wait below. The shell tries
+# three times and then stops, instead of trying for ever.
+StartLimitIntervalSec=300
+StartLimitBurst=3
+Requires=seatd.service
+After=seatd.service systemd-user-sessions.service
+# One program owns a screen. The shell owns tty1, so the login on it goes.
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+
+[Service]
+# The shell waits for the two things that it cannot start without.
+#
+# seatd is a simple service: systemd calls it started when it forks, and
+# the socket comes a moment later. The screen takes longer still: the
+# kernel finds the display device while the system starts, and a shell that
+# asks for it too early says "no DRM device with a connected output" and
+# stops. Without this wait the shell fails and starts again every two
+# seconds until both are there.
+#
+# TimeoutStartSec ends the wait on a machine that has neither. The service
+# then fails and says so, and the journal holds the reason.
+ExecStartPre=/usr/bin/sh -c 'until test -S /run/seatd.sock && grep -qx connected /sys/class/drm/*/status; do sleep 0.1; done'
+ExecStart=/usr/bin/mydistro-compositor
+# The Wayland socket goes here, and every app that the shell starts finds it
+# here. A login session would name this directory; a service of the system
+# has no session, so systemd makes the directory and the shell names it.
+RuntimeDirectory=mydistro
+Environment=XDG_RUNTIME_DIR=/run/mydistro
+Restart=on-failure
+RestartSec=2
+TimeoutStartSec=20
+# The shell is on tty1, and what it writes goes to the journal.
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+
+[Install]
+WantedBy=graphical.target

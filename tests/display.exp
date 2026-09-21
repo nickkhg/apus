@@ -11,6 +11,10 @@ set timeout 120
 log_user 1
 source [file dirname [info script]]/lib.exp
 
+# This is the first test of the installed system, so it is the one that holds
+# that the machine starts into its shell. `login` then stops the shell, and
+# the probe below has the screen to itself.
+set expectShell 1
 spawn env VM_GPU=headless $env(MYDISTRO_VM) installed
 login
 

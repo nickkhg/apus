@@ -50,7 +50,7 @@ If `out/vm/target.img` does not exist, the program makes an 8 GB disk. To start 
 |---|---|
 | `make live` | Boots the live image and the target disk. |
 | `make installed` | Boots only the target disk. |
-| `make gui` | Boots the target disk in a window. |
+| `make gui` | Boots the target disk in a window. The shell starts with the machine. |
 | `make demo` | Boots the target disk in a window and starts the compositor with a test window. |
 | `make test` | Runs the three tests. |
 | `make test-ui` | Runs the unit tests of the toolkit and the shell on the Mac. No VM and no container. |
@@ -67,6 +67,8 @@ If `out/vm/target.img` does not exist, the program makes an 8 GB disk. To start 
 ## The tests
 
 The tests are `expect` scripts. They use the serial console of the VM. `tests/lib.exp` has the shared procedures `login` and `fail`. Each test stops at the first error and prints `TEST FAILED: <reason>`.
+
+An installed system starts the shell when it finishes booting, so it owns the screen. `login` therefore stops `mydistro-shell.service`, and the test drives the screen itself. A test that sets `expectShell` to 1 before it logs in also holds that the shell was running. `tests/install.exp` does that on the first boot of the system that it installed. That is the one place that says the machine starts into its user interface.
 
 | Test | What it does |
 |---|---|

@@ -2,15 +2,22 @@
 
 `mydistro-compositor` is the display server of mydistro. It is a Swift program. The code is in `ui/Sources/Compositor/`, `ui/Sources/CompositorMain/`, and the Wayland server library `ui/Sources/Wayland/`.
 
-## Run it
+## It starts the machine
 
-In the VM, log in as `root` on the serial console and run these commands:
+An installed system starts the shell when it finishes booting. `mydistro-shell.service` runs the compositor on tty1, and systemd starts seatd for it. The installer turns the service on for the system that it installs. The live system keeps its console, because the installer is what the live system is for.
+
+`make gui` boots an installed disk in a window, and the shell is there.
+
+## Run it by hand
+
+A test drives the screen itself, so it takes the screen back first:
 
 ```sh
+systemctl stop mydistro-shell
 LIBSEAT_BACKEND=noop mydistro-compositor &
 ```
 
-Then press Super to open Summon, and type a name to open an app. `make demo` does these steps for you in a window.
+Then press Super to open Summon, and type a name to open an app. `make demo` does these steps for you in a window, and every test does the first one (`tests/lib.exp`).
 
 | Item | Details |
 |---|---|
