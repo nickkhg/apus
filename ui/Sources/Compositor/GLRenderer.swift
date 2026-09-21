@@ -29,6 +29,7 @@ final class GLRenderer {
     private var textured: Program
     private var gradient: Program
     private var soft: Program
+    private var rounded: Program
     private var vertexBuffer: GLuint = 0
     private var textures = TextureCache()
     /// Where a blur puts the picture while it works on it.
@@ -44,6 +45,11 @@ final class GLRenderer {
         let image: GLint
         let sampleAlphaOnly: GLint
         let forceOpaque: GLint
+        /// Where a rounded rectangle is, for the program that works its
+        /// coverage out instead of reading it from a texture.
+        let boxCentre: GLint
+        let boxHalf: GLint
+        let boxRadius: GLint
         /// The second colour of a gradient, and the line that it runs along.
         let colorTo: GLint
         let axisStart: GLint
@@ -72,6 +78,7 @@ final class GLRenderer {
         textured = try GLRenderer.program(fragment: GLRenderer.texturedFragment)
         gradient = try GLRenderer.program(fragment: GLRenderer.gradientFragment)
         soft = try GLRenderer.program(fragment: GLRenderer.blurFragment)
+        rounded = try GLRenderer.program(fragment: GLRenderer.roundedFragment)
         glGenBuffers(1, &vertexBuffer)
         glDisable(GLenum(GL_DEPTH_TEST))
         glDisable(GLenum(GL_CULL_FACE))
@@ -149,6 +156,21 @@ final class GLRenderer {
                       screen: (width: Int, height: Int)) {
         let box = intersection(clip, Rect(x: 0, y: 0, width: screen.width, height: screen.height))
         guard box.width > 0, box.height > 0, color >> 24 != 0 else { return }
+
+        // A rounded rectangle needs no mask: the GPU works its coverage out.
+        if let shape = GLRenderer.roundedBox(of: path),
+           let quad = shape.quad(inside: box) {
+            use(rounded, screen: screen)
+            set(color: color, on: rounded)
+            glUniform2f(rounded.boxCentre, GLfloat(shape.x + shape.width / 2),
+                        GLfloat(shape.y + shape.height / 2))
+            glUniform2f(rounded.boxHalf, GLfloat(shape.width / 2), GLfloat(shape.height / 2))
+            glUniform1f(rounded.boxRadius, GLfloat(shape.radius))
+            scissor(clip, screen: screen)
+            drawQuad(quad, of: rounded)
+            return
+        }
+
         guard let mask = textures.mask(for: path, clippedTo: box) else { return }
 
         use(textured, screen: screen)
@@ -159,6 +181,68 @@ final class GLRenderer {
         bind(mask.texture, on: textured)
         scissor(clip, screen: screen)
         drawQuad(mask.rect, of: textured)
+    }
+
+    /// A rectangle with round corners, in pixels.
+    struct RoundedBox {
+        let x: Double, y: Double, width: Double, height: Double, radius: Double
+
+        /// The part of the screen to draw, which is the shape and one pixel
+        /// around it for the edge, cut to what the clip allows.
+        func quad(inside box: Rect) -> Rect? {
+            let left = Int((x - 1).rounded(.down)), top = Int((y - 1).rounded(.down))
+            let right = Int((x + width + 1).rounded(.up))
+            let bottom = Int((y + height + 1).rounded(.up))
+            let cut = Rect(x: max(left, box.x), y: max(top, box.y),
+                           width: min(right, box.x + box.width) - max(left, box.x),
+                           height: min(bottom, box.y + box.height) - max(top, box.y))
+            return cut.width > 0 && cut.height > 0 ? cut : nil
+        }
+    }
+
+    /// The rounded rectangle that a path is, or nil for any other shape.
+    ///
+    /// Path.addRoundedRectangle writes a move, then four lines with a curve
+    /// between each pair, then a close. The corners of the shape are the
+    /// ends of those parts, so the shape is read from them, and the parts
+    /// are then checked against the shape that was read. Anything that does
+    /// not match goes the old way, through a mask.
+    static func roundedBox(of path: Path) -> RoundedBox? {
+        let elements = path.elements
+        guard elements.count == 10 else { return nil }
+        guard case .move(let startX, let startY) = elements[0] else { return nil }
+        guard case .close = elements[9] else { return nil }
+
+        func line(_ index: Int) -> (x: Double, y: Double)? {
+            if case .line(let x, let y) = elements[index] { return (x, y) }
+            return nil
+        }
+        func curveEnd(_ index: Int) -> (x: Double, y: Double)? {
+            if case .cubic(_, _, _, _, let x, let y) = elements[index] { return (x, y) }
+            return nil
+        }
+        guard let top = line(1), let right = curveEnd(2), let rightSide = line(3),
+              let bottom = curveEnd(4), let bottomSide = line(5), let left = curveEnd(6),
+              let leftSide = line(7), let back = curveEnd(8) else { return nil }
+
+        let x = leftSide.x, y = startY
+        let radius = startX - x
+        let width = right.x - x, height = bottom.y - y
+        guard radius >= 0, width > 0, height > 0,
+              radius <= min(width, height) / 2 + 0.001 else { return nil }
+
+        // Every part has to sit where the shape says it does.
+        let near = 0.01
+        func same(_ a: Double, _ b: Double) -> Bool { abs(a - b) < near }
+        guard same(top.x, x + width - radius), same(top.y, y),
+              same(right.y, y + radius),
+              same(rightSide.x, x + width), same(rightSide.y, y + height - radius),
+              same(bottom.x, x + width - radius),
+              same(bottomSide.x, x + radius), same(bottomSide.y, y + height),
+              same(left.x, x), same(left.y, y + height - radius),
+              same(leftSide.y, y + radius),
+              same(back.x, startX), same(back.y, startY) else { return nil }
+        return RoundedBox(x: x, y: y, width: width, height: height, radius: radius)
     }
 
     /// A shadow: the same as a path, with a mask that is soft at its edge.
@@ -466,6 +550,34 @@ final class GLRenderer {
         }
         """
 
+    /// A rectangle with round corners, worked out here instead of read from
+    /// a texture.
+    ///
+    /// Almost every shape a shell draws is one of these: of 1200 shapes in a
+    /// run of the demo, 1100 were one rounded rectangle. The CPU used to
+    /// draw the coverage of each one into a mask and send it to the GPU, and
+    /// a shape that moves needs a new mask for every frame, which was most
+    /// of the cost of a frame that moves.
+    ///
+    /// The distance from a point to the shape has a short formula, so the
+    /// GPU works the coverage out for each pixel and nothing is sent. The
+    /// coverage is the part of the pixel inside the shape, taken as a
+    /// straight ramp over the one pixel that the edge crosses.
+    private static let roundedFragment = """
+        precision mediump float;
+        uniform vec4 color;
+        uniform vec2 boxCentre;
+        uniform vec2 boxHalf;
+        uniform float boxRadius;
+        varying vec2 pixel;
+        void main() {
+            vec2 from = abs(pixel - boxCentre) - (boxHalf - vec2(boxRadius));
+            float distance = length(max(from, 0.0))
+                + min(max(from.x, from.y), 0.0) - boxRadius;
+            gl_FragColor = color * clamp(0.5 - distance, 0.0, 1.0);
+        }
+        """
+
     /// One pass of a blur: 17 steps along one direction.
     ///
     /// The first pass reads the copy of the screen and writes to a texture,
@@ -518,6 +630,9 @@ final class GLRenderer {
             image: glGetUniformLocation(id, "image"),
             sampleAlphaOnly: glGetUniformLocation(id, "sampleAlphaOnly"),
             forceOpaque: glGetUniformLocation(id, "forceOpaque"),
+            boxCentre: glGetUniformLocation(id, "boxCentre"),
+            boxHalf: glGetUniformLocation(id, "boxHalf"),
+            boxRadius: glGetUniformLocation(id, "boxRadius"),
             colorTo: glGetUniformLocation(id, "colorTo"),
             axisStart: glGetUniformLocation(id, "axisStart"),
             axisEnd: glGetUniformLocation(id, "axisEnd"),
