@@ -77,15 +77,17 @@ final class Resource2D {
     /// The guest writes B8G8R8X8, which on a little-endian machine is one
     /// 32-bit word per pixel with the blue byte first. That is what
     /// `byteOrder32Little` with `noneSkipFirst` names.
-    func image() -> CGImage? {
+    func image(opaque: Bool = true) -> CGImage? {
         guard let provider = CGDataProvider(
             dataInfo: nil, data: pixels, size: byteCount, releaseData: { _, _, _ in })
         else { return nil }
+        // The screen has nothing behind it, so its alpha means nothing. The
+        // picture of a pointer has a shape, and the alpha is the shape.
+        let alpha: CGImageAlphaInfo = opaque ? .noneSkipFirst : .premultipliedFirst
         return CGImage(
             width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
             bytesPerRow: bytesPerRow, space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue)
-                .union(.byteOrder32Little),
+            bitmapInfo: CGBitmapInfo(rawValue: alpha.rawValue).union(.byteOrder32Little),
             provider: provider, decode: nil, shouldInterpolate: false,
             intent: .defaultIntent)
     }
@@ -97,4 +99,19 @@ final class Resource2D {
 protocol GuestScreen: AnyObject, Sendable {
     /// Called on the queue of the device, once for each flush.
     func show(_ image: CGImage)
+
+    /// The pointer changed. `image` is its picture, or nil to hide it, and
+    /// the place is the top left corner of that picture on the screen.
+    ///
+    /// The pointer is not in the frame. A display draws it over the frame
+    /// from a plane of its own, and the guest moves it with the second
+    /// queue of the device, which costs no frame. The window does the same
+    /// with a layer of its own.
+    func showCursor(_ image: CGImage?, atX x: Int, y: Int)
+}
+
+@available(macOS 27, *)
+extension GuestScreen {
+    /// A screen that has no pointer of its own ignores it.
+    func showCursor(_ image: CGImage?, atX x: Int, y: Int) {}
 }

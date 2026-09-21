@@ -237,6 +237,32 @@ enum VirtioGPU {
         }
     }
 
+    /// `struct virtio_gpu_update_cursor`, the body after the header: where
+    /// the pointer is, which resource holds its picture, and which pixel of
+    /// that picture sits under the point of the pointer.
+    ///
+    /// UPDATE_CURSOR carries all of it. MOVE_CURSOR carries the same bytes,
+    /// and only the position counts.
+    struct Cursor {
+        let scanout: UInt32
+        let x: Int
+        let y: Int
+        let resource: UInt32
+        let hotX: Int
+        let hotY: Int
+
+        init?(_ data: Data) {
+            guard data.count >= 32 else { return nil }
+            scanout = data.value(at: 0)
+            x = Int(Int32(bitPattern: data.value(at: 4) as UInt32))
+            y = Int(Int32(bitPattern: data.value(at: 8) as UInt32))
+            // 12 is padding.
+            resource = data.value(at: 16)
+            hotX = Int(data.value(at: 20) as UInt32)
+            hotY = Int(data.value(at: 24) as UInt32)
+        }
+    }
+
     /// `struct virtio_gpu_resource_map_blob`: the guest asks for a blob to
     /// appear in the host-visible region, at this offset from its start.
     struct MapBlob {

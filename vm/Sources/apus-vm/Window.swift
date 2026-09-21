@@ -15,6 +15,8 @@ final class Window: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// shows the graphics device of the framework by itself.
     private let customGPU: [AnyObject]
     private var window: NSWindow?
+    /// The screen of our own device, when the machine has one.
+    private var guestView: NSView?
     /// The numbers over the screen of the guest.
     private var overlay: Overlay?
 
@@ -65,7 +67,11 @@ final class Window: NSObject, NSApplicationDelegate, NSWindowDelegate {
         view.autoresizingMask = [.width, .height]
         content.addSubview(view)
 
-        if #available(macOS 27, *) { attachSnapshot(to: customGPU) }
+        // With a device of our own, that device draws the screen of the
+        // guest and the framework draws nothing for it. A view over the
+        // view of the framework shows what it draws. The view below keeps
+        // the keyboard and the pointer.
+        if #available(macOS 27, *) { attachGuestView(to: content, frame: view.frame) }
 
         // The numbers go last, so they are above everything.
         let overlay = Overlay(frame: .zero)
@@ -89,6 +95,23 @@ final class Window: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self.window = window
 
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Puts the screen of our own device in the window, when the machine
+    /// has one. With no such device the window shows the display of the
+    /// framework, as before.
+    @available(macOS 27, *)
+    private func attachGuestView(to content: NSView, frame: NSRect) {
+        guard let device = customGPU.compactMap({ $0 as? VirtioGPUDevice }).first else {
+            // No device of ours: only VM_SNAPSHOT wants the pictures.
+            attachSnapshot(to: customGPU)
+            return
+        }
+        let guestView = GuestView(frame: frame)
+        guestView.autoresizingMask = [.width, .height]
+        content.addSubview(guestView)
+        self.guestView = guestView
+        device.screen = withSnapshot(GuestWindowScreen(view: guestView))
     }
 
     /// A switch of the Debug menu changed.

@@ -68,11 +68,18 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
     private var waitingForFence:
         [UInt64: (header: VirtioGPU.Header, element: VZVirtioQueueElement,
                   response: VirtioGPU.Response)] = [:]
+    /// When the guest asked for each fence, for APUS_VM_TIMING.
+    private var fenceAskedAt: [UInt64: Double] = [:]
 
     /// The pictures the guest draws with the 2D commands, and which of them
     /// the one screen shows.
     private var resources: [UInt32: Resource2D] = [:]
     private var scanout: UInt32 = 0
+    /// The pointer: which resource holds its picture, where it is, and
+    /// which pixel of the picture sits under the point. The guest sends
+    /// these on the second queue, and they draw no frame.
+    private var cursor: (resource: UInt32, x: Int, y: Int, hotX: Int, hotY: Int) =
+        (0, 0, 0, 0, 0)
     /// Where a flush goes. The window sets it, on the main thread, while
     /// the machine is already running, so it has a lock of its own.
     private let screenLock = NSLock()
@@ -190,6 +197,7 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
         // the queues go away, so the elements go back now.
         for (_, waiting) in waitingForFence { waiting.element.returnToQueue() }
         waitingForFence.removeAll()
+        fenceAskedAt.removeAll()
         log("virtio-gpu: reset")
     }
 
@@ -300,6 +308,9 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
         case .transferToHost2D:
             handleTransfer(header, element)
 
+        case .updateCursor, .moveCursor:
+            handleCursor(header, element, picture: command == .updateCursor)
+
         case .resourceFlush:
             handleFlush(header, element)
 
@@ -353,7 +364,9 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
         }
 
         var result: Int32 = 0
+        let began = HostTiming.now()
         renderer { result = VirglRenderer.submit(&stream, context: header.contextID) }
+        HostTiming.addSubmit(HostTiming.now() - began)
         Counters.shared.countStream()
         submissions += 1
         if submissions <= 3 || submissions % 500 == 0 {
@@ -549,6 +562,38 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
         write(header.answer(.okNoData), to: element)
     }
 
+    /// The guest moved the pointer, or gave it a new picture.
+    ///
+    /// These come on the cursor queue, and the guest waits for no answer:
+    /// it asks and goes on. So the element goes back with nothing written
+    /// in it. The specification has no answer for either command.
+    private func handleCursor(
+        _ header: VirtioGPU.Header, _ element: VZVirtioQueueElement, picture: Bool
+    ) {
+        guard let body = try? element.readBytes(withExactLength: 32),
+              let update = VirtioGPU.Cursor(body) else { return }
+        if picture {
+            cursor.resource = update.resource
+            cursor.hotX = update.hotX
+            cursor.hotY = update.hotY
+        }
+        cursor.x = update.x
+        cursor.y = update.y
+        showCursor()
+    }
+
+    /// Gives the screen the picture of the pointer and its place, or hides
+    /// it. Resource 0 means that the guest wants no pointer.
+    private func showCursor() {
+        guard let screen else { return }
+        guard cursor.resource != 0, let resource = resources[cursor.resource],
+              let picture = resource.image(opaque: false) else {
+            screen.showCursor(nil, atX: 0, y: 0)
+            return
+        }
+        screen.showCursor(picture, atX: cursor.x - cursor.hotX, y: cursor.y - cursor.hotY)
+    }
+
     // MARK: - Fences
 
     /// Holds an answer until the renderer finishes the work behind it.
@@ -564,6 +609,7 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
         let fence = nextFence
         nextFence += 1
         waitingForFence[fence] = (header, element, response)
+        fenceAskedAt[fence] = HostTiming.now()
 
         var made: Int32 = -1
         renderer {
@@ -598,9 +644,12 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
     private func startPollingForFences() {
         guard fencePoll == nil, let device else { return }
         let timer = DispatchSource.makeTimerSource(queue: device.deviceQueue)
-        timer.schedule(deadline: .now(), repeating: .milliseconds(1), leeway: .microseconds(250))
+        timer.schedule(deadline: .now(),
+                       repeating: .microseconds(HostTiming.pollMicroseconds),
+                       leeway: .microseconds(max(1, HostTiming.pollMicroseconds / 4)))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
+            HostTiming.addPoll()
             guard !waitingForFence.isEmpty else {
                 fencePoll?.cancel()
                 fencePoll = nil
@@ -621,6 +670,9 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
     fileprivate func fenceFinished(_ fence: UInt64) {
         for number in waitingForFence.keys.sorted() where number <= fence {
             guard let waiting = waitingForFence.removeValue(forKey: number) else { continue }
+            if let asked = fenceAskedAt.removeValue(forKey: number) {
+                HostTiming.addFence(HostTiming.now() - asked)
+            }
             Counters.shared.countFence()
             write(waiting.header.answer(waiting.response), to: waiting.element)
             waiting.element.returnToQueue()

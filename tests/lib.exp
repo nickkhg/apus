@@ -5,6 +5,104 @@ proc fail {msg} {
     exit 1
 }
 
+# How long a test waits.
+#
+# Two things are slow: the machine boots, and the compositor starts.
+# Everything else is a word sent to the shell and a word back, which takes a
+# few milliseconds.
+#
+# In some tests a wait for one of those short steps ends at the timeout and
+# not at the word, and the timeout is then what sets the length of the run:
+# tests/venus.exp took 2m10 with a timeout of 10 seconds and 59s with one of
+# 4, and every word arrived in both. Such a test holds `quick`.
+#
+# A test whose every step ends at a mark is not affected, and it holds
+# `slow` throughout. `quick` would only cut into a step that types a word
+# one key at a time, which takes seconds and is not a fault.
+set slow 25
+set quick 5
+
+# Asks the guest for a word, and waits for it.
+#
+# A wait for the prompt of the shell is not enough. The compositor, the apps
+# and apus-vm all write to the same console, and they write while a command
+# runs, so the prompt is at the end of what arrived only in a lull. A lull
+# can be seconds away, and the wait then ends at the timeout.
+#
+# The number rises each time, so nothing already in the stream answers for
+# it. The shell runs this echo only after the command before it, so the word
+# also says that the command finished. printf holds the number apart from
+# the word, so the echo of the command line cannot answer either.
+set markCount 0
+proc mark {what} {
+    global markCount
+    incr markCount
+    send "printf 'MARK-%s\\n' $markCount\r"
+    expect {
+        "MARK-$markCount" {}
+        eof     { fail "$what: the machine stopped" }
+        timeout { fail "$what: the guest did not answer" }
+    }
+}
+
+# Runs a command in the guest and waits for it to finish.
+#
+# The mark goes on the same line as the command, so the shell runs it when
+# the command ends. That is what to use for a command that takes a while: a
+# mark sent as a line of its own, while a long command still holds the
+# terminal, can be eaten by that command, and the shell then never runs it.
+# `mark` on its own is for a step whose command has already answered.
+proc guest {command what} {
+    global markCount
+    incr markCount
+    send "$command; printf 'MARK-%s\n' $markCount\r"
+    expect {
+        "MARK-$markCount" {}
+        eof     { fail "$what: the machine stopped" }
+        timeout { fail "$what: the guest did not answer" }
+    }
+}
+
+# Writes the screen to the share, and waits until it stops changing.
+#
+# The shell moves: a card slides in, Summon comes in over 160 ms. A picture
+# of a move is not a picture of the design, and two renderers must not be
+# caught at two different moments. A fixed wait for that costs its whole
+# length on every run, and it is a guess. Two pictures that agree say that
+# nothing moves now, and the wait is as long as the shell really takes.
+#
+# `bin` is where the tools are, which a test sets. The last picture stays in
+# the share, for tests/screen.py on the Mac to read.
+proc settledShot {name what} {
+    global markCount
+    set tools [expr {[info exists ::bin] ? $::bin : ""}]
+    incr markCount
+    send "for i in 1 2 3 4 5 6 7 8 9 10 11 12; do"
+    send " ${tools}apus-screen shot /mnt/screens/$name.ppm > /dev/null || break;"
+    send " cmp -s /mnt/screens/$name.ppm /tmp/$name.prev && break;"
+    send " cp /mnt/screens/$name.ppm /tmp/$name.prev; sleep 0.1;"
+    send " done; printf 'SHOT-%s\\n' $markCount\r"
+    expect {
+        "apus-screen:"    { fail "$what: the compositor gave no picture" }
+        "SHOT-$markCount" {}
+        eof     { fail "$what: the machine stopped while it drew" }
+        timeout { fail "$what: no picture" }
+    }
+}
+
+# Waits for a file that the guest writes into the share.
+#
+# The guest writes it beside its name and then renames it, so a file that is
+# there is a whole file. A fixed wait for it is a guess that costs its whole
+# length on every run; this one ends as soon as the file arrives.
+proc waitForFile {path what} {
+    for {set try 0} {$try < 400} {incr try} {
+        if {[file exists $path]} { return }
+        after 50
+    }
+    fail "$what: $path did not appear"
+}
+
 # An installed system starts the shell when it finishes booting, so it owns
 # the screen, the keyboard and the pointer. A test drives those itself, so it
 # takes them back after it logs in.
@@ -21,6 +119,8 @@ proc login {} {
         timeout  { fail "no login prompt" }
         eof      { fail "VM exited before login" }
     }
+    # Nothing else writes to the console yet, so the prompt is the end of
+    # what arrived and this is the one wait for it in the tests.
     expect {
         -re "# $" {}
         timeout   { fail "no shell prompt" }
@@ -36,37 +136,34 @@ proc login {} {
 # so a test that asked only that would pass on a shell that never reaches
 # the screen. This asks for a shell that never had to start again.
 proc waitForShell {} {
-    # The command line reads SHELL-$((1+1)), so only real output matches.
-    # Reading the word that systemctl prints would not work: the console
-    # puts escape sequences between the lines, so the word has no newline
-    # in front of it.
+    # One command answers either way, so the test reads a word and never
+    # waits for a prompt. printf keeps the answer out of the echo of the
+    # command line.
     for {set try 0} {$try < 30} {incr try} {
-        send "systemctl is-active --quiet apus-shell.service && test \"\$(systemctl show -p NRestarts --value apus-shell.service)\" = 0 && echo SHELL-\$((1+1))\r"
+        send "systemctl is-active --quiet apus-shell.service"
+        send " && test \"\$(systemctl show -p NRestarts --value apus-shell.service)\" = 0"
+        send " && printf 'SHELL-%s\\n' UP || printf 'SHELL-%s\\n' DOWN\r"
         expect {
-            "SHELL-2" {
-                expect -re "# $"
-                return
-            }
-            -re "# $" {}
-            timeout   { fail "systemctl did not answer" }
+            "SHELL-UP"   { return }
+            "SHELL-DOWN" {}
+            timeout      { fail "systemctl did not answer" }
         }
         sleep 1
     }
     # Say why, so that the log of a failure holds the reason.
     send "systemctl status apus-shell.service --no-pager -l | head -12\r"
-    expect -re "# $"
+    mark "the status of the shell"
     send "journalctl -b -u apus-shell.service --no-pager | tail -20\r"
-    expect -re "# $"
+    mark "the log of the shell"
     fail "the shell did not start at boot"
 }
 
 # Stops the shell, so that the test owns the screen. A system where the shell
 # never started answers this as well.
 proc stopShell {} {
-    send "systemctl stop apus-shell.service; echo STOPPED-\$((1+1))\r"
+    send "systemctl stop apus-shell.service; printf 'STOPPED-%s\\n' now\r"
     expect {
-        "STOPPED-2" {}
-        timeout     { fail "the shell did not stop" }
+        "STOPPED-now" {}
+        timeout       { fail "the shell did not stop" }
     }
-    expect -re "# $"
 }

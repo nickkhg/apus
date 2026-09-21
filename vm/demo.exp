@@ -50,9 +50,14 @@ if {$frameLog ne "0"} {
 # compositor on it. Without the renderer on the host, or without the Zink
 # package in the guest, both fall back and the compositor draws with the
 # CPU. See docs/gpu.md.
+#
+# The compositor draws on that device and not on the one of the framework.
+# The framework's device is a 2D scanout with no 3D, so a frame drawn on
+# the GPU had to cross to it through the memory of the guest. The window
+# shows the pictures of our device, and nothing crosses.
 spawn env VM_GPU=window VM_CUSTOM_GPU=1 $env(APUS_VM) installed
 login
-send "LIBSEAT_BACKEND=noop ${uienv}apus-gpu ${bin}apus-compositor &\r"
+send "LIBSEAT_BACKEND=noop APUS_DRM_DEVICE=/dev/dri/card1 ${uienv}apus-gpu ${bin}apus-compositor &\r"
 expect {
     "COMPOSITOR-READY"     {}
     "apus-compositor:" { fail "compositor reported an error" }
