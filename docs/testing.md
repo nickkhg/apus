@@ -2,7 +2,7 @@
 
 ## The VM
 
-`mydistro-vm` starts the VM. It is a Swift program in `vm/`, and it uses Apple's Virtualization framework. The settings are:
+`apus-vm` starts the VM. It is a Swift program in `vm/`, and it uses Apple's Virtualization framework. The settings are:
 
 - aarch64, 4 CPUs, 2 GB of memory.
 - The EFI firmware of the framework. The firmware variables are new for each boot, so the firmware starts `EFI/BOOT/BOOTAA64.EFI` like a new machine.
@@ -13,8 +13,8 @@
 
 | Command | Disks |
 |---|---|
-| `mydistro-vm live` | A copy of `out/live.img`, and the target disk `out/vm/target.img` |
-| `mydistro-vm installed` | Only the target disk |
+| `apus-vm live` | A copy of `out/live.img`, and the target disk `out/vm/target.img` |
+| `apus-vm installed` | Only the target disk |
 
 A boot in `live` mode first copies `out/live.img` to `out/vm/live-boot.img`, and the VM uses the copy. The live image therefore never changes. On APFS the copy is a clone: it is immediate, and it uses almost no disk. The copy must be writable, because systemd-boot writes a random seed to the EFI system partition.
 
@@ -32,7 +32,7 @@ The serial console is always in the terminal. To stop the VM, push Ctrl-A in the
 
 A window follows its own size when a person changes it, and it counts pixels, not points. A Mac with small pixels therefore gives the guest two times the pixels in each direction, which is four times the work for each frame. `VM_RESIZE=off` keeps the size that `VM_SCREEN` gave.
 
-`MYDISTRO_FRAME_LOG` times the frames. `MYDISTRO_FRAME_LOG=20` writes one line for each 20 frames: the average, the longest, and the size of the screen. These are the times of the shell with nothing open, in a VM, where Mesa renders with the CPU:
+`APUS_FRAME_LOG` times the frames. `APUS_FRAME_LOG=20` writes one line for each 20 frames: the average, the longest, and the size of the screen. These are the times of the shell with nothing open, in a VM, where Mesa renders with the CPU:
 
 | Renderer | Size | Average | Longest | Frames a second |
 |---|---|---|---|---|
@@ -54,7 +54,7 @@ If `out/vm/target.img` does not exist, the program makes an 8 GB disk. To start 
 | `make demo` | Boots the target disk in a window and starts the compositor with a test window. |
 | `make test` | Runs the three tests. |
 | `make test-ui` | Runs the unit tests of the toolkit and the shell on the Mac. No VM and no container. |
-| `make test-ui-linux` | Runs the same tests on mydistro, in the builder container. |
+| `make test-ui-linux` | Runs the same tests on Apus, in the builder container. |
 | `make test-dev` | Runs `make ui`, then the compositor test with the programs from `out/ui/` (through `/mnt/host/ui`). Needs the disk from `make test`. |
 | `make demo-dev` | The same as `make demo`, with the programs from `out/ui/`. |
 
@@ -62,28 +62,28 @@ If `out/vm/target.img` does not exist, the program makes an 8 GB disk. To start 
 
 `make test-ui` runs the unit tests of `ui/Toolkit/` on the Mac, because that package also builds for macOS. A run takes a few seconds. They test the layout of the toolkit, the text, and the shell panel. A test makes a display list from a view and looks at the items in it, so it needs no screen.
 
-`make test-ui-linux` runs the same tests on mydistro, in the builder container. Run it before a commit. See [toolkit.md](toolkit.md#tests).
+`make test-ui-linux` runs the same tests on Apus, in the builder container. Run it before a commit. See [toolkit.md](toolkit.md#tests).
 
 ## The tests
 
 The tests are `expect` scripts. They use the serial console of the VM. `tests/lib.exp` has the shared procedures `login` and `fail`. Each test stops at the first error and prints `TEST FAILED: <reason>`.
 
-An installed system starts the shell when it finishes booting, so it owns the screen. `login` therefore stops `mydistro-shell.service`, and the test drives the screen itself. A test that sets `expectShell` to 1 before it logs in also holds that the shell was running. `tests/install.exp` does that on the first boot of the system that it installed. That is the one place that says the machine starts into its user interface.
+An installed system starts the shell when it finishes booting, so it owns the screen. `login` therefore stops `apus-shell.service`, and the test drives the screen itself. A test that sets `expectShell` to 1 before it logs in also holds that the shell was running. `tests/install.exp` does that on the first boot of the system that it installed. That is the one place that says the machine starts into its user interface.
 
 | Test | What it does |
 |---|---|
-| `tests/install.exp` | Removes the target disk. Boots the live image and runs `mydistro-install -y /dev/vdb`. Boots the installed disk and checks it (see below). |
-| `tests/display.exp` | Boots the installed disk with `VM_GPU=headless`. Checks `/mnt/host`. Runs `mydistro-ui-check` and `mydistro-display-probe`. Checks a screenshot. |
-| `tests/compositor.exp` | Boots the installed disk with `VM_GPU=headless`. Starts `mydistro-compositor`. Opens the apps with Summon, types in the terminal, and checks screenshots. Stops the compositor with SIGTERM. |
+| `tests/install.exp` | Removes the target disk. Boots the live image and runs `apus-install -y /dev/vdb`. Boots the installed disk and checks it (see below). |
+| `tests/display.exp` | Boots the installed disk with `VM_GPU=headless`. Checks `/mnt/host`. Runs `apus-ui-check` and `apus-display-probe`. Checks a screenshot. |
+| `tests/compositor.exp` | Boots the installed disk with `VM_GPU=headless`. Starts `apus-compositor`. Opens the apps with Summon, types in the terminal, and checks screenshots. Stops the compositor with SIGTERM. |
 
 `tests/display.exp` and `tests/compositor.exp` use the disk that `tests/install.exp` made. Run the tests in this sequence. `make test` does this.
 
 The installed system passes when all these conditions are true:
 
-- `/etc/mydistro-installed` exists.
-- `/etc/os-release` has `ID=mydistro`, and pacman lists `mydistro-release`.
+- `/etc/apus-installed` exists.
+- `/etc/os-release` has `ID=apus`, and pacman lists `apus-release`.
 - `/boot` is a mount point and has `/boot/Image`.
-- The kernel command line does not have `mydistro.live`.
+- The kernel command line does not have `apus.live`.
 - The root file system is writable.
 - pacman can read its database (`pacman -Q linux-aarch64`).
 
@@ -97,30 +97,30 @@ The programs print these markers:
 
 | Marker | Program |
 |---|---|
-| `Installation complete` | `mydistro-install` |
-| `UI-CHECK-OK` | `mydistro-ui-check` |
-| `PROBE-READY`, `PROBE-DONE` | `mydistro-display-probe` |
-| `COMPOSITOR-READY`, `COMPOSITOR-EXIT` | `mydistro-compositor` |
-| `WINDOW-MAPPED` | `mydistro-compositor`, when a window opens |
-| `WINDOW-CLOSE-SENT` | `mydistro-compositor`, when a command of Summon asks a window to close |
-| `WINDOW-CONFIGURED`, `WINDOW-KEPT` | `mydistro-compositor`, when a layout gives a window a new size or keeps the one it had |
-| `WINDOW-IN-RAIL` | `mydistro-compositor`, when a layout places no window and it waits in the rail |
-| `LAYOUT` | `mydistro-compositor`, when a person picks another layout |
-| `APP-STARTED`, `APP-RAISED` | `mydistro-compositor`, when Summon starts an app or brings its window forward |
-| `APP-DID-NOT-START` | `mydistro-compositor`, when an app opens no window in ten seconds |
-| `CLIENT-DRAWN` | `mydistro-hello-client` |
-| `CLIENT-POINTER-ENTER`, `CLIENT-POINTER`, `CLIENT-POINTER-LEAVE`, `CLIENT-BUTTON` | `mydistro-hello-client`, when the compositor gives it the pointer |
-| `TERMINAL-READY` | `mydistro-terminal`, with the size of the grid |
+| `Installation complete` | `apus-install` |
+| `UI-CHECK-OK` | `apus-ui-check` |
+| `PROBE-READY`, `PROBE-DONE` | `apus-display-probe` |
+| `COMPOSITOR-READY`, `COMPOSITOR-EXIT` | `apus-compositor` |
+| `WINDOW-MAPPED` | `apus-compositor`, when a window opens |
+| `WINDOW-CLOSE-SENT` | `apus-compositor`, when a command of Summon asks a window to close |
+| `WINDOW-CONFIGURED`, `WINDOW-KEPT` | `apus-compositor`, when a layout gives a window a new size or keeps the one it had |
+| `WINDOW-IN-RAIL` | `apus-compositor`, when a layout places no window and it waits in the rail |
+| `LAYOUT` | `apus-compositor`, when a person picks another layout |
+| `APP-STARTED`, `APP-RAISED` | `apus-compositor`, when Summon starts an app or brings its window forward |
+| `APP-DID-NOT-START` | `apus-compositor`, when an app opens no window in ten seconds |
+| `CLIENT-DRAWN` | `apus-hello-client` |
+| `CLIENT-POINTER-ENTER`, `CLIENT-POINTER`, `CLIENT-POINTER-LEAVE`, `CLIENT-BUTTON` | `apus-hello-client`, when the compositor gives it the pointer |
+| `TERMINAL-READY` | `apus-terminal`, with the size of the grid |
 
 ### Screenshots
 
-Apple's Virtualization framework cannot make a picture of the screen of a guest, and it cannot send input to a guest. QEMU could do both, with `screendump` on its monitor socket and `input-send-event` on QMP. The guest therefore does this work itself, with `mydistro-screen`:
+Apple's Virtualization framework cannot make a picture of the screen of a guest, and it cannot send input to a guest. QEMU could do both, with `screendump` on its monitor socket and `input-send-event` on QMP. The guest therefore does this work itself, with `apus-screen`:
 
 | Command | Result |
 |---|---|
-| `mydistro-screen shot PATH` | Asks the compositor for the pixels that it put on the screen, and writes them to `PATH` as a PPM. |
-| `mydistro-screen input [OPTIONS]` | Moves the pointer, clicks, and types. |
-| `mydistro-screen size` | Prints the size of the screen. |
+| `apus-screen shot PATH` | Asks the compositor for the pixels that it put on the screen, and writes them to `PATH` as a PPM. |
+| `apus-screen input [OPTIONS]` | Moves the pointer, clicks, and types. |
+| `apus-screen size` | Prints the size of the screen. |
 
 | Option of `input` | Result |
 |---|---|
@@ -130,11 +130,11 @@ Apple's Virtualization framework cannot make a picture of the screen of a guest,
 
 The tool runs the options in the order of the command line. A test can therefore say `--key super --type terminal --key enter`, which opens Summon, narrows the list, and then chooses. `--key` presses a key that writes no character. The names are `escape`, `backspace`, `tab`, `enter`, `up`, `down`, `left`, `right`, `super` and `space`.
 
-`mydistro-screen input` makes a pointer and a keyboard with uinput. The pointer reports where it is, from 0 to 32767 on each axis, which is what QEMU's virtio-tablet also did. The events therefore go through evdev, libinput and xkbcommon, in the same way as the events of a real mouse and a real keyboard. The compositor needs no test code for input.
+`apus-screen input` makes a pointer and a keyboard with uinput. The pointer reports where it is, from 0 to 32767 on each axis, which is what QEMU's virtio-tablet also did. The events therefore go through evdev, libinput and xkbcommon, in the same way as the events of a real mouse and a real keyboard. The compositor needs no test code for input.
 
-The compositor writes the pictures. It listens on the socket that `MYDISTRO_SCREENSHOT_SOCKET` names, and it writes the buffer that it gave to the display. The pixels in a picture are therefore the pixels on the screen, and not a second drawing of them. Without that variable, the compositor has no such socket.
+The compositor writes the pictures. It listens on the socket that `APUS_SCREENSHOT_SOCKET` names, and it writes the buffer that it gave to the display. The pixels in a picture are therefore the pixels on the screen, and not a second drawing of them. Without that variable, the compositor has no such socket.
 
-`tests/display.exp` runs no compositor, so `mydistro-display-probe --write PATH` writes its own picture.
+`tests/display.exp` runs no compositor, so `apus-display-probe --write PATH` writes its own picture.
 
 The tests put the pictures in `/mnt/screens`, which is `out/vm/screens` on the Mac. `tests/screen.py` reads them there and checks pixel colours:
 

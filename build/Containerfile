@@ -1,4 +1,4 @@
-# Build environment for mydistro: an Arch Linux ARM system with the tools to
+# Build environment for Apus: an Arch Linux ARM system with the tools to
 # assemble another one (pacstrap, systemd-repart, mkfs.*).
 #
 # The base is the official Arch Linux ARM rootfs tarball. `make builder`
@@ -17,7 +17,7 @@ RUN sed -i -e 's/^CheckSpace/#CheckSpace/' -e 's/^DownloadUser/#DownloadUser/' \
         arch-install-scripts base-devel dosfstools e2fsprogs mtools \
     && pacman -Scc --noconfirm
 
-# makepkg refuses to run as root; mydistro packages build as this user.
+# makepkg refuses to run as root; Apus packages build as this user.
 RUN useradd --create-home builder
 
 # Development files of the C libraries the Swift UI builds on (see ui/).
@@ -45,6 +45,6 @@ CMD ["bash"]
 RUN pacman -Sy --noconfirm --needed git && pacman -Scc --noconfirm
 
 # A font for the toolkit's text: the same package that the image installs
-# (see packages/mydistro-ui/PKGBUILD), so the unit tests measure the glyphs
+# (see packages/apus-ui/PKGBUILD), so the unit tests measure the glyphs
 # that the target draws.
 RUN pacman -Sy --noconfirm --needed ttf-dejavu && pacman -Scc --noconfirm

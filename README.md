@@ -1,6 +1,8 @@
-# mydistro
+# Apus
 
-mydistro is a Linux distribution for aarch64, based on Arch Linux ARM. It uses systemd and pacman. A live image boots in a VM and installs the system to a disk. The user interface is a Wayland compositor in Swift 6.4, with a declarative toolkit of its own, a tiling shell, and a terminal.
+*Apus* is the genus of the common swift, from the Greek *ápous*, "footless". The name comes from an old belief that the bird had no feet, because nobody ever saw one on the ground: a swift eats, sleeps and mates on the wing, and comes down only to nest. This system is written in Swift from the compositor up, so it borrows the bird rather than the word.
+
+Apus is a Linux distribution for aarch64, based on Arch Linux ARM. It uses systemd and pacman. A live image boots in a VM and installs the system to a disk. The user interface is a Wayland compositor in Swift 6.4, with a declarative toolkit of its own, a tiling shell, and a terminal.
 
 ## Requirements
 
@@ -33,7 +35,7 @@ Other commands:
 
 | Command | Result |
 |---|---|
-| `make live` | Boots the live image. Log in as `root` with no password, then run `mydistro-install`. |
+| `make live` | Boots the live image. Log in as `root` with no password, then run `apus-install`. |
 | `make installed` | Boots the installed disk, with the serial console only. |
 | `make gui` | Boots the installed disk in a window. |
 | `make ui` | Compiles the Swift code on the Mac in a few seconds, for use in the VM at `/mnt/host/ui/`. |
@@ -44,7 +46,7 @@ Other commands:
 
 To stop a VM, push Ctrl-A in the terminal, then push X.
 
-To use Xcode, open `mydistro.xcodeproj`. Cmd-B runs `make ui`, and Cmd-R starts the new build in a VM. See [User interface](docs/ui.md#xcode).
+To use Xcode, open `apus.xcodeproj`. Cmd-B runs `make ui`, and Cmd-R starts the new build in a VM. See [User interface](docs/ui.md#xcode).
 
 To install software on a running system, use pacman. For example: `pacman -S htop`.
 
@@ -55,9 +57,9 @@ To install software on a running system, use pacman. For example: `pacman -S hto
 | [Architecture](docs/architecture.md) | The layers, the repository layout, and the boot sequence |
 | [Building](docs/building.md) | The builder image, the pinned inputs, the build steps, and reproducibility |
 | [The system](docs/system.md) | The live image, the installer, first boot, and the system settings |
-| [Packages](docs/packages.md) | The `[mydistro]` repository, the branding package, and how to add packages |
+| [Packages](docs/packages.md) | The `[apus]` repository, the branding package, and how to add packages |
 | [User interface](docs/ui.md) | The Swift toolchains, the Swift SDK, Xcode, the Swift package, and the development loop |
-| [Compositor](docs/compositor.md) | The design of `mydistro-compositor` and of its Wayland server in Swift |
+| [Compositor](docs/compositor.md) | The design of `apus-compositor` and of its Wayland server in Swift |
 | [Toolkit](docs/toolkit.md) | The declarative UI layer: views, layout, and text |
 | [Applications](docs/applications.md) | The app bundles in `/Applications`, Summon, and the terminal |
 | [Layouts](docs/layouts.md) | How a layout and a window agree on a size, and the four layouts |

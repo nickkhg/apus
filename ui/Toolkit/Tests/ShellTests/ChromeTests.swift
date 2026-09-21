@@ -43,7 +43,7 @@ struct WindowChromeTests {
 struct WindowHeadTests {
     private let screen = Rect(x: 0, y: 0, width: 1280, height: 800)
 
-    private func head(focus: Bool = true, title: String = "~/mydistro — bash") -> WindowHead {
+    private func head(focus: Bool = true, title: String = "~/apus — bash") -> WindowHead {
         WindowHead(id: "w1", appName: "Terminal", mark: Color(hex: 0x3BB273),
                    title: title, sizeClass: .large, hasFocus: focus,
                    cell: Rect(x: 72, y: 8, width: 936, height: 784))

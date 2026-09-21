@@ -1,6 +1,6 @@
-// mydistro-display-probe [--hold SECONDS] [--write PATH]
+// apus-display-probe [--hold SECONDS] [--write PATH]
 //
-// Takes over the screen, draws a test pattern (a white square on mydistro
+// Takes over the screen, draws a test pattern (a white square on Apus
 // purple), holds it, then gives the screen back. Must run as root, or as
 // the owner of the seat, with no other program using the display.
 //
@@ -21,18 +21,18 @@ while let argument = arguments.popFirst() {
     switch argument {
     case "--hold":
         guard let value = arguments.popFirst().flatMap(UInt32.init) else {
-            print("usage: mydistro-display-probe [--hold SECONDS] [--write PATH]")
+            print("usage: apus-display-probe [--hold SECONDS] [--write PATH]")
             exit(2)
         }
         holdSeconds = value
     case "--write":
         guard let value = arguments.popFirst() else {
-            print("usage: mydistro-display-probe [--hold SECONDS] [--write PATH]")
+            print("usage: apus-display-probe [--hold SECONDS] [--write PATH]")
             exit(2)
         }
         picturePath = value
     default:
-        print("usage: mydistro-display-probe [--hold SECONDS] [--write PATH]")
+        print("usage: apus-display-probe [--hold SECONDS] [--write PATH]")
         exit(2)
     }
 }
@@ -57,6 +57,6 @@ do {
     screen.restore()
     print("PROBE-DONE")
 } catch {
-    print("mydistro-display-probe: \(error)")
+    print("apus-display-probe: \(error)")
     exit(1)
 }

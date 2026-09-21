@@ -11,7 +11,7 @@ In this sequence:
 5. A GPU renderer. Use GBM, EGL, and OpenGL ES to draw the display list. Keep `SoftwareRenderer` as a fallback.
 6. `linux-dmabuf`, so that apps can give GPU buffers.
 7. Popups (`xdg_popup` and `xdg_positioner`).
-8. Test with real Wayland apps, for example `foot` or `weston-terminal`. The clients that test the Swift Wayland server now are `mydistro-hello-client` and `mydistro-terminal`.
+8. Test with real Wayland apps, for example `foot` or `weston-terminal`. The clients that test the Swift Wayland server now are `apus-hello-client` and `apus-terminal`.
 9. `wl_registry.global_remove`, for globals that go away (for example a disconnected output).
 
 ## The toolkit and the shell
@@ -31,7 +31,7 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
 6. A picture of a window in the card that stands in for it. It is a crop of the top left at one pixel to one point. A person turns it on for one app at a time.
 7. A cell that moves. `Animation.window` names the move, and a frame moves already. A card, a message or the cell of a starting app can then slide to its new place instead of jumping. The window itself cannot: the compositor gives an app its size over Wayland, and an app that redraws at 60 different sizes is not free. So the chrome would move while the window jumps, which is worse than both jumping.
 
-   A screen that moves also makes the pixel tests uncertain: a picture taken in the middle of a move is a different picture each run. `mydistro-screen shot` could wait for the screen to settle first. `ViewHost` knows when nothing is moving.
+   A screen that moves also makes the pixel tests uncertain: a picture taken in the middle of a move is a different picture each run. `apus-screen shot` could wait for the screen to settle first. `ViewHost` knows when nothing is moving.
 8. The display list of a view that did not change. The graph keeps the nodes of such a view. The frame still walks every node, to lay it out and to ask it for its items. A frame of the shell is 0.22 ms of that walk. An attribute for the items of a subtree, under its frame and the scale, would take most of it away.
 9. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
 
@@ -51,8 +51,8 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
 
 ## Packages and the repository
 
-- Sign the mydistro packages. Make a `mydistro-keyring` package with the public key, as Arch Linux does.
-- Publish the `[mydistro]` repository on a server. Add it to `/etc/pacman.conf` on installed systems. Then installed systems get updates of mydistro packages.
+- Sign the Apus packages. Make a `apus-keyring` package with the public key, as Arch Linux does.
+- Publish the `[apus]` repository on a server. Add it to `/etc/pacman.conf` on installed systems. Then installed systems get updates of Apus packages.
 - Build the packages that Arch Linux ARM does not have (see the Omarchy comparison in [decisions.md](decisions.md)).
 
 ## Reproducibility
@@ -80,7 +80,7 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
 - The GPU renderer sends the pixels of a window to the GPU at each commit. The GPU can read a buffer of the app directly, with `EGL_WL_bind_wayland_display` or with dma-buf. That removes the copy.
 - The GPU renderer draws one quad for each item. Items with the same texture and colour could go into one draw.
 - `make gui` and `make demo` open a window. The automated tests do not test them. `tests/display.exp` and `tests/compositor.exp` test the same display with no window. In a window, the keyboard and the pointer are USB devices of the framework. The tests do not use those devices. They make their own with uinput.
-- `make build` builds every package in `packages/` again, every time: `build.sh` removes the repository and runs `makepkg --cleanbuild --force` for each one. Two of them are Mesa (`mydistro-zink`, `vulkan-virtio`), which is most of the minutes of an image build. A package whose PKGBUILD and sources did not change could come from the repository of the last build.
+- `make build` builds every package in `packages/` again, every time: `build.sh` removes the repository and runs `makepkg --cleanbuild --force` for each one. Two of them are Mesa (`apus-zink`, `vulkan-virtio`), which is most of the minutes of an image build. A package whose PKGBUILD and sources did not change could come from the repository of the last build.
 - The tests use one VM disk in sequence. `tests/display.exp` and `tests/compositor.exp` need the disk from `tests/install.exp`.
 - Old builder images use disk space. On 19 September, `container system df` reported 42 GB that `container image prune` can remove.
 

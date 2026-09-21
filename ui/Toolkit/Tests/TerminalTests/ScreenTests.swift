@@ -191,7 +191,7 @@ struct TitleTests {
 
     @Test("OSC 0 sets the title, and BEL ends it")
     func oscZeroSetsTheTitle() {
-        #expect(screen("\u{1B}]0;~/mydistro — bash\u{07}").title == "~/mydistro — bash")
+        #expect(screen("\u{1B}]0;~/apus — bash\u{07}").title == "~/apus — bash")
     }
 
     @Test("OSC 2 sets the title as well")

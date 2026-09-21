@@ -1,10 +1,10 @@
-# mydistro - host-side entry point. The build runs inside an Apple `container`;
+# Apus - host-side entry point. The build runs inside an Apple `container`;
 # testing runs in a virtual machine on the Mac, through Apple's
-# Virtualization framework (vm/, the mydistro-vm program).
+# Virtualization framework (vm/, the apus-vm program).
 
-IMAGE     := mydistro-builder
-VOL_WORK  := mydistro-work
-VOL_PKG   := mydistro-pkgcache
+IMAGE     := apus-builder
+VOL_WORK  := apus-work
+VOL_PKG   := apus-pkgcache
 # The time zone of the image. The compositor shows this time in the panel.
 # Change it here, or with `timedatectl set-timezone` on a running system.
 TIMEZONE  ?= Europe/London
@@ -24,15 +24,15 @@ BUILDER_STAMP := build/cache/builder.stamp
 
 # The swift.org toolchain for macOS (the same compiler version as the Linux
 # toolchain in the builder), and the Swift SDK that `make sdk` makes from the
-# builder. Together they compile ui/ for mydistro on the Mac.
+# builder. Together they compile ui/ for Apus on the Mac.
 SWIFT_MAC_PKG    := build/cache/swift-$(SWIFT_VERSION)-RELEASE-osx.pkg
 SWIFT_MAC_URL    := https://download.swift.org/swift-$(SWIFT_VERSION)-release/xcode/swift-$(SWIFT_VERSION)-RELEASE/$(notdir $(SWIFT_MAC_PKG))
 SWIFT_MAC_SHA256 := 8fd03185b98fe27f54a54631c2449decf75d5b466ce8e34abbd414141063c6aa
 SWIFT_MAC        := build/cache/swift-$(SWIFT_VERSION)-macos
 SWIFT_SDKS       := build/cache/swift-sdks
-SWIFT_SDK        := mydistro-aarch64
+SWIFT_SDK        := apus-aarch64
 SDK_STAMP        := $(SWIFT_SDKS)/$(SWIFT_SDK).artifactbundle/info.json
-# MYDISTRO_CROSS tells ui/Toolkit/Package.swift not to run pkg-config: the
+# APUS_CROSS tells ui/Toolkit/Package.swift not to run pkg-config: the
 # Swift SDK has the include directories, and pkg-config would answer with the
 # macOS libraries of Homebrew.
 # The compositor draws every pixel of every frame, and a debug build of it
@@ -45,13 +45,13 @@ UI_CONFIG        ?= release
 # beside itself first ($ORIGIN, for the /mnt/host/ui loop) and in /usr/lib
 # after that. The Swift runtime is in the image, at /usr/lib/swift/linux, so
 # the programs no longer carry a copy each.
-SWIFT_BUILD       = MYDISTRO_CROSS=1 $(SWIFT_MAC)/usr/bin/swift build --package-path ui \
+SWIFT_BUILD       = APUS_CROSS=1 $(SWIFT_MAC)/usr/bin/swift build --package-path ui \
 	--swift-sdks-path $(SWIFT_SDKS) --swift-sdk $(SWIFT_SDK) \
 	-Xlinker -rpath -Xlinker '$$ORIGIN' \
 	-Xlinker -rpath -Xlinker /usr/lib/swift/linux \
 	-c $(UI_CONFIG)
 
-# mydistro-vm boots the images. It builds with the Swift toolchain of Xcode,
+# apus-vm boots the images. It builds with the Swift toolchain of Xcode,
 # because Virtualization and AppKit are frameworks of the platform. The
 # program needs the com.apple.security.virtualization entitlement, and a
 # local (ad hoc) signature carries it.
@@ -76,9 +76,9 @@ VIRGL_FLAGS = $(if $(wildcard $(VIRGL_LIB)),\
 	-Xlinker -rpath -Xlinker $(MOLTEN_DIR),)
 
 VM_BUILD = xcrun swift build --package-path vm -c release $(VIRGL_FLAGS)
-VM       = $(shell xcrun swift build --package-path vm -c release --show-bin-path)/mydistro-vm
+VM       = $(shell xcrun swift build --package-path vm -c release --show-bin-path)/apus-vm
 # The expect scripts in tests/ and vm/ start the machine through this.
-export MYDISTRO_VM := $(VM)
+export APUS_VM := $(VM)
 
 # Xcode and other GUI apps start make with a minimal PATH.
 export PATH := /usr/local/bin:/opt/homebrew/bin:$(PATH)
@@ -99,7 +99,7 @@ RUN = container run --rm --cap-add ALL -c $(CPUS) -m $(MEM) \
 
 help:
 	@echo "make build      build out/live.img"
-	@echo "make vm         build mydistro-vm, the virtual machine on the Mac"
+	@echo "make vm         build apus-vm, the virtual machine on the Mac"
 	@echo "make live       boot live image + blank disk (Ctrl-A X quits)"
 	@echo "make installed  boot the disk the installer wrote"
 	@echo "make gui        boot the installed disk in a window (display + input)"
@@ -107,7 +107,7 @@ help:
 	@echo "make demo-dev   same, with the programs from 'make ui' (out/ui)"
 	@echo "make ui         quick Swift build of ui/ on the Mac into out/ui (shared at /mnt/host/ui in the VM)"
 	@echo "make ui-container  the same build in the build container"
-	@echo "make sdk        the macOS Swift toolchain and the mydistro Swift SDK (make ui does this)"
+	@echo "make sdk        the macOS Swift toolchain and the Apus Swift SDK (make ui does this)"
 	@echo "make test       install, display, compositor and GPU tests"
 	@echo "make test-ui    unit tests of the toolkit and the shell, on the Mac (seconds)"
 	@echo "make test-venus  the guest finds the GPU of the Mac (needs the renderer)"
@@ -191,7 +191,7 @@ test-ui: $(SWIFT_MAC)/usr/bin/swift
 bench: $(SWIFT_MAC)/usr/bin/swift
 	$(SWIFT_MAC)/usr/bin/swift run -c release --package-path ui/Toolkit toolkit-bench
 
-# The same tests on mydistro itself (aarch64 Linux), in the builder container.
+# The same tests on Apus itself (aarch64 Linux), in the builder container.
 test-ui-linux: builder volumes
 	$(RUN) $(IMAGE) swift test --package-path ui/Toolkit --scratch-path /work/swiftpm/test
 
@@ -212,7 +212,7 @@ shell: builder volumes
 # entitlement, Virtualization refuses to make a machine.
 vm:
 	$(VM_BUILD)
-	codesign --force --sign - --entitlements vm/mydistro-vm.entitlements $(VM)
+	codesign --force --sign - --entitlements vm/apus-vm.entitlements $(VM)
 
 live: vm
 	$(VM) live
@@ -233,7 +233,7 @@ demo: vm
 # The same, but the VM runs the programs from `make ui` through /mnt/host.
 # It builds them first, so that the VM never runs a program of an older build.
 demo-dev: ui vm
-	MYDISTRO_UI_DIR=/mnt/host/ui vm/demo.exp
+	APUS_UI_DIR=/mnt/host/ui vm/demo.exp
 
 test: vm
 	tests/install.exp
@@ -250,7 +250,7 @@ test-venus: vm
 # The compositor test with the programs from `make ui`. Needs the installed
 # disk from `make test`.
 test-dev: ui vm
-	MYDISTRO_UI_DIR=/mnt/host/ui tests/compositor.exp
+	APUS_UI_DIR=/mnt/host/ui tests/compositor.exp
 
 clean:
 	-container volume rm $(VOL_WORK)

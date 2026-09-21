@@ -1,9 +1,9 @@
-// mydistro-screen: what a test on the Mac uses to see and to touch the
+// apus-screen: what a test on the Mac uses to see and to touch the
 // screen of the guest.
 //
-//   mydistro-screen shot PATH            write the screen to PATH (a PPM)
-//   mydistro-screen input [options]      move the pointer, click, type
-//   mydistro-screen size                 print the size of the screen
+//   apus-screen shot PATH            write the screen to PATH (a PPM)
+//   apus-screen input [options]      move the pointer, click, type
+//   apus-screen size                 print the size of the screen
 //
 // Options of `input`, in the order that they happen:
 //   --pointer X,Y   put the pointer on this pixel
@@ -20,11 +20,11 @@
 import CUinput
 import Glibc
 
-let socketPath = getenv("MYDISTRO_SCREENSHOT_SOCKET").map { String(cString: $0) }
-    ?? "/run/mydistro-screenshot.sock"
+let socketPath = getenv("APUS_SCREENSHOT_SOCKET").map { String(cString: $0) }
+    ?? "/run/apus-screenshot.sock"
 
 func fail(_ message: String) -> Never {
-    FileHandle.error("mydistro-screen: \(message)\n")
+    FileHandle.error("apus-screen: \(message)\n")
     exit(1)
 }
 
@@ -56,7 +56,7 @@ func ask(_ request: String) -> String {
         // pixel. A compositor without the variable has no socket at all.
         fail("""
             no compositor on \(socketPath) (errno \(errno)).
-            Start it with MYDISTRO_SCREENSHOT_SOCKET=\(socketPath).
+            Start it with APUS_SCREENSHOT_SOCKET=\(socketPath).
             """)
     }
 
@@ -155,49 +155,49 @@ final class Devices {
     let keyboard: Int32
 
     init() {
-        pointer = mydistro_uinput_open()
-        keyboard = mydistro_uinput_open()
+        pointer = apus_uinput_open()
+        keyboard = apus_uinput_open()
         guard pointer >= 0, keyboard >= 0 else {
             fail("cannot open /dev/uinput (errno \(errno)); run as root")
         }
-        guard mydistro_uinput_make_pointer(pointer) == 0 else { fail("cannot make the pointer") }
-        guard mydistro_uinput_make_keyboard(keyboard) == 0 else { fail("cannot make the keyboard") }
+        guard apus_uinput_make_pointer(pointer) == 0 else { fail("cannot make the pointer") }
+        guard apus_uinput_make_keyboard(keyboard) == 0 else { fail("cannot make the keyboard") }
         // udev must see the new devices and libinput must open them before
         // the first event, or the compositor never gets it.
         usleep(700_000)
     }
 
     deinit {
-        mydistro_uinput_remove(pointer)
-        mydistro_uinput_remove(keyboard)
+        apus_uinput_remove(pointer)
+        apus_uinput_remove(keyboard)
         close(pointer)
         close(keyboard)
     }
 
     private func send(_ fd: Int32, _ type: UInt16, _ code: UInt16, _ value: Int32) {
-        guard mydistro_uinput_send(fd, type, code, value) == 0 else { fail("cannot send an event") }
+        guard apus_uinput_send(fd, type, code, value) == 0 else { fail("cannot send an event") }
     }
 
     private func report(_ fd: Int32) {
-        send(fd, mydistro_ev_syn, mydistro_syn_report, 0)
+        send(fd, apus_ev_syn, apus_syn_report, 0)
     }
 
     func move(toPixel x: Int, _ y: Int, on screen: (width: Int, height: Int)) {
         let scale = { (value: Int, size: Int) -> Int32 in
-            Int32(max(0, min(Int(mydistro_abs_maximum),
-                             value * Int(mydistro_abs_maximum) / max(1, size - 1))))
+            Int32(max(0, min(Int(apus_abs_maximum),
+                             value * Int(apus_abs_maximum) / max(1, size - 1))))
         }
-        send(pointer, mydistro_ev_abs, mydistro_abs_x, scale(x, screen.width))
-        send(pointer, mydistro_ev_abs, mydistro_abs_y, scale(y, screen.height))
+        send(pointer, apus_ev_abs, apus_abs_x, scale(x, screen.width))
+        send(pointer, apus_ev_abs, apus_abs_y, scale(y, screen.height))
         report(pointer)
         usleep(1_000_000)   // the compositor draws the next frame
     }
 
     func click() {
-        send(pointer, mydistro_ev_key, mydistro_btn_left, 1)
+        send(pointer, apus_ev_key, apus_btn_left, 1)
         report(pointer)
         usleep(300_000)
-        send(pointer, mydistro_ev_key, mydistro_btn_left, 0)
+        send(pointer, apus_ev_key, apus_btn_left, 0)
         report(pointer)
         usleep(1_000_000)
     }
@@ -207,10 +207,10 @@ final class Devices {
         guard let code = namedKeys[name] else {
             fail("\(name) is not a key; try \(namedKeys.keys.sorted().joined(separator: ", "))")
         }
-        send(keyboard, mydistro_ev_key, code, 1)
+        send(keyboard, apus_ev_key, code, 1)
         report(keyboard)
         usleep(20_000)
-        send(keyboard, mydistro_ev_key, code, 0)
+        send(keyboard, apus_ev_key, code, 0)
         report(keyboard)
         usleep(20_000)
     }
@@ -220,13 +220,13 @@ final class Devices {
             guard let (code, shifted) = keys[character] else {
                 fail("cannot type \(character)")
             }
-            if shifted { send(keyboard, mydistro_ev_key, keyLeftShift, 1); report(keyboard) }
-            send(keyboard, mydistro_ev_key, code, 1)
+            if shifted { send(keyboard, apus_ev_key, keyLeftShift, 1); report(keyboard) }
+            send(keyboard, apus_ev_key, code, 1)
             report(keyboard)
             usleep(20_000)
-            send(keyboard, mydistro_ev_key, code, 0)
+            send(keyboard, apus_ev_key, code, 0)
             report(keyboard)
-            if shifted { send(keyboard, mydistro_ev_key, keyLeftShift, 0); report(keyboard) }
+            if shifted { send(keyboard, apus_ev_key, keyLeftShift, 0); report(keyboard) }
             usleep(30_000)
         }
         usleep(1_500_000)   // the program answers and the compositor draws
@@ -236,8 +236,8 @@ final class Devices {
 var arguments = Array(CommandLine.arguments.dropFirst())
 guard let command = arguments.first else {
     fail("""
-        usage: mydistro-screen shot PATH | size
-               mydistro-screen input [--pointer X,Y] [--click] [--type TEXT] [--key NAME]
+        usage: apus-screen shot PATH | size
+               apus-screen input [--pointer X,Y] [--click] [--type TEXT] [--key NAME]
         """)
 }
 arguments.removeFirst()

@@ -1,6 +1,6 @@
-// mydistro-terminal [--command PROGRAM]
+// apus-terminal [--command PROGRAM]
 //
-// The terminal of mydistro: a window with a shell in it.
+// The terminal of Apus: a window with a shell in it.
 //
 // The app opens one window, which the compositor gives the app area of the
 // screen. It starts a shell on a pseudo terminal, reads what the shell
@@ -106,7 +106,7 @@ func applySize(_ app: App) {
     app.pixels = nil
     app.mappedBytes = 0
 
-    let name = "/mydistro-terminal-\(getpid())"
+    let name = "/apus-terminal-\(getpid())"
     let fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0o600)
     guard fd >= 0 else { fail("no memory for the window: \(String(cString: strerror(errno)))") }
     shm_unlink(name)
@@ -314,7 +314,7 @@ while let argument = arguments.popFirst() {
         guard let command = arguments.popFirst() else { fail("--command needs a program") }
         app.command = command
     default:
-        fail("usage: mydistro-terminal [--command PROGRAM]")
+        fail("usage: apus-terminal [--command PROGRAM]")
     }
 }
 
@@ -338,7 +338,7 @@ xdg_surface_add_listener(app.xdgSurface, Listeners.xdgSurface, appPointer)
 app.toplevel = xdg_surface_get_toplevel(app.xdgSurface)
 xdg_toplevel_add_listener(app.toplevel, Listeners.toplevel, appPointer)
 xdg_toplevel_set_title(app.toplevel, "Terminal")
-xdg_toplevel_set_app_id(app.toplevel, "org.mydistro.terminal")
+xdg_toplevel_set_app_id(app.toplevel, "org.apus.terminal")
 wl_surface_commit(app.surface)
 
 // The app waits for two things: events of the compositor (keys, frames) and

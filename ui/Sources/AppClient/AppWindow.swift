@@ -4,7 +4,7 @@ import Glibc
 import Render
 import Toolkit
 
-// How an app of mydistro opens a window.
+// How an app of Apus opens a window.
 //
 // An app gives a view tree and gets a window. This holds everything between
 // the two: the connection, the surface, the shared memory that the pixels
@@ -12,7 +12,7 @@ import Toolkit
 // keys. The view tree goes through `ViewHost`, so an app gets the hover, the
 // click and the key handling of the toolkit without writing any of it.
 //
-//     let window = AppWindow(title: "System", appID: "org.mydistro.system")
+//     let window = AppWindow(title: "System", appID: "org.apus.system")
 //     window.body = { SystemView(state: readings()) }
 //     window.run()
 //

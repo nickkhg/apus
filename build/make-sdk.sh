@@ -2,16 +2,16 @@
 # Runs inside the build container. Makes a Swift SDK (an artifact bundle) from
 # the builder image: the Linux headers and libraries, and the Swift runtime of
 # the Linux toolchain. With it, the swift.org toolchain for macOS compiles the
-# ui/ package for mydistro on the Mac, without the container.
+# ui/ package for Apus on the Mac, without the container.
 #
-# Output: build/cache/swift-sdk.tar, with mydistro-aarch64.artifactbundle/.
+# Output: build/cache/swift-sdk.tar, with apus-aarch64.artifactbundle/.
 set -euo pipefail
 
 SRC=$PWD
 SWIFT=/opt/swift/usr/lib
 STAGE=/work/sdk
-BUNDLE=$STAGE/mydistro-aarch64.artifactbundle
-SDK=$BUNDLE/mydistro-aarch64
+BUNDLE=$STAGE/apus-aarch64.artifactbundle
+SDK=$BUNDLE/apus-aarch64
 SYSROOT=$SDK/sysroot
 
 rm -rf "$STAGE"
@@ -44,10 +44,10 @@ cat > "$BUNDLE/info.json" <<'EOF'
 {
   "schemaVersion": "1.0",
   "artifacts": {
-    "mydistro-aarch64": {
+    "apus-aarch64": {
       "type": "swiftSDK",
       "version": "1",
-      "variants": [{ "path": "mydistro-aarch64" }]
+      "variants": [{ "path": "apus-aarch64" }]
     }
   }
 }
@@ -83,5 +83,5 @@ cat > "$SDK/toolset.json" <<'EOF'
 EOF
 
 mkdir -p "$SRC/build/cache"
-tar -C "$STAGE" -cf "$SRC/build/cache/swift-sdk.tar" mydistro-aarch64.artifactbundle
+tar -C "$STAGE" -cf "$SRC/build/cache/swift-sdk.tar" apus-aarch64.artifactbundle
 du -sh "$BUNDLE"

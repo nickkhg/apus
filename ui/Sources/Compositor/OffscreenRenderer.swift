@@ -82,14 +82,14 @@ final class OffscreenRasterizer: FrameRasterizer {
     /// So this asks EGL for its devices and takes the first one that draws
     /// with a GPU. With none, it takes the first that works at all, which is
     /// the software renderer, and the picture is the same either way.
-    /// MYDISTRO_RENDER_NODE names one device and stops the search.
+    /// APUS_RENDER_NODE names one device and stops the search.
     private static func startEGL() throws(GLFailure) -> (EGLDisplay, EGLContext) {
         guard let getPlatformDisplay = unsafeBitCast(
             eglGetProcAddress("eglGetPlatformDisplayEXT"), to: GetPlatformDisplay?.self)
         else {
             throw .display("EGL has no eglGetPlatformDisplayEXT")
         }
-        let wanted = getenv("MYDISTRO_RENDER_NODE").map { String(cString: $0) }
+        let wanted = getenv("APUS_RENDER_NODE").map { String(cString: $0) }
 
         var software: (EGLDisplay, EGLContext)?
         for device in devices() {
@@ -120,7 +120,7 @@ final class OffscreenRasterizer: FrameRasterizer {
             EGLenum(EGL_PLATFORM_SURFACELESS_MESA), nil, nil), let opened = open(display)
         else {
             throw .display("no EGL device draws"
-                + (wanted.map { " for MYDISTRO_RENDER_NODE=\($0)" } ?? ""))
+                + (wanted.map { " for APUS_RENDER_NODE=\($0)" } ?? ""))
         }
         return opened
     }
@@ -137,7 +137,7 @@ final class OffscreenRasterizer: FrameRasterizer {
         return Array(found.prefix(Int(count)))
     }
 
-    /// The render node of a device, for the log and for MYDISTRO_RENDER_NODE.
+    /// The render node of a device, for the log and for APUS_RENDER_NODE.
     private static func deviceNode(_ device: UnsafeMutableRawPointer?) -> String? {
         guard let queryString = unsafeBitCast(
             eglGetProcAddress("eglQueryDeviceStringEXT"), to: QueryDeviceString?.self)

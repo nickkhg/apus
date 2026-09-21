@@ -17,7 +17,7 @@ public final class Compositor {
         /// on every screen. A screen with small pixels takes a scale of 2,
         /// and everything is then drawn with four times as many pixels.
         ///
-        /// MYDISTRO_SCALE sets it. Without it the scale comes from the size
+        /// APUS_SCALE sets it. Without it the scale comes from the size
         /// of the screen in millimetres, when the display reports one that
         /// makes sense. A virtual display often reports none, and the scale
         /// is then 1.
@@ -79,7 +79,7 @@ public final class Compositor {
     private var pointer: (x: Double, y: Double)
     private var running = true
     /// How the shell draws depth. It follows the renderer, because the two
-    /// modes are for different costs, and MYDISTRO_SHELL_MODE overrides it.
+    /// modes are for different costs, and APUS_SHELL_MODE overrides it.
     /// A test that compares the two renderers pins this, so that the only
     /// difference between the two pictures is the renderer.
     private let shellMode: RenderMode
@@ -87,7 +87,7 @@ public final class Compositor {
     /// What the shell shows. The clock updates it every minute.
     private var shell = ShellState()
     /// Writes the screen to a file for the tests, when
-    /// MYDISTRO_SCREENSHOT_SOCKET names a socket. Otherwise nil.
+    /// APUS_SCREENSHOT_SOCKET names a socket. Otherwise nil.
     private var screenshot: Screenshot?
     /// The shell's view tree: its `@State` values and the pointer.
     private let host = ViewHost()
@@ -217,7 +217,7 @@ public final class Compositor {
             updateFocus()
             screen.setNeedsFrame()
         }
-        if let path = getenv("MYDISTRO_SCREENSHOT_SOCKET").map({ String(cString: $0) }) {
+        if let path = getenv("APUS_SCREENSHOT_SOCKET").map({ String(cString: $0) }) {
             screenshot = Screenshot(path: path, loop: loop, screen: screen)
         }
         screen.setNeedsFrame()
@@ -235,12 +235,12 @@ public final class Compositor {
 
     /// The first DRM card with a connected output, opened through the seat.
     ///
-    /// MYDISTRO_DRM_DEVICE names one card instead. A machine can have more
+    /// APUS_DRM_DEVICE names one card instead. A machine can have more
     /// than one, and only one of them may draw: a virtual machine on a Mac
     /// has the display of the framework beside the device that carries the
     /// GPU.
     private static func openDisplayDevice(seat: Seat) throws -> DRMDevice {
-        if let name = getenv("MYDISTRO_DRM_DEVICE") {
+        if let name = getenv("APUS_DRM_DEVICE") {
             let path = String(cString: name)
             guard let fd = try? seat.openDevice(path) else {
                 throw DRMError.open(path: path, errno: errno)
@@ -325,14 +325,14 @@ public final class Compositor {
     /// gives the density, and a dense screen takes a scale of 2. A display
     /// that reports no size at all, as a virtual one often does, keeps 1.
     /// The mode of the shell: the renderer chooses, and
-    /// MYDISTRO_SHELL_MODE overrides.
+    /// APUS_SHELL_MODE overrides.
     private static func chosenShellMode(usesGPU: Bool) -> RenderMode {
-        guard let text = getenv("MYDISTRO_SHELL_MODE").map({ String(cString: $0) }),
+        guard let text = getenv("APUS_SHELL_MODE").map({ String(cString: $0) }),
               !text.isEmpty else {
             return usesGPU ? .gpu : .cpu
         }
         guard let mode = RenderMode(rawValue: text) else {
-            log("compositor: MYDISTRO_SHELL_MODE must be 'cpu' or 'gpu', not '\(text)'")
+            log("compositor: APUS_SHELL_MODE must be 'cpu' or 'gpu', not '\(text)'")
             return usesGPU ? .gpu : .cpu
         }
         return mode
@@ -340,7 +340,7 @@ public final class Compositor {
 
     private static func chosenScale(options: Options, screen: Screen) -> Double {
         if let scale = options.scale, scale > 0 { return scale }
-        if let text = getenv("MYDISTRO_SCALE").map({ String(cString: $0) }),
+        if let text = getenv("APUS_SCALE").map({ String(cString: $0) }),
            let scale = Double(text), scale > 0 {
             return scale
         }
@@ -747,7 +747,7 @@ public final class Compositor {
         }
         guard let bundle = apps.first(where: { $0.id == id }) else {
             log("compositor: no app with the id \(id)")
-            post(Notice(id: "start:\(id)", kind: .failure, source: "mydistro",
+            post(Notice(id: "start:\(id)", kind: .failure, source: "Apus",
                         title: "No app has the name \(id)",
                         detail: "Its bundle is not in \(AppCatalog.directory)."))
             return

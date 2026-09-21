@@ -1,4 +1,4 @@
-# Packages installed into the mydistro root filesystem (one per line).
+# Packages installed into the Apus root filesystem (one per line).
 base
 archlinuxarm-keyring
 linux-aarch64
@@ -7,11 +7,11 @@ dosfstools
 less
 nano
 
-# mydistro branding (packages/mydistro-release)
-mydistro-release
+# Apus branding (packages/apus-release)
+apus-release
 
-# The Swift UI (packages/mydistro-ui, built from ui/)
-mydistro-ui
+# The Swift UI (packages/apus-ui, built from ui/)
+apus-ui
 
 # Vulkan, for a guest with a GPU. vulkan-virtio is Mesa's Venus driver: it
 # turns Vulkan calls into a stream that the virtio-gpu device carries to the
@@ -24,7 +24,7 @@ vulkan-virtio
 # GPU of the Mac.
 vulkan-tools
 
-# Zink (packages/mydistro-zink): OpenGL on Vulkan, so that the GLES of the
+# Zink (packages/apus-zink): OpenGL on Vulkan, so that the GLES of the
 # compositor reaches the GPU of the Mac. The compositor asks for it by name.
-mydistro-zink
+apus-zink
 

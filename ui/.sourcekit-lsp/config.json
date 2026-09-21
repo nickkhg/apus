@@ -1,6 +1,6 @@
 {
   "swiftPM": {
     "swiftSDKsDirectory": "../build/cache/swift-sdks",
-    "swiftSDK": "mydistro-aarch64"
+    "swiftSDK": "apus-aarch64"
   }
 }

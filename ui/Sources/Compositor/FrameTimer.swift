@@ -2,7 +2,7 @@ import Glibc
 
 /// Times the frames, for a person who wants to know what a change cost.
 ///
-/// MYDISTRO_FRAME_LOG turns it on, and says how many frames go into a line:
+/// APUS_FRAME_LOG turns it on, and says how many frames go into a line:
 /// `1` reports every 20 frames, and a number reports every that many. The
 /// line holds the average, the longest, and the size of the screen. Without
 /// the variable it does nothing at all, so a frame costs one comparison.
@@ -13,7 +13,7 @@ import Glibc
 struct FrameTimer {
     /// How many frames go into one line, or 0 for no line at all.
     private static let every: Int = {
-        guard let text = getenv("MYDISTRO_FRAME_LOG").map({ String(cString: $0) }),
+        guard let text = getenv("APUS_FRAME_LOG").map({ String(cString: $0) }),
               !text.isEmpty else { return 0 }
         if let count = Int(text), count > 1 { return count }
         return text == "0" ? 0 : 20

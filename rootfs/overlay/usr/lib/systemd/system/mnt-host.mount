@@ -1,4 +1,4 @@
-# out/ of the mydistro source tree, shared by mydistro-vm over virtiofs.
+# out/ of the Apus source tree, shared by apus-vm over virtiofs.
 # Mounted on first access by mnt-host.automount; only in VMs on the Mac.
 [Unit]
 Description=Files shared by the VM host

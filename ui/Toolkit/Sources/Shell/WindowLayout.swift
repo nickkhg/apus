@@ -10,7 +10,7 @@ import Toolkit
 // layout does not place waits in the rail, and the shell draws a stand-in
 // where it would have been. This is how a window that cannot fit a tile is
 // handled, and it is the same rule for an app of the toolkit and for an app
-// that knows nothing about mydistro.
+// that knows nothing about apus.
 
 /// The sizes that the layouts share, in pixels.
 public enum WindowMetrics {

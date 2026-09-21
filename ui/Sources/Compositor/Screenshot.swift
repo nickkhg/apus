@@ -3,7 +3,7 @@ import Glibc
 import Wayland
 
 /// Writes the pixels that are on screen to a file, when something asks over
-/// a Unix socket. MYDISTRO_SCREENSHOT_SOCKET turns it on; without that
+/// a Unix socket. APUS_SCREENSHOT_SOCKET turns it on; without that
 /// variable the compositor has no such socket.
 ///
 /// The tests need this because Virtualization, unlike QEMU, cannot make a

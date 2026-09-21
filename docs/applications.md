@@ -1,6 +1,6 @@
 # Applications
 
-An app of mydistro is a bundle in `/Applications`. The compositor reads the bundles when it starts. Summon lists one line for each bundle. A person chooses a line to start the app, and the layout gives the app a cell of the canvas.
+An app of Apus is a bundle in `/Applications`. The compositor reads the bundles when it starts. Summon lists one line for each bundle. A person chooses a line to start the app, and the layout gives the app a cell of the canvas.
 
 ## A bundle
 
@@ -9,22 +9,22 @@ A bundle is a directory with a name that ends in `.app`. It holds a manifest, an
 ```
 /Applications/Terminal.app/
 ├── app.conf                the manifest
-└── bin/mydistro-terminal   the program
+└── bin/apus-terminal   the program
 ```
 
 The manifest is a list of `key = value` lines. A line that starts with `#` is a comment.
 
 | Key | Content |
 |---|---|
-| `id` | The id of the app, for example `org.mydistro.terminal`. A window of the app gives the same id in `xdg_toplevel.set_app_id`, so the shell knows which app the window belongs to. |
+| `id` | The id of the app, for example `org.apus.terminal`. A window of the app gives the same id in `xdg_toplevel.set_app_id`, so the shell knows which app the window belongs to. |
 | `name` | The name that Summon shows. |
 | `exec` | The program: a path in the bundle, or an absolute path. |
 | `color` | The colour of the icon, as `RRGGBB`. |
 
 ```
-id = org.mydistro.terminal
+id = org.apus.terminal
 name = Terminal
-exec = bin/mydistro-terminal
+exec = bin/apus-terminal
 color = 3BB273
 ```
 
@@ -32,18 +32,18 @@ A bundle needs an `id`, a `name`, and a program that exists. The compositor drop
 
 ## The bundles in the image
 
-The source of a bundle is a directory in `ui/Apps/`. The `mydistro-ui` package copies it to `/Applications`:
+The source of a bundle is a directory in `ui/Apps/`. The `apus-ui` package copies it to `/Applications`:
 
 | Bundle | Program | Content |
 |---|---|---|
-| `Hello.app` | `/usr/bin/mydistro-hello-client` | The test client of the compositor: one coloured window. It names a smallest size of 600 × 400, so no tile can hold it. The test uses it to check the card that stands in for a window with no cell. `--min-size WxH` or `--min-size none` changes that size. |
-| `Terminal.app` | `bin/mydistro-terminal` in the bundle | The terminal. |
+| `Hello.app` | `/usr/bin/apus-hello-client` | The test client of the compositor: one coloured window. It names a smallest size of 600 × 400, so no tile can hold it. The test uses it to check the card that stands in for a window with no cell. `--min-size WxH` or `--min-size none` changes that size. |
+| `Terminal.app` | `bin/apus-terminal` in the bundle | The terminal. |
 
 A bundle that names a program with a path in the bundle gets that program from the build. The program is then in the bundle only, and not in `/usr/bin`.
 
 To add an app:
 
-1. Add the program to `ui/Package.swift`, as a product with a name that starts with `mydistro-`.
+1. Add the program to `ui/Package.swift`, as a product with a name that starts with `apus-`.
 2. Make the directory `ui/Apps/<Name>.app` with an `app.conf` in it.
 3. Run `make build`.
 
@@ -69,7 +69,7 @@ The compositor writes `APP-DID-NOT-START <id>` on the console when it gives up.
 
 A cell that says "did not start" is where a person is already looking, which a line on a console is not.
 
-`MYDISTRO_UI_DIR` changes which program starts: a program of that directory takes the place of the program of a bundle with the same name. `make demo-dev` and `make test-dev` set it, so that Summon starts the new build.
+`APUS_UI_DIR` changes which program starts: a program of that directory takes the place of the program of a bundle with the same name. `make demo-dev` and `make test-dev` set it, so that Summon starts the new build.
 
 ## The canvas
 
@@ -83,7 +83,7 @@ The canvas is the screen without the rail. On a screen of 1280 × 800 pixels it 
 
 ## The terminal
 
-`mydistro-terminal` is a window with a shell in it. It shows what the toolkit and the compositor can do together: text, the keyboard, and an app that fills the app area.
+`apus-terminal` is a window with a shell in it. It shows what the toolkit and the compositor can do together: text, the keyboard, and an app that fills the app area.
 
 ```
 the pseudo terminal            the window

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Runs a program with Mesa's OpenGL on the Vulkan of the Mac.
+#
+# The driver of this package has to come before the one Arch installs, and
+# the loader reads its path only when a program starts, so the two variables
+# cannot be set from inside the program that wants them. See docs/gpu.md.
+#
+#   apus-gpu apus-compositor
+#
+# On a machine with no Venus device the program still runs. Zink finds no
+# Vulkan device it can use, and the compositor then draws with the CPU.
+exec env \
+    LD_LIBRARY_PATH="/usr/lib/apus-zink${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    MESA_LOADER_DRIVER_OVERRIDE=zink \
+    "$@"

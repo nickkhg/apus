@@ -74,7 +74,7 @@ struct ScaleTests {
 
     @Test("Text keeps its size in points and its glyphs in pixels")
     func textScales() {
-        let text = Text("mydistro").font(.body)
+        let text = Text("Apus").font(.body)
         let one = ViewRenderer.size(of: text, fitting: .unspecified, scale: 1)
         let two = ViewRenderer.size(of: text, fitting: .unspecified, scale: 2)
         // The layout is the same, within the rounding of a point.

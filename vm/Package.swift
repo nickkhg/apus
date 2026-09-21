@@ -1,6 +1,6 @@
 // swift-tools-version: 6.4
 //
-// mydistro-vm: the host side of testing. It boots the mydistro images in a
+// apus-vm: the host side of testing. It boots the Apus images in a
 // virtual machine on the Mac with Apple's Virtualization framework.
 //
 // This package builds for macOS only, with the Swift toolchain of Xcode
@@ -14,13 +14,13 @@
 import PackageDescription
 
 let package = Package(
-    name: "mydistro-vm",
+    name: "apus-vm",
     platforms: [.macOS(.v14)],
     targets: [
         // virglrenderer. The Makefile passes the include directory and the
         // library, and defines VIRGL, when build/cache holds a build of it.
         .systemLibrary(name: "CVirgl", path: "Sources/CVirgl"),
-        .executableTarget(name: "mydistro-vm", dependencies: ["CVirgl"],
-                          path: "Sources/mydistro-vm"),
+        .executableTarget(name: "apus-vm", dependencies: ["CVirgl"],
+                          path: "Sources/apus-vm"),
     ]
 )

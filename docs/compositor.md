@@ -1,10 +1,10 @@
 # Compositor
 
-`mydistro-compositor` is the display server of mydistro. It is a Swift program. The code is in `ui/Sources/Compositor/`, `ui/Sources/CompositorMain/`, and the Wayland server library `ui/Sources/Wayland/`.
+`apus-compositor` is the display server of apus. It is a Swift program. The code is in `ui/Sources/Compositor/`, `ui/Sources/CompositorMain/`, and the Wayland server library `ui/Sources/Wayland/`.
 
 ## It starts the machine
 
-An installed system starts the shell when it finishes booting. `mydistro-shell.service` runs the compositor on tty1, and systemd starts seatd for it. The installer turns the service on for the system that it installs. The live system keeps its console, because the installer is what the live system is for.
+An installed system starts the shell when it finishes booting. `apus-shell.service` runs the compositor on tty1, and systemd starts seatd for it. The installer turns the service on for the system that it installs. The live system keeps its console, because the installer is what the live system is for.
 
 `make gui` boots an installed disk in a window, and the shell is there.
 
@@ -13,8 +13,8 @@ An installed system starts the shell when it finishes booting. `mydistro-shell.s
 A test drives the screen itself, so it takes the screen back first:
 
 ```sh
-systemctl stop mydistro-shell
-LIBSEAT_BACKEND=noop mydistro-compositor &
+systemctl stop apus-shell
+LIBSEAT_BACKEND=noop apus-compositor &
 ```
 
 Then press Super to open Summon, and type a name to open an app. `make demo` does these steps for you in a window, and every test does the first one (`tests/lib.exp`).
@@ -23,7 +23,7 @@ Then press Super to open Summon, and type a name to open an app. `make demo` doe
 |---|---|
 | Stop | Ctrl+Alt+Backspace, SIGINT, or SIGTERM. The compositor restores the text console. |
 | Wayland socket | Printed at start, for example `WAYLAND_DISPLAY=wayland-0`, in `$XDG_RUNTIME_DIR`. |
-| Debug messages | Set `MYDISTRO_DEBUG=1`. The compositor logs each start step, and libseat logs its messages. |
+| Debug messages | Set `APUS_DEBUG=1`. The compositor logs each start step, and libseat logs its messages. |
 | Seat | `LIBSEAT_BACKEND=noop` lets root open the devices directly. The serial console has no seat session. In a login session on a VT, libseat uses logind. |
 
 ## Parts

@@ -1,4 +1,4 @@
-// mydistro-system
+// apus-system
 //
 // The system monitor: what this machine is doing now. It is the second app
 // written with the toolkit, and the first one written with AppClient, so it
@@ -12,7 +12,7 @@ import AppClient
 import Glibc
 import Toolkit
 
-let window = AppWindow(title: "System", appID: "org.mydistro.system")
+let window = AppWindow(title: "System", appID: "org.apus.system")
 var reader = SystemReader()
 var readings = reader.read()
 

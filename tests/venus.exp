@@ -1,7 +1,7 @@
 #!/usr/bin/expect -f
 # Venus test: the guest finds the GPU of the Mac.
 #
-# mydistro-vm is the virtio-gpu device itself (VM_CUSTOM_GPU=1), with
+# apus-vm is the virtio-gpu device itself (VM_CUSTOM_GPU=1), with
 # virglrenderer and Venus behind it. This test asks the guest what Vulkan
 # it has. The answer has to name the GPU of this Mac, through Venus.
 #
@@ -26,7 +26,7 @@ proc sh {command what {seconds 10}} {
     set timeout 10
 }
 
-spawn env VM_GPU=headless VM_CUSTOM_GPU=1 $env(MYDISTRO_VM) installed
+spawn env VM_GPU=headless VM_CUSTOM_GPU=1 $env(APUS_VM) installed
 login
 
 # The device says what it offers before the guest asks for it.
@@ -82,19 +82,19 @@ proc settle {what} {
 }
 
 proc drawWith {command name} {
-    send "$command LIBSEAT_BACKEND=noop MYDISTRO_SHELL_MODE=cpu "
-    send "MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock "
-    send "mydistro-compositor &\r"
+    send "$command LIBSEAT_BACKEND=noop APUS_SHELL_MODE=cpu "
+    send "APUS_SCREENSHOT_SOCKET=/run/apus-screenshot.sock "
+    send "apus-compositor &\r"
     expect {
         "COMPOSITOR-READY"     {}
-        "mydistro-compositor:" { fail "$name: the compositor reported an error" }
+        "apus-compositor:" { fail "$name: the compositor reported an error" }
         timeout                { fail "$name: the compositor did not start" }
     }
     after 1500
-    send "mydistro-screen shot /mnt/screens/$name.ppm\r"
+    send "apus-screen shot /mnt/screens/$name.ppm\r"
     expect {
         -re {ok [0-9]+ [0-9]+} {}
-        "mydistro-screen:"     { fail "$name: the compositor gave no picture" }
+        "apus-screen:"     { fail "$name: the compositor gave no picture" }
         timeout                { fail "$name: no picture" }
     }
     settle "$name: the picture"
@@ -105,14 +105,14 @@ proc drawWith {command name} {
     expect { "GONE-$::marks" {} timeout { fail "$name: the compositor did not go away" } }
 }
 
-drawWith "MYDISTRO_RENDERER=cpu" "venus-cpu"
+drawWith "APUS_RENDERER=cpu" "venus-cpu"
 
-# mydistro-gpu puts Zink and its Vulkan in front of the compositor. The
+# apus-gpu puts Zink and its Vulkan in front of the compositor. The
 # renderer line has to name Venus: with anything else the GPU of the Mac is
 # not what drew the frame.
-send "MYDISTRO_RENDERER=gpu LIBSEAT_BACKEND=noop MYDISTRO_SHELL_MODE=cpu "
-send "MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock "
-send "mydistro-gpu mydistro-compositor &\r"
+send "APUS_RENDERER=gpu LIBSEAT_BACKEND=noop APUS_SHELL_MODE=cpu "
+send "APUS_SCREENSHOT_SOCKET=/run/apus-screenshot.sock "
+send "apus-gpu apus-compositor &\r"
 expect {
     -re {GPU-RENDERER [^\r\n]*Venus[^\r\n]*} {
         send_user "\n$expect_out(0,string)\n"
@@ -120,16 +120,16 @@ expect {
     -re {GPU-RENDERER [^\r\n]*} {
         fail "the GPU of the Mac did not draw: $expect_out(0,string)"
     }
-    "mydistro-compositor:" { fail "the compositor reported an error" }
+    "apus-compositor:" { fail "the compositor reported an error" }
     timeout                { fail "the compositor did not say what drew" }
 }
 expect {
     "COMPOSITOR-READY"     {}
-    "mydistro-compositor:" { fail "the compositor reported an error" }
+    "apus-compositor:" { fail "the compositor reported an error" }
     timeout                { fail "the compositor did not start" }
 }
 after 1500
-send "mydistro-screen shot /mnt/screens/venus-gpu.ppm\r"
+send "apus-screen shot /mnt/screens/venus-gpu.ppm\r"
 expect {
     -re {ok [0-9]+ [0-9]+} {}
     timeout { fail "the GPU gave no picture" }

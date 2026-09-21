@@ -1,12 +1,12 @@
 # Writing an app
 
-An app of mydistro gives a view tree and gets a window. `AppClient` holds everything between the two. That is the connection, the surface, and the shared memory of the pixels. It is also the size that the compositor asks for, and the pointer and the keys.
+An app of Apus gives a view tree and gets a window. `AppClient` holds everything between the two. That is the connection, the surface, and the shared memory of the pixels. It is also the size that the compositor asks for, and the pointer and the keys.
 
 ```swift
 import AppClient
 import Toolkit
 
-let window = AppWindow(title: "System", appID: "org.mydistro.system")
+let window = AppWindow(title: "System", appID: "org.apus.system")
 window.body = { SystemView(readings: readings) }
 window.run()
 ```
@@ -48,9 +48,9 @@ An app does not link `Shell`, which is the user interface of the system. An app 
 A program becomes an app with a bundle in `ui/Apps/<Name>.app`. See [applications.md](applications.md).
 
 ```
-id = org.mydistro.system
+id = org.apus.system
 name = System
-exec = bin/mydistro-system
+exec = bin/apus-system
 color = 49C7C7
 ```
 

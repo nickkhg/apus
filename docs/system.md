@@ -11,7 +11,7 @@
 
 The UUIDs do not change, so the boot entry and the installer can find the partitions. `6d79646f` is "mydo" in ASCII.
 
-The boot entry is `image/esp/loader/entries/mydistro-live.conf`. Its kernel command line has these parameters:
+The boot entry is `image/esp/loader/entries/apus-live.conf`. Its kernel command line has these parameters:
 
 | Parameter | Purpose |
 |---|---|
@@ -19,7 +19,7 @@ The boot entry is `image/esp/loader/entries/mydistro-live.conf`. Its kernel comm
 | `ro` | Mount the root partition read-only. |
 | `systemd.volatile=overlay` | Put a RAM overlay on the root file system. All changes go into RAM. |
 | `console=ttyAMA0` | Use the serial port as the console. |
-| `mydistro.live` | Tells programs that this is the live system. |
+| `apus.live` | Tells programs that this is the live system. |
 
 The root partition does not change on the live system. Thus, the installer can copy it.
 
@@ -31,18 +31,18 @@ The hook only adds the service. It does not enable the service. `systemd-fstab-g
 
 ### The initramfs
 
-`rootfs/overlay/etc/mkinitcpio.conf.d/mydistro.conf` sets the hooks and the modules. The configuration has no `autodetect` hook. The build runs in a container, and the image must boot on other machines.
+`rootfs/overlay/etc/mkinitcpio.conf.d/apus.conf` sets the hooks and the modules. The configuration has no `autodetect` hook. The build runs in a container, and the image must boot on other machines.
 
 `rootfs/overlay/etc/mkinitcpio.d/linux-aarch64.preset` makes one initramfs. It makes no "fallback" initramfs.
 
 ## The installer
 
-The installer is `rootfs/overlay/usr/bin/mydistro-install`.
+The installer is `rootfs/overlay/usr/bin/apus-install`.
 
 ```sh
-mydistro-install            # asks for the disk
-mydistro-install /dev/vdb   # asks for confirmation
-mydistro-install -y /dev/vdb
+apus-install            # asks for the disk
+apus-install /dev/vdb   # asks for confirmation
+apus-install -y /dev/vdb
 ```
 
 It does these steps:
@@ -51,12 +51,12 @@ It does these steps:
 2. It finds the live partitions by their fixed UUIDs, and the disk that has them.
 3. It asks for the target disk, if you do not give one. It does not accept the live disk or a disk smaller than 4 GiB.
 4. It mounts the live root partition read-only, and the live EFI system partition.
-5. It runs `systemd-repart` with the definitions in `/usr/lib/mydistro/repart.d/`:
+5. It runs `systemd-repart` with the definitions in `/usr/lib/apus/repart.d/`:
    - Partition 1: EFI system partition, FAT32, 512 MB, a copy of the live EFI system partition.
    - Partition 2: root, ext4, the remaining space, a copy of the files on the live root partition.
 6. It writes `/etc/fstab` on the new root. The file mounts the EFI system partition at `/boot`.
-7. It removes the live boot entry and writes `loader/entries/mydistro.conf` with the new root PARTUUID.
-8. It writes the installation date to `/etc/mydistro-installed`.
+7. It removes the live boot entry and writes `loader/entries/apus.conf` with the new root PARTUUID.
+8. It writes the installation date to `/etc/apus-installed`.
 
 If a command fails, the installer stops and shows the line and the command.
 
@@ -68,7 +68,7 @@ pacman installs the kernel to `/boot/Image`, and mkinitcpio writes `/boot/initra
 
 The image has `uninitialized` in `/etc/machine-id`. On first boot, systemd makes a new machine ID.
 
-`mydistro-pacman-init.service` makes a pacman keyring for each system on first boot. The image has no keyring, so two systems do not share a local signing key.
+`apus-pacman-init.service` makes a pacman keyring for each system on first boot. The image has no keyring, so two systems do not share a local signing key.
 
 The build masks `systemd-firstboot.service` and `systemd-homed-firstboot.service`. These services ask questions on the console on first boot. The build sets the locale, the time zone, and the host name, and root has no password. Thus, first boot does not stop.
 
@@ -78,13 +78,13 @@ The build runs `systemctl preset-all`. The image has its final set of enabled se
 
 | Setting | Value | Source |
 |---|---|---|
-| Host name | `mydistro` | `rootfs/overlay/etc/hostname` |
+| Host name | `apus` | `rootfs/overlay/etc/hostname` |
 | Locale | `C.UTF-8` | `rootfs/overlay/etc/locale.conf` |
 | Time zone | UTC | `build/build.sh` |
 | Network | DHCP on wired interfaces (systemd-networkd, systemd-resolved) | `rootfs/overlay/etc/systemd/network/20-wired.network` |
 | Root password | None | `build/build.sh` |
 
-Root has no password. Change this before you use mydistro outside a VM.
+Root has no password. Change this before you use Apus outside a VM.
 
 ## Host directory in the VM
 

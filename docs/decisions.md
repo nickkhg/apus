@@ -11,7 +11,7 @@ The builder runs in Apple `container`, not Docker. The tests run in QEMU with HV
 
 ## Apple's Virtualization framework, not QEMU (20 September)
 
-The tests and the demos run in a VM that Apple's Virtualization framework makes. `vm/mydistro-vm` is a Swift program, and it replaces `vm/run.sh` and QEMU.
+The tests and the demos run in a VM that Apple's Virtualization framework makes. `vm/apus-vm` is a Swift program, and it replaces `vm/run.sh` and QEMU.
 
 Reasons:
 
@@ -22,7 +22,7 @@ Reasons:
 
 The framework gives a Linux guest no GPU, so this change is not a step towards GPU rendering. See [ui.md](ui.md#graphics-in-the-vm).
 
-The change cost the tests their eyes and their hands on the host. QEMU made pictures of the screen with `screendump`, and it sent input with QMP. The framework does neither. The guest does both now: the compositor writes the buffer that it gave to the display, and `mydistro-screen` makes a pointer and a keyboard with uinput. The pictures reach the Mac through a writable virtiofs share. Input still goes through evdev, libinput and xkbcommon, so the tests cover the same code as before. See [testing.md](testing.md#screenshots).
+The change cost the tests their eyes and their hands on the host. QEMU made pictures of the screen with `screendump`, and it sent input with QMP. The framework does neither. The guest does both now: the compositor writes the buffer that it gave to the display, and `apus-screen` makes a pointer and a keyboard with uinput. The pictures reach the Mac through a writable virtiofs share. Input still goes through evdev, libinput and xkbcommon, so the tests cover the same code as before. See [testing.md](testing.md#screenshots).
 
 Other differences:
 
@@ -38,7 +38,7 @@ The program needs the entitlement `com.apple.security.virtualization`. Without i
 
 ## aarch64 only, for now (19 September)
 
-mydistro supports only aarch64. The Mac runs aarch64 VMs fast. Support for x86_64 can come later.
+Apus supports only aarch64. The Mac runs aarch64 VMs fast. Support for x86_64 can come later.
 
 ## Buildroot, then Arch Linux ARM (19 September)
 
@@ -49,13 +49,13 @@ Then the requirements changed: systemd and a package manager (first yum, then pa
 - Buildroot makes a fixed image. It has no pacman package.
 - A package manager needs a repository of packages built against the same libraries. Arch Linux ARM packages do not match the libraries that Buildroot compiles.
 
-Thus, mydistro now uses Arch Linux ARM as its base. `pacstrap` installs the packages. The installer, the image, and the tests stayed.
+Thus, Apus now uses Arch Linux ARM as its base. `pacstrap` installs the packages. The installer, the image, and the tests stayed.
 
 Arch Linux ARM is a community port with fewer maintainers than Arch Linux. It is a rolling release, and it has no archive of old package versions.
 
 ## Omarchy as a model (19 September)
 
-Omarchy is a configuration layer on Arch Linux: packages, settings, and an installer. On Apple silicon, it uses Asahi Linux (kernel and boot chain) and Arch Linux ARM. mydistro follows the same model. In a VM, mydistro needs no Asahi parts. Asahi can come later for real Mac hardware.
+Omarchy is a configuration layer on Arch Linux: packages, settings, and an installer. On Apple silicon, it uses Asahi Linux (kernel and boot chain) and Arch Linux ARM. Apus follows the same model. In a VM, Apus needs no Asahi parts. Asahi can come later for real Mac hardware.
 
 Approximately 123 of 148 packages in the Omarchy base list are in Arch Linux ARM. Omarchy M builds the others in its own aarch64 repository.
 
@@ -91,7 +91,7 @@ A second test of OpenSwiftUI, at commit `5af2b2b` (newer than release 0.21.0), g
 
 Thus OpenSwiftUI on Linux does not need a correction. It needs a new attribute graph: a demand-driven dependency engine with attribute bodies of any type, subgraphs and invalidation. After that work, OpenSwiftUI on Linux still has no text layout and no event loop.
 
-mydistro needs a panel, window title bars and a settings UI. It does not need all of SwiftUI. Decision: write the toolkit in this repository. It keeps the API shape of SwiftUI (`View`, `body`, `VStack`, `Text`, `.padding`). It lowers the views to the display list for each frame. The first version is approximately 1300 lines, and 40 unit tests cover it. See [toolkit.md](toolkit.md).
+Apus needs a panel, window title bars and a settings UI. It does not need all of SwiftUI. Decision: write the toolkit in this repository. It keeps the API shape of SwiftUI (`View`, `body`, `VStack`, `Text`, `.padding`). It lowers the views to the display list for each frame. The first version is approximately 1300 lines, and 40 unit tests cover it. See [toolkit.md](toolkit.md).
 
 An incremental dependency graph saves work in a large app. A shell is small, so the first version worked the whole tree out for every frame.
 
@@ -99,7 +99,7 @@ An incremental dependency graph saves work in a large app. A shell is small, so 
 
 ## A GPU renderer beside the CPU renderer (20 September)
 
-The compositor can now draw with the GPU: GBM makes the buffers, EGL draws into them, and GLES draws the display list. `MYDISTRO_RENDERER=gpu` chooses it. The CPU renderer stays, and it is the default.
+The compositor can now draw with the GPU: GBM makes the buffers, EGL draws into them, and GLES draws the display list. `APUS_RENDERER=gpu` chooses it. The CPU renderer stays, and it is the default.
 
 Both renderers take the same display list. [Scene.swift](../ui/Toolkit/Sources/Render/Scene.swift) says that from its first line. The compositor, the toolkit and the shell did not change.
 
@@ -139,11 +139,11 @@ QEMU from Homebrew has no `virtio-gpu-gl`. The compositor renders with the CPU, 
 - SourceKit-LSP can use the SDK. Thus, an editor gets code completion for the Linux modules.
 - The image build still uses the Linux toolchain in the container. `make test` tests those programs, and `make test-dev` tests the programs from the Mac. Both pass.
 
-The SDK comes from the builder image, not from the image of mydistro. The image does not have the files for the linker (for example `crtbegin.o` and the `libstdc++.so` link). The builder has the same packages from the same repositories.
+The SDK comes from the builder image, not from the image of apus. The image does not have the files for the linker (for example `crtbegin.o` and the `libstdc++.so` link). The builder has the same packages from the same repositories.
 
 ## Xcode as a front end, not as the build system (19 September)
 
-Xcode builds only for Apple platforms, and it cannot use a Swift SDK. Thus, `mydistro.xcodeproj` has external build targets that run make. Cmd-B runs the build, and Xcode puts the compiler errors in the source. Xcode cannot give code completion for the Linux modules. An `.xcworkspace` gives nothing more than the project, so there is none.
+Xcode builds only for Apple platforms, and it cannot use a Swift SDK. Thus, `apus.xcodeproj` has external build targets that run make. Cmd-B runs the build, and Xcode puts the compiler errors in the source. Xcode cannot give code completion for the Linux modules. An `.xcworkspace` gives nothing more than the project, so there is none.
 
 ## A Wayland server in Swift, not libwayland-server (19 September)
 
@@ -154,7 +154,7 @@ The `Wayland` library replaces libwayland-server. The reasons:
 - A request is a Swift enum case with typed arguments, and an event is a method with typed arguments. Before, the handlers were C function tables with `Unmanaged` pointers.
 - The code generator is Swift (`ui/Tools/WaylandScanner`). It runs on the Mac.
 
-The compositor test uses `mydistro-hello-client`, which uses libwayland-client. Thus, the test checks the Swift server against the C implementation of the protocol.
+The compositor test uses `apus-hello-client`, which uses libwayland-client. Thus, the test checks the Swift server against the C implementation of the protocol.
 
 libwayland-client stays for the test client, because most apps use it.
 

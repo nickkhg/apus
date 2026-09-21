@@ -1,6 +1,6 @@
 # Troubleshooting
 
-This file lists the problems that occurred during the development of mydistro, and their solutions.
+This file lists the problems that occurred during the development of Apus, and their solutions.
 
 ## Containers cannot connect to the internet
 
@@ -32,7 +32,7 @@ Solution: `build/build.sh` runs `makepkg --nodeps`.
 
 Cause: GNU `strip` cannot read the Swift binaries that LLVM makes.
 
-Solution: the `mydistro-ui` `PKGBUILD` has `options=('!strip')`, and the linker removes the symbols (`-Xlinker --strip-all`).
+Solution: the `apus-ui` `PKGBUILD` has `options=('!strip')`, and the linker removes the symbols (`-Xlinker --strip-all`).
 
 ## SwiftPM: "Failed to clone repository"
 
@@ -70,7 +70,7 @@ Solution: the installer mounts the live EFI system partition read-write.
 
 ## The compositor does not start, and shows nothing
 
-Symptom: with `LIBSEAT_BACKEND=noop`, `mydistro-compositor` stops at start. `MYDISTRO_DEBUG=1` shows only "opening seat".
+Symptom: with `LIBSEAT_BACKEND=noop`, `apus-compositor` stops at start. `APUS_DEBUG=1` shows only "opening seat".
 
 Cause: the libseat `noop` backend enables the seat in `libseat_dispatch()`. Then it waits forever if the timeout is -1.
 
@@ -82,7 +82,7 @@ Symptom: `libseat can't open a seat`.
 
 Cause: the session has no seat. This occurs on the serial console.
 
-Solution: as root, set `LIBSEAT_BACKEND=noop`. The shell of an installed system needs none of this: `mydistro-shell.service` starts seatd, and libseat takes the seat from it. See [compositor.md](compositor.md#it-starts-the-machine).
+Solution: as root, set `LIBSEAT_BACKEND=noop`. The shell of an installed system needs none of this: `apus-shell.service` starts seatd, and libseat takes the seat from it. See [compositor.md](compositor.md#it-starts-the-machine).
 
 ## libinput: "Assertion `interface->open_restricted != NULL' failed"
 
@@ -101,7 +101,7 @@ Solution: correct the types. The compositor uses `typealias Resource = UnsafeMut
 
 ## Editor: "No such module 'CDRM'" or "No such module 'Glibc'"
 
-Cause: the editor compiles for macOS. The Linux modules are only in the mydistro Swift SDK.
+Cause: the editor compiles for macOS. The Linux modules are only in the Apus Swift SDK.
 
 Solution: in Xcode, none is possible. Xcode cannot use a Swift SDK. The build (`make ui`) is correct. In an editor that uses SourceKit-LSP, use the toolchain in `build/cache/swift-6.4.0-macos/`. See [ui.md](ui.md#code-completion-in-other-editors).
 

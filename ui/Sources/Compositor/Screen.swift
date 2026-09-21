@@ -6,7 +6,7 @@ import Render
 /// a frame; how the pixels are made is the screen's business.
 ///
 /// SoftwareScreen draws with the CPU into dumb buffers. GPUScreen draws with
-/// GLES into GBM buffers. `MYDISTRO_RENDERER` chooses between them.
+/// GLES into GBM buffers. `APUS_RENDERER` chooses between them.
 protocol Screen: AnyObject {
     var output: Output { get }
     var width: Int { get }
@@ -47,7 +47,7 @@ protocol FrameRasterizer: AnyObject {
     /// Whether a GPU draws the frames. The shell asks, because it holds
     /// different values for depth in each mode (see Theme.swift).
     var usesGPU: Bool { get }
-    /// For the frame times of MYDISTRO_FRAME_LOG.
+    /// For the frame times of APUS_FRAME_LOG.
     var name: String { get }
 
     func render(_ list: DisplayList, into pixels: UnsafeMutablePointer<UInt32>,
@@ -67,7 +67,7 @@ final class CPURasterizer: FrameRasterizer {
     }
 }
 
-/// The screen that `MYDISTRO_RENDERER` asks for. The default is the CPU,
+/// The screen that `APUS_RENDERER` asks for. The default is the CPU,
 /// because its pixels are the same on every run and the tests check exact
 /// colours.
 ///
@@ -77,7 +77,7 @@ final class CPURasterizer: FrameRasterizer {
 /// reading each frame back. `offscreen` asks for that way from the start.
 /// See docs/gpu.md.
 func makeScreen(device: DRMDevice) throws -> any Screen {
-    let wanted = getenv("MYDISTRO_RENDERER").map { String(cString: $0) } ?? "cpu"
+    let wanted = getenv("APUS_RENDERER").map { String(cString: $0) } ?? "cpu"
     switch wanted {
     case "cpu", "software":
         return try SoftwareScreen(device: device)
@@ -97,7 +97,7 @@ func makeScreen(device: DRMDevice) throws -> any Screen {
     case "offscreen":
         return try SoftwareScreen(device: device, rasterizer: OffscreenRasterizer())
     default:
-        log("screen: MYDISTRO_RENDERER must be 'cpu', 'gpu' or 'offscreen', "
+        log("screen: APUS_RENDERER must be 'cpu', 'gpu' or 'offscreen', "
             + "not '\(wanted)'; using cpu")
         return try SoftwareScreen(device: device)
     }

@@ -7,14 +7,14 @@ import Toolkit
 //
 //     /Applications/Terminal.app/
 //         app.conf           the manifest
-//         bin/mydistro-terminal
+//         bin/apus-terminal
 //
 // The manifest is a list of "key = value" lines. A line that starts with "#"
 // is a comment:
 //
-//     id = org.mydistro.terminal
+//     id = org.apus.terminal
 //     name = Terminal
-//     exec = bin/mydistro-terminal
+//     exec = bin/apus-terminal
 //     color = 3BB273
 //
 // The compositor reads the bundles when it starts, shows one dock icon for
@@ -45,7 +45,7 @@ enum AppCatalog {
 
     /// The bundles in `directory`, by name.
     ///
-    /// With MYDISTRO_UI_DIR set (`make test-dev` and `make demo-dev` set it),
+    /// With APUS_UI_DIR set (`make test-dev` and `make demo-dev` set it),
     /// a program of that directory takes the place of the installed one with
     /// the same name. Then a bundle starts the new build.
     static func bundles(in directory: String = AppCatalog.directory) -> [AppBundle] {
@@ -88,7 +88,7 @@ enum AppCatalog {
         guard let exec, !exec.isEmpty else { return nil }
         let installed = exec.hasPrefix("/") ? exec : "\(path)/\(exec)"
         // A new build takes the place of the installed program.
-        if let development = getenv("MYDISTRO_UI_DIR").map({ String(cString: $0) }),
+        if let development = getenv("APUS_UI_DIR").map({ String(cString: $0) }),
            !development.isEmpty {
             let candidate = "\(development)/\(installed.split(separator: "/").last ?? "")"
             if access(candidate, X_OK) == 0 { return candidate }

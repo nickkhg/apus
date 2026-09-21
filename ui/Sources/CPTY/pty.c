@@ -8,7 +8,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-int mydistro_pty_open(char *name, int length) {
+int apus_pty_open(char *name, int length) {
     int fd = posix_openpt(O_RDWR | O_NOCTTY);
     if (fd < 0) {
         return -1;
@@ -22,7 +22,7 @@ int mydistro_pty_open(char *name, int length) {
     return fd;
 }
 
-int mydistro_pty_set_size(int fd, int columns, int rows, int width, int height) {
+int apus_pty_set_size(int fd, int columns, int rows, int width, int height) {
     struct winsize size;
     size.ws_col = (unsigned short)columns;
     size.ws_row = (unsigned short)rows;

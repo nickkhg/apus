@@ -1,4 +1,4 @@
-// mydistro-ui-check
+// apus-ui-check
 //
 // Calls into every C library the UI builds on, so that a successful run
 // proves: the Swift modules compile, the program links, and the libraries

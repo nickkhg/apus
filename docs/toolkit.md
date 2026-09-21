@@ -1,12 +1,12 @@
 # Toolkit
 
-The toolkit is the declarative user interface layer of mydistro. It has the shape of SwiftUI: a view is a value, and the `body` of a view says what it contains.
+The toolkit is the declarative user interface layer of apus. It has the shape of SwiftUI: a view is a value, and the `body` of a view says what it contains.
 
 The toolkit and the shell are a Swift package of their own, in `ui/Toolkit/`. **Write your UI in `ui/Toolkit/Sources/Shell/`.** The rest of `ui/` is the display server, and you rarely change it.
 
 ```swift
 HStack(spacing: 12) {
-    Text("mydistro").font(.headline).foregroundColor(Color(hex: 0xC8A8F0))
+    Text("Apus").font(.headline).foregroundColor(Color(hex: 0xC8A8F0))
     Spacer()
     Text("14:05")
 }
@@ -31,7 +31,7 @@ The cause is not a small error. In `Sources/OpenAttributeGraphCxx/Attribute/OAGA
 
 To use OpenSwiftUI on Linux, someone must first write the attribute graph: a demand-driven dependency engine with attribute bodies of any type, subgraphs, and invalidation. Also, OpenSwiftUI on Linux has no text layout and no event loop.
 
-Thus, mydistro has a toolkit of its own. It is much smaller, it is complete for what the shell needs, and every part of it is in this repository. See [decisions.md](decisions.md).
+Thus, Apus has a toolkit of its own. It is much smaller, it is complete for what the shell needs, and every part of it is in this repository. See [decisions.md](decisions.md).
 
 ## How it works
 
@@ -99,7 +99,7 @@ A stack is only as large as its children need. To make a stack fill its space, p
 
 ```
 ui/
-├── Package.swift          mydistro-ui: the display server, for mydistro only
+├── Package.swift          apus-ui: the display server, for Apus only
 ├── Sources/               THE SYSTEM
 ├── Apps/                  THE APP BUNDLES: one directory for /Applications
 ├── Sources/               THE SYSTEM
@@ -108,7 +108,7 @@ ui/
 │   ├── DRMKit/  C*/       the kernel-facing libraries
 │   ├── TerminalApp/       the terminal: the window and the shell in it
 │   └── CompositorMain/  HelloClient/  DisplayProbe/  UICheck/
-└── Toolkit/               A SWIFT PACKAGE: mydistro-toolkit
+└── Toolkit/               A SWIFT PACKAGE: apus-toolkit
     ├── Package.swift
     ├── Sources/
     │   ├── Render/        the display list and the software renderer
@@ -129,7 +129,7 @@ ui/
 |---|---|
 | `Render` | `Rect`, `Bitmap`, `DisplayItem`, `DisplayList`, `Canvas`, and `SoftwareRenderer`. No other module of ours is below it. |
 | `Toolkit` | The views, the layout, the text, and `ViewRenderer`. It makes display lists. It knows nothing about the screen or about Wayland. |
-| `Shell` | What mydistro draws itself: the rail, Summon, the layouts, and `RootView`. |
+| `Shell` | What Apus draws itself: the rail, Summon, the layouts, and `RootView`. |
 | `Terminal` | What the terminal app draws: the grid of characters, and the escape sequences that change it. The app around it is `ui/Sources/TerminalApp/`. See [applications.md](applications.md). |
 
 ### The root view
@@ -164,19 +164,19 @@ To add a part to the interface, write a `View` in `ui/Toolkit/Sources/Shell/` an
 
 ### The two systems
 
-The toolkit package builds for mydistro and for macOS:
+The toolkit package builds for Apus and for macOS:
 
 | Command | Builds for | Time | Use |
 |---|---|---|---|
 | `make test-ui` | macOS | Seconds | The usual test run while you write UI code |
-| `make test-ui-linux` | mydistro (in the container) | Approximately 30 seconds | Before a commit |
-| `make ui` | mydistro (cross, with the Swift SDK) | Approximately 3 seconds | Run it in the VM |
+| `make test-ui-linux` | Apus (in the container) | Approximately 30 seconds | Before a commit |
+| `make ui` | Apus (cross, with the Swift SDK) | Approximately 3 seconds | Run it in the VM |
 
 Because the package builds for macOS, Xcode gives code completion for the toolkit and the shell. Open `ui/Toolkit/Package.swift` in Xcode. For the display server, Xcode cannot do this (see [ui.md](ui.md#limits-of-xcode)).
 
-The only platform-dependent code is in `FontCache.swift`: which directory the font files are in. On mydistro the font is DejaVu, and on the Mac it is Arial. Thus the same test measures different glyph widths, and the tests do not compare exact widths.
+The only platform-dependent code is in `FontCache.swift`: which directory the font files are in. On Apus the font is DejaVu, and on the Mac it is Arial. Thus the same test measures different glyph widths, and the tests do not compare exact widths.
 
-`ui/Toolkit/Package.swift` runs pkg-config for FreeType and HarfBuzz. `MYDISTRO_CROSS=1` stops this. `make ui` sets that variable, because then the Swift SDK supplies the include directories. Without this, pkg-config on the Mac answers with the macOS libraries of Homebrew.
+`ui/Toolkit/Package.swift` runs pkg-config for FreeType and HarfBuzz. `APUS_CROSS=1` stops this. `make ui` sets that variable, because then the Swift SDK supplies the include directories. Without this, pkg-config on the Mac answers with the macOS libraries of Homebrew.
 
 ## The views
 
@@ -319,7 +319,7 @@ button looks. The dock icons use the second one.
 - HarfBuzz shapes the string: which glyphs to draw, and where.
 - FreeType draws each glyph into a coverage map (0 to 255).
 
-`FontCache` opens the font file, keeps one face for each font and size, and keeps each glyph that it drew before. The font is DejaVu, from the `ttf-dejavu` package. The `mydistro-ui` package depends on it, and the builder image has it for the tests.
+`FontCache` opens the font file, keeps one face for each font and size, and keeps each glyph that it drew before. The font is DejaVu, from the `ttf-dejavu` package. The `apus-ui` package depends on it, and the builder image has it for the tests.
 
 `Text` makes one bitmap for the line and puts it in the display list. The colour comes from the environment.
 
@@ -333,7 +333,7 @@ A view of the interface goes in `ui/Toolkit/Sources/Shell/`. A view that every U
 
 ## Tests
 
-`make test-ui` runs the 107 unit tests on the Mac, and `make test-ui-linux` runs the same tests on mydistro. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, the shapes, the state, and the pointer. `ui/Toolkit/Tests/ShellTests/` tests the panel, the dock and the app area. `ui/Toolkit/Tests/TerminalTests/` tests the grid of the terminal and its escape sequences.
+`make test-ui` runs the 107 unit tests on the Mac, and `make test-ui-linux` runs the same tests on apus. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, the shapes, the state, and the pointer. `ui/Toolkit/Tests/ShellTests/` tests the panel, the dock and the app area. `ui/Toolkit/Tests/TerminalTests/` tests the grid of the terminal and its escape sequences.
 
 A test lays out a view in a rectangle and looks at the display list. For example, this is the test of a spacer:
 
@@ -449,7 +449,7 @@ A `Text` never wraps. A line that is wider than the space it gets is cut, and it
 
 ## The keyboard
 
-A view reads the keys with `onKey`. It answers whether it used the key, and a key that no view used belongs to whatever is under the toolkit. In mydistro that is the app with the focus.
+A view reads the keys with `onKey`. It answers whether it used the key, and a key that no view used belongs to whatever is under the toolkit. In Apus that is the app with the focus.
 
 ```swift
 SummonView(state: state, actions: actions)

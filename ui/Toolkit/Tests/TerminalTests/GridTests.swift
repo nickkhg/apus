@@ -136,7 +136,7 @@ struct CellSizeTests {
     func theCursorSitsOnItsColumn() {
         let cell = CellSize(font: font)
         let screen = Screen(columns: 40, rows: 4)
-        screen.write(Array("[root@mydistro ~]# abc".utf8))
+        screen.write(Array("[root@apus ~]# abc".utf8))
         let frame = Rect(x: 0, y: 0, width: 800, height: 200)
         let list = Grid.displayList(for: screen, cell: cell, in: frame)
         guard case .path(let path, _) = list.last,
@@ -145,7 +145,7 @@ struct CellSizeTests {
             return
         }
         // The cursor is after the text, and the text ends where the glyphs do.
-        let text = ViewRenderer.size(of: Text("[root@mydistro ~]# abc").font(font),
+        let text = ViewRenderer.size(of: Text("[root@apus ~]# abc").font(font),
                                      fitting: .unspecified).width
         #expect(abs(x - text) < 2 * cell.width)
     }

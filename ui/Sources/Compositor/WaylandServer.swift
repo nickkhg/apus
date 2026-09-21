@@ -194,7 +194,7 @@ final class WaylandServer {
                             physicalWidth: Int32(info.widthInMillimetres),
                             physicalHeight: Int32(info.heightInMillimetres),
                             subpixel: Int32(WlOutput.Subpixel.unknown.rawValue),
-                            make: "mydistro", model: "screen",
+                            make: "Apus", model: "screen",
                             transform: Int32(WlOutput.Transform.normal.rawValue))
         output.sendMode(flags: WlOutput.Mode.current.rawValue,
                         width: Int32(info.width), height: Int32(info.height),
@@ -203,8 +203,8 @@ final class WaylandServer {
             output.sendScale(factor: Int32(info.scale))
         }
         if output.version >= 4 {
-            output.sendName(name: "mydistro-0")
-            output.sendDescription(description: "mydistro screen")
+            output.sendName(name: "apus-0")
+            output.sendDescription(description: "Apus screen")
         }
         if output.version >= 2 {
             output.sendDone()
@@ -356,7 +356,7 @@ final class WaylandServer {
     private func send(keymap keyboard: Resource<WlKeyboard>) {
         var bytes = Array(keymap.utf8)
         bytes.append(0)                 // the app reads it as a C string
-        let name = "/mydistro-keymap-\(getpid())"
+        let name = "/apus-keymap-\(getpid())"
         let fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0o600)
         guard fd >= 0 else {
             log("compositor: no memory for the keymap: \(String(cString: strerror(errno)))")

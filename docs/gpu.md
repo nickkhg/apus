@@ -6,7 +6,7 @@ Apple's Virtualization framework gives a Linux guest no GPU. This document says 
 
 `VZVirtioGraphicsDeviceConfiguration` is a 2D scanout. It never offers the 3D feature bit, so Mesa in the guest falls back to llvmpipe and draws with the CPU. The 3D graphics device of the framework, `VZMacGraphicsDeviceConfiguration`, accepts macOS guests only.
 
-The compositor can draw with a GPU (see [ui.md](ui.md#the-two-renderers)), but in a VM it has none. These are the times of one frame, measured with `MYDISTRO_FRAME_LOG`:
+The compositor can draw with a GPU (see [ui.md](ui.md#the-two-renderers)), but in a VM it has none. These are the times of one frame, measured with `APUS_FRAME_LOG`:
 
 | Renderer | Size | Average | Frames a second |
 |---|---|---|---|
@@ -17,7 +17,7 @@ The GPU renderer is the slower one, because llvmpipe is under it.
 
 ## The design
 
-macOS 27 added `VZCustomVirtioDevice`. A program can be a Virtio device itself: it chooses the device ID, the feature bits, the queues and the shared memory. So mydistro-vm is the GPU device, and it offers what the framework will not.
+macOS 27 added `VZCustomVirtioDevice`. A program can be a Virtio device itself: it chooses the device ID, the feature bits, the queues and the shared memory. So apus-vm is the GPU device, and it offers what the framework will not.
 
 The parts, from the app in the guest to the Mac:
 
@@ -53,7 +53,7 @@ GPU0:
 The device also draws. It carries the 2D commands, so the compositor runs on it alone:
 
 ```sh
-MYDISTRO_DRM_DEVICE=/dev/dri/card1 mydistro-compositor
+APUS_DRM_DEVICE=/dev/dri/card1 apus-compositor
 ```
 
 `VM_SNAPSHOT` names a PNG file, and every flush replaces it. Virtualization has no screenshot of its own, which is why the tests read the screen inside the guest. With a device of our own the host holds the pixels, so it can write them, with no help from the guest.
@@ -69,7 +69,7 @@ brew install meson ninja vulkan-headers vulkan-loader molten-vk
 build/make-virglrenderer.sh
 ```
 
-It gives `build/cache/virglrenderer/build/src/libvirglrenderer.dylib`. The Makefile finds that file and builds `mydistro-vm` with the renderer in it. Without the file the program still builds, and the device carries no 3D.
+It gives `build/cache/virglrenderer/build/src/libvirglrenderer.dylib`. The Makefile finds that file and builds `apus-vm` with the renderer in it. Without the file the program still builds, and the device carries no 3D.
 
 Four things in that build are not the defaults:
 
@@ -116,13 +116,13 @@ MESA: error: Zink requires the nullDescriptor feature of KHR/EXT robustness2.
 robustness2Features->nullDescriptor = false;
 ```
 
-The feature says what a shader reads from a descriptor that has nothing bound. A shader that binds everything it reads never asks the question. The compositor's four shaders bind everything they read. So `packages/mydistro-zink` builds Zink without the check, and `tests/venus.exp` compares what it draws with what the CPU draws, pixel by pixel. The driver goes in a directory of its own, and `mydistro-gpu` puts a program on it. A driver with a check removed is not for everything on the system.
+The feature says what a shader reads from a descriptor that has nothing bound. A shader that binds everything it reads never asks the question. The compositor's four shaders bind everything they read. So `packages/apus-zink` builds Zink without the check, and `tests/venus.exp` compares what it draws with what the CPU draws, pixel by pixel. The driver goes in a directory of its own, and `apus-gpu` puts a program on it. A driver with a check removed is not for everything on the system.
 
 **GBM needs a dma-buf, and this Vulkan has none.** A compositor normally hands each frame to the screen through GBM. A GBM buffer is a dma-buf with a DRM format modifier. Venus offers those only when the renderer on the host can export one, and Metal has nothing to export. The device in the guest reports none of `VK_EXT_external_memory_dma_buf`, `VK_EXT_image_drm_format_modifier`, `VK_EXT_queue_family_foreign` or `VK_KHR_external_memory_fd`.
 
-So the GPU draws into memory instead. EGL takes a device with no window, GLES draws into a texture, and the compositor reads that frame back into the buffer the screen shows. That costs one copy of the screen for each frame and needs nothing that is missing. `OffscreenRasterizer` holds it, and the GLES renderer above it is the same `GLRenderer` that GPUScreen uses. `MYDISTRO_RENDERER=gpu` tries GBM first, falls back to this, and then to the CPU.
+So the GPU draws into memory instead. EGL takes a device with no window, GLES draws into a texture, and the compositor reads that frame back into the buffer the screen shows. That costs one copy of the screen for each frame and needs nothing that is missing. `OffscreenRasterizer` holds it, and the GLES renderer above it is the same `GLRenderer` that GPUScreen uses. `APUS_RENDERER=gpu` tries GBM first, falls back to this, and then to the CPU.
 
-**EGL took the wrong device.** A machine with our device has two, and only one of them carries Venus. The surfaceless platform takes the first it finds. Zink then looks for a Vulkan device with the same DRM number, finds none, and EGL ends with no driver at all. The device platform names the device instead, so the compositor asks EGL for its devices and takes the first that draws with a GPU. `MYDISTRO_RENDER_NODE` names one and stops the search.
+**EGL took the wrong device.** A machine with our device has two, and only one of them carries Venus. The surfaceless platform takes the first it finds. Zink then looks for a Vulkan device with the same DRM number, finds none, and EGL ends with no driver at all. The device platform names the device instead, so the compositor asks EGL for its devices and takes the first that draws with a GPU. `APUS_RENDER_NODE` names one and stops the search.
 
 With those, `make demo` draws the shell with the GPU of the Mac:
 
@@ -156,4 +156,4 @@ One fault in this program is worth writing down. virglrenderer keeps the pointer
 
 ## The other way
 
-libkrun already does all of this, with the same virglrenderer, Venus and MoltenVK. It uses Hypervisor.framework, not Virtualization, so it gives up the Xcode build and debug of `mydistro-vm`. It is the shorter way to a guest with a GPU, and the longer way keeps one program in Swift.
+libkrun already does all of this, with the same virglrenderer, Venus and MoltenVK. It uses Hypervisor.framework, not Virtualization, so it gives up the Xcode build and debug of `apus-vm`. It is the shorter way to a guest with a GPU, and the longer way keeps one program in Swift.

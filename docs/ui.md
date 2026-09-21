@@ -27,11 +27,11 @@ The target system does not need these changes. The image carries the Swift runti
 
 ## The Swift SDK: compile on the Mac
 
-`make sdk` makes the Swift SDK `mydistro-aarch64` in `build/cache/swift-sdks/`. A Swift SDK is a sysroot for a different system. With it, the macOS toolchain compiles `ui/` for mydistro on the Mac, without the container:
+`make sdk` makes the Swift SDK `apus-aarch64` in `build/cache/swift-sdks/`. A Swift SDK is a sysroot for a different system. With it, the macOS toolchain compiles `ui/` for Apus on the Mac, without the container:
 
 ```sh
 build/cache/swift-6.4.0-macos/usr/bin/swift build --package-path ui \
-    --swift-sdks-path build/cache/swift-sdks --swift-sdk mydistro-aarch64
+    --swift-sdks-path build/cache/swift-sdks --swift-sdk apus-aarch64
 ```
 
 `make ui` runs this command, with the run paths that a dynamic library needs. A full build takes approximately 5 seconds on the Mac.
@@ -51,7 +51,7 @@ Two problems apply to a sysroot on macOS:
 
 ## Xcode
 
-Open `mydistro.xcodeproj`. The project has three schemes:
+Open `apus.xcodeproj`. The project has three schemes:
 
 | Scheme | Build (Cmd-B) | Run (Cmd-R) |
 |---|---|---|
@@ -74,21 +74,21 @@ Product > Clean does nothing. Use `make clean` in a terminal.
 
 ### Code completion in other editors
 
-`ui/.sourcekit-lsp/config.json` tells SourceKit-LSP to use the mydistro SDK. An editor that uses SourceKit-LSP from `build/cache/swift-6.4.0-macos/usr/bin/sourcekit-lsp` gets code completion, errors, and documentation for all modules, also for the C libraries. For example, use Visual Studio Code with the Swift extension, and set the toolchain path to `build/cache/swift-6.4.0-macos/usr/bin`.
+`ui/.sourcekit-lsp/config.json` tells SourceKit-LSP to use the Apus SDK. An editor that uses SourceKit-LSP from `build/cache/swift-6.4.0-macos/usr/bin/sourcekit-lsp` gets code completion, errors, and documentation for all modules, also for the C libraries. For example, use Visual Studio Code with the Swift extension, and set the toolchain path to `build/cache/swift-6.4.0-macos/usr/bin`.
 
 A test with SourceKit-LSP gave the documentation of the C function `libinput_dispatch` and no errors in `Input.swift`.
 
 ## The two packages
 
-`ui/` has the display server. It builds for mydistro only.
+`ui/` has the display server. It builds for Apus only.
 
-`ui/Toolkit/` is a package of its own: the toolkit and the shell (`Render`, `Toolkit`, `Shell`). It builds for mydistro and for macOS. Write UI code there. See [toolkit.md](toolkit.md).
+`ui/Toolkit/` is a package of its own: the toolkit and the shell (`Render`, `Toolkit`, `Shell`). It builds for Apus and for macOS. Write UI code there. See [toolkit.md](toolkit.md).
 
 `make ui` builds both, because `ui/` depends on `ui/Toolkit/`.
 
 ## One library for the machine
 
-The toolkit, the shell and the renderer are one dynamic library, `libMydistroUI.so`. The machine carries one copy of it in `/usr/lib`, and every program on it draws with that copy. A change to the toolkit is then a new library, and not a new build of each app.
+The toolkit, the shell and the renderer are one dynamic library, `libApusUI.so`. The machine carries one copy of it in `/usr/lib`, and every program on it draws with that copy. A change to the toolkit is then a new library, and not a new build of each app.
 
 The Swift runtime is in `/usr/lib/swift/linux`. Nothing on this system uses Foundation, so the package carries the core of the runtime alone. It leaves out Foundation, ICU and the test libraries: 60 MB that nothing opens.
 
@@ -118,12 +118,12 @@ Two things about this:
 | `DRMKit` | Swift library | A Swift layer over libdrm |
 | `Wayland` | Swift library | The Wayland server. See [compositor.md](compositor.md). |
 | `Compositor` | Swift library | The compositor. See [compositor.md](compositor.md). |
-| `mydistro-compositor` | Program | Runs the compositor |
-| `mydistro-system` | Program | The system monitor. It is the first app written with `AppClient`, and the second user of the toolkit. |
-| `mydistro-hello-client` | Program | A small Wayland app with one window. It uses libwayland-client, as most apps do. It names a smallest size, so it behaves like an app that no tile can hold. |
-| `mydistro-terminal` | Program | The terminal app. See [applications.md](applications.md). |
-| `mydistro-display-probe` | Program | Draws a test pattern on the screen, then restores the screen |
-| `mydistro-ui-check` | Program | Calls each C library once. It needs no screen. |
+| `apus-compositor` | Program | Runs the compositor |
+| `apus-system` | Program | The system monitor. It is the first app written with `AppClient`, and the second user of the toolkit. |
+| `apus-hello-client` | Program | A small Wayland app with one window. It uses libwayland-client, as most apps do. It names a smallest size, so it behaves like an app that no tile can hold. |
+| `apus-terminal` | Program | The terminal app. See [applications.md](applications.md). |
+| `apus-display-probe` | Program | Draws a test pattern on the screen, then restores the screen |
+| `apus-ui-check` | Program | Calls each C library once. It needs no screen. |
 
 ### The C library modules
 
@@ -167,19 +167,19 @@ To add a protocol to the compositor:
 
 ## The tools
 
-`mydistro-ui-check` calls each C library once. It prints one line for each library, then `UI-CHECK-OK`. It makes a libinput context and a keymap, and it gets the FreeType and HarfBuzz versions.
+`apus-ui-check` calls each C library once. It prints one line for each library, then `UI-CHECK-OK`. It makes a libinput context and a keymap, and it gets the FreeType and HarfBuzz versions.
 
-`mydistro-display-probe [--hold SECONDS]` does these steps:
+`apus-display-probe [--hold SECONDS]` does these steps:
 
 1. It finds the first DRM device with a connected output.
-2. It fills a framebuffer with mydistro purple (`#965ADC`) and a white rectangle over the middle half of the screen.
+2. It fills a framebuffer with Apus purple (`#965ADC`) and a white rectangle over the middle half of the screen.
 3. It puts the framebuffer on the screen, waits, and restores the screen.
 
 It must run as root, when no other program uses the display.
 
 ## Tests
 
-`make test-ui` runs the unit tests of the toolkit and the shell on the Mac. They test the layout, the text, the rail and Summon. They need no screen, no VM and no container. `make test-ui-linux` runs the same tests on mydistro, in the builder container. See [toolkit.md](toolkit.md#tests).
+`make test-ui` runs the unit tests of the toolkit and the shell on the Mac. They test the layout, the text, the rail and Summon. They need no screen, no VM and no container. `make test-ui-linux` runs the same tests on Apus, in the builder container. See [toolkit.md](toolkit.md#tests).
 
 The tests that need a screen run in the VM. See [testing.md](testing.md).
 
@@ -191,15 +191,15 @@ The tests that need a screen run in the VM. See [testing.md](testing.md).
 
 To test the new programs automatically, run `make test-dev`. It runs the compositor test with the programs from `out/ui/`.
 
-`make ui` puts `libMydistroUI.so` in `out/ui/` beside the programs, so `make test-dev` and `make demo-dev` carry a change to the toolkit in 3 MB, not in 81 MB.
+`make ui` puts `libApusUI.so` in `out/ui/` beside the programs, so `make test-dev` and `make demo-dev` carry a change to the toolkit in 3 MB, not in 81 MB.
 
-`make ui` makes a release build. It does not change the image. To put the UI in the image, run `make build`. The image build compiles `ui/` again with the Linux toolchain in the container. It keeps the Swift build cache in the `mydistro-work` volume, so it compiles only the changed files.
+`make ui` makes a release build. It does not change the image. To put the UI in the image, run `make build`. The image build compiles `ui/` again with the Linux toolchain in the container. It keeps the Swift build cache in the `apus-work` volume, so it compiles only the changed files.
 
 `make ui-container` does the same as `make ui` in the builder container, with the cache `/work/swiftpm/dev`.
 
 ## The two renderers
 
-The compositor has two renderers. `MYDISTRO_RENDERER` chooses one:
+The compositor has two renderers. `APUS_RENDERER` chooses one:
 
 | Value | Renderer |
 |---|---|

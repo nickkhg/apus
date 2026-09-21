@@ -12,12 +12,12 @@ source [file dirname [info script]]/lib.exp
 exec rm -f out/vm/target.img
 
 send_user "\n=== Stage 1: install from live image ===\n"
-spawn $env(MYDISTRO_VM) live
+spawn $env(APUS_VM) live
 login
-send "mydistro-install -y /dev/vdb\r"
+send "apus-install -y /dev/vdb\r"
 expect {
     "Installation complete" {}
-    "mydistro-install:"     { fail "installer reported an error" }
+    "apus-install:"     { fail "installer reported an error" }
     timeout                 { fail "installer timed out" }
 }
 expect -re "# $"
@@ -32,9 +32,9 @@ send_user "\n=== Stage 2: boot installed disk ===\n"
 # This machine has no display (VM_GPU is unset), so the shell cannot start
 # on it and `login` does not ask for it. tests/display.exp boots the same
 # disk with a screen, and that is where the shell must be running.
-spawn $env(MYDISTRO_VM) installed
+spawn $env(APUS_VM) installed
 login
-send "cat /etc/mydistro-installed >/dev/null && grep -qx ID=mydistro /etc/os-release && pacman -Q mydistro-release >/dev/null && mountpoint -q /boot && test -f /boot/Image && ! grep -qw mydistro.live /proc/cmdline && touch /rw-check && pacman -Q linux-aarch64 >/dev/null && echo INSTALLED-\$((1+1))\r"
+send "cat /etc/apus-installed >/dev/null && grep -qx ID=apus /etc/os-release && pacman -Q apus-release >/dev/null && mountpoint -q /boot && test -f /boot/Image && ! grep -qw apus.live /proc/cmdline && touch /rw-check && pacman -Q linux-aarch64 >/dev/null && echo INSTALLED-\$((1+1))\r"
 expect {
     # The command line reads INSTALLED-$((1+1)), so only real output matches.
     "INSTALLED-2" {}

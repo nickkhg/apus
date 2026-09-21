@@ -3,7 +3,7 @@
 
     tests/screen.py PICTURE.ppm X,Y=RRGGBB ...
 
-The guest writes the picture itself, with `mydistro-screen shot`, into the
+The guest writes the picture itself, with `apus-screen shot`, into the
 `screens` share (out/vm/screens on the Mac). Those are the pixels that the
 compositor gave to the display.
 

@@ -1,7 +1,7 @@
 import Render
 import Toolkit
 
-// This is the user interface of mydistro: what the system draws itself, over
+// This is the user interface of Apus: what the system draws itself, over
 // the windows of the apps. RootView is the whole screen. The compositor draws
 // it for each frame and gives it the state.
 //

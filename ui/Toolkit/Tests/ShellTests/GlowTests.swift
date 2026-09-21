@@ -14,7 +14,7 @@ import Toolkit
 private let screen = Rect(x: 0, y: 0, width: 1280, height: 800)
 
 private func state() -> ShellState {
-    ShellState(apps: [AppEntry(id: "org.mydistro.terminal", name: "Terminal",
+    ShellState(apps: [AppEntry(id: "org.apus.terminal", name: "Terminal",
                                color: Color(hex: 0x3BB273))],
                canvas: RootView.windowArea(screen: screen))
 }

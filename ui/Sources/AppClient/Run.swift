@@ -72,7 +72,7 @@ extension AppWindow {
         mappedBytes = 0
 
         buffers += 1
-        let name = "/mydistro-\(appID)-\(getpid())-\(buffers)"
+        let name = "/apus-\(appID)-\(getpid())-\(buffers)"
         let fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0o600)
         guard fd >= 0 else { fail("\(appID): no memory for the window") }
         shm_unlink(name)

@@ -1,4 +1,4 @@
-// mydistro-compositor
+// apus-compositor
 //
 // Takes over the screen, keyboard and mouse, and runs a Wayland server that
 // apps connect to (WAYLAND_DISPLAY is printed at start). Quit with
@@ -18,6 +18,6 @@ do {
     compositor.run()
     print("COMPOSITOR-EXIT")
 } catch {
-    print("mydistro-compositor: \(error)")
+    print("apus-compositor: \(error)")
     exit(1)
 }

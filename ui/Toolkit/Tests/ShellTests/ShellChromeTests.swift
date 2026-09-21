@@ -8,9 +8,9 @@ import Toolkit
 
 /// Three apps, as the compositor reads them from /Applications.
 let sampleApps = [
-    AppEntry(id: "org.mydistro.files", name: "Files", color: Color(hex: 0x4C8DF6)),
-    AppEntry(id: "org.mydistro.terminal", name: "Terminal", color: Color(hex: 0x3BB273)),
-    AppEntry(id: "org.mydistro.settings", name: "Settings", color: Color(hex: 0xE0A458)),
+    AppEntry(id: "org.apus.files", name: "Files", color: Color(hex: 0x4C8DF6)),
+    AppEntry(id: "org.apus.terminal", name: "Terminal", color: Color(hex: 0x3BB273)),
+    AppEntry(id: "org.apus.settings", name: "Settings", color: Color(hex: 0xE0A458)),
 ]
 
 /// The state of a shell with those apps.
@@ -20,7 +20,7 @@ func state(windows: [WindowEntry] = [], layout: WindowLayoutKind = .principal) -
 }
 
 /// A window of an app, in a place on the canvas.
-func window(_ id: String, app: String = "org.mydistro.terminal",
+func window(_ id: String, app: String = "org.apus.terminal",
             title: String = "Terminal", place: WindowEntry.Place = .principal,
             focus: Bool = false) -> WindowEntry {
     WindowEntry(id: id, title: title, appID: app, place: place, hasFocus: focus)

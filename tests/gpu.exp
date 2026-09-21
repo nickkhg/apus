@@ -21,9 +21,9 @@ source [file dirname [info script]]/lib.exp
 
 set bin ""
 set uienv ""
-if {[info exists env(MYDISTRO_UI_DIR)]} {
-    set bin "$env(MYDISTRO_UI_DIR)/"
-    set uienv "MYDISTRO_UI_DIR=$env(MYDISTRO_UI_DIR) "
+if {[info exists env(APUS_UI_DIR)]} {
+    set bin "$env(APUS_UI_DIR)/"
+    set uienv "APUS_UI_DIR=$env(APUS_UI_DIR) "
 }
 
 # Waits for the guest to finish what it was given.
@@ -71,36 +71,36 @@ proc guest {command what} {
 # one surface with a blur under it.
 proc drawWith {renderer name {mode cpu} {summon 0}} {
     global bin uienv
-    send "LIBSEAT_BACKEND=noop MYDISTRO_RENDERER=$renderer MYDISTRO_SHELL_MODE=$mode MYDISTRO_SCREENSHOT_SOCKET=/run/mydistro-screenshot.sock ${uienv}${bin}mydistro-compositor &\r"
+    send "LIBSEAT_BACKEND=noop APUS_RENDERER=$renderer APUS_SHELL_MODE=$mode APUS_SCREENSHOT_SOCKET=/run/apus-screenshot.sock ${uienv}${bin}apus-compositor &\r"
     if {$renderer eq "gpu"} {
         # The renderer says which GL it got. In a VM that is llvmpipe.
         expect {
             -re {GPU-RENDERER [^\r\n]*} { send_user "\n$expect_out(0,string)\n" }
-            "mydistro-compositor:"      { fail "the compositor reported an error" }
+            "apus-compositor:"      { fail "the compositor reported an error" }
             timeout                     { fail "the GPU renderer did not start" }
         }
     }
     expect {
         "COMPOSITOR-READY"     {}
-        "mydistro-compositor:" { fail "$renderer: the compositor reported an error" }
+        "apus-compositor:" { fail "$renderer: the compositor reported an error" }
         timeout                { fail "$renderer: the compositor did not start" }
     }
     after 1500
 
     if {$summon} {
-        send "${bin}mydistro-screen input --key super\r"
+        send "${bin}apus-screen input --key super\r"
         expect {
             "pressed super"    {}
-            "mydistro-screen:" { fail "$name: the key did not go in" }
+            "apus-screen:" { fail "$name: the key did not go in" }
             timeout            { fail "$name: Summon did not answer the key" }
         }
         settle "$name: the key"
         after 1000
     }
 
-    send "${bin}mydistro-screen shot /mnt/screens/$name.ppm\r"
+    send "${bin}apus-screen shot /mnt/screens/$name.ppm\r"
     expect {
-        "mydistro-screen:"     { fail "$renderer: the compositor gave no picture" }
+        "apus-screen:"     { fail "$renderer: the compositor gave no picture" }
         -re {ok [0-9]+ [0-9]+} {}
         timeout                { fail "$renderer: no picture" }
     }
@@ -145,7 +145,7 @@ proc differs {first second what} {
     send_user "\n$what: the two pictures differ, as they must\n"
 }
 
-spawn env VM_GPU=headless $env(MYDISTRO_VM) installed
+spawn env VM_GPU=headless $env(APUS_VM) installed
 login
 
 # The first mode: flat colours. The two renderers must agree pixel by pixel.

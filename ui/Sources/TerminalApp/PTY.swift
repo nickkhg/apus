@@ -16,7 +16,7 @@ final class PTY {
     /// include the name of the program.
     init?(command: String, arguments: [String] = [], columns: Int, rows: Int) {
         var name = [CChar](repeating: 0, count: 128)
-        fd = mydistro_pty_open(&name, Int32(name.count))
+        fd = apus_pty_open(&name, Int32(name.count))
         guard fd >= 0 else {
             report("can't open a pseudo terminal: \(String(cString: strerror(errno)))")
             return nil
@@ -89,7 +89,7 @@ final class PTY {
     /// Tells the program how large the terminal is. A program that cares
     /// (the shell, an editor) also gets SIGWINCH from the kernel.
     func setSize(columns: Int, rows: Int, width: Int, height: Int) {
-        _ = mydistro_pty_set_size(fd, Int32(columns), Int32(rows), Int32(width), Int32(height))
+        _ = apus_pty_set_size(fd, Int32(columns), Int32(rows), Int32(width), Int32(height))
     }
 
     /// What the program printed. Nil means that the program ended.

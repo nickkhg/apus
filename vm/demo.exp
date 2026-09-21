@@ -1,9 +1,9 @@
 #!/usr/bin/expect -f
 # `make demo`: boots the installed disk in a window, logs in on the serial
-# console, and starts mydistro-compositor. Click an icon in the dock to open
+# console, and starts apus-compositor. Click an icon in the dock to open
 # an app. The VM keeps running until you close its window.
 #
-# With MYDISTRO_UI_DIR set (for example /mnt/host/ui), the VM runs the
+# With APUS_UI_DIR set (for example /mnt/host/ui), the VM runs the
 # programs from that directory, not the installed ones.
 
 set timeout 120
@@ -12,16 +12,16 @@ source [file dirname [info script]]/../tests/lib.exp
 
 set bin ""
 set uienv ""
-if {[info exists env(MYDISTRO_UI_DIR)]} {
-    set bin "$env(MYDISTRO_UI_DIR)/"
+if {[info exists env(APUS_UI_DIR)]} {
+    set bin "$env(APUS_UI_DIR)/"
     # The compositor starts the apps of /Applications, so it needs the
     # directory in its own environment. Without this the compositor is the
     # new build and every app it starts is the one in the image.
-    set uienv "MYDISTRO_UI_DIR=$env(MYDISTRO_UI_DIR) "
+    set uienv "APUS_UI_DIR=$env(APUS_UI_DIR) "
 }
 # How many pixels there are to a point. A screen with small pixels wants 2.
-if {[info exists env(MYDISTRO_SCALE)]} {
-    append uienv "MYDISTRO_SCALE=$env(MYDISTRO_SCALE) "
+if {[info exists env(APUS_SCALE)]} {
+    append uienv "APUS_SCALE=$env(APUS_SCALE) "
 }
 # Which renderer draws. The demo asks for the GPU, because this is the one
 # place that shows what the machine can do. The tests keep the CPU, whose
@@ -29,35 +29,35 @@ if {[info exists env(MYDISTRO_SCALE)]} {
 # with no GPU behind it, so this is safe everywhere. See docs/ui.md and
 # docs/gpu.md.
 set renderer "gpu"
-if {[info exists env(MYDISTRO_RENDERER)]} {
-    set renderer $env(MYDISTRO_RENDERER)
+if {[info exists env(APUS_RENDERER)]} {
+    set renderer $env(APUS_RENDERER)
 }
-append uienv "MYDISTRO_RENDERER=$renderer "
+append uienv "APUS_RENDERER=$renderer "
 
 # The compositor times its own frames and writes a line for every 60 of
 # them, which is about one line a second. The Debug menu of the window
-# reads those lines. MYDISTRO_FRAME_LOG names another number, or 0 for none.
+# reads those lines. APUS_FRAME_LOG names another number, or 0 for none.
 set frameLog 60
-if {[info exists env(MYDISTRO_FRAME_LOG)]} {
-    set frameLog $env(MYDISTRO_FRAME_LOG)
+if {[info exists env(APUS_FRAME_LOG)]} {
+    set frameLog $env(APUS_FRAME_LOG)
 }
 if {$frameLog ne "0"} {
-    append uienv "MYDISTRO_FRAME_LOG=$frameLog "
+    append uienv "APUS_FRAME_LOG=$frameLog "
 }
 
 # VM_CUSTOM_GPU adds the virtio-gpu device that this program makes, which
-# is the one that carries the GPU of the Mac. mydistro-gpu then puts the
+# is the one that carries the GPU of the Mac. apus-gpu then puts the
 # compositor on it. Without the renderer on the host, or without the Zink
 # package in the guest, both fall back and the compositor draws with the
 # CPU. See docs/gpu.md.
-spawn env VM_GPU=window VM_CUSTOM_GPU=1 $env(MYDISTRO_VM) installed
+spawn env VM_GPU=window VM_CUSTOM_GPU=1 $env(APUS_VM) installed
 login
-send "LIBSEAT_BACKEND=noop ${uienv}mydistro-gpu ${bin}mydistro-compositor &\r"
+send "LIBSEAT_BACKEND=noop ${uienv}apus-gpu ${bin}apus-compositor &\r"
 expect {
     "COMPOSITOR-READY"     {}
-    "mydistro-compositor:" { fail "compositor reported an error" }
+    "apus-compositor:" { fail "compositor reported an error" }
 }
-send_user "\n\n>>> mydistro is running in the window.\n"
+send_user "\n\n>>> Apus is running in the window.\n"
 send_user ">>> Press Super to open Summon, and type the name of an app.\n"
 send_user ">>> Ctrl+Alt+Backspace stops the compositor.\n"
 send_user ">>> Close the window to stop the VM.\n\n"

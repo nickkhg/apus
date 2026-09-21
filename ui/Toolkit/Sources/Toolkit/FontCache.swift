@@ -71,8 +71,8 @@ final class FontCache {
     }
 
     /// The font files to look for. The first one that opens wins. On
-    /// mydistro the ttf-dejavu package installs the DejaVu files, and the
-    /// mydistro-ui package depends on it. The macOS files are for the tests
+    /// Apus the ttf-dejavu package installs the DejaVu files, and the
+    /// apus-ui package depends on it. The macOS files are for the tests
     /// and for a preview on the Mac: the Mac draws a different face.
     private static let files: [(monospaced: Bool, bold: Bool, paths: [String])] = [
         (false, false, ["/usr/share/fonts/TTF/DejaVuSans.ttf",

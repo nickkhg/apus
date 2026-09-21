@@ -36,7 +36,7 @@ The first build downloads approximately 3 GB. Later builds take approximately 1 
 
 The builder runs with `--cap-add ALL`, because `pacstrap` and `arch-chroot` mount file systems.
 
-The builder mounts the repository at the same path as on the Mac, for example `/Users/you/Developer/mydistro`. It does not use a short path such as `/src`. Thus, paths in compiler messages are correct on the Mac, and Xcode can open the file of an error.
+The builder mounts the repository at the same path as on the Mac, for example `/Users/you/Developer/apus`. It does not use a short path such as `/src`. Thus, paths in compiler messages are correct on the Mac, and Xcode can open the file of an error.
 
 ## Pinned inputs
 
@@ -71,8 +71,8 @@ The build uses two container volumes. macOS file systems do not usually make a d
 
 | Volume | Content |
 |---|---|
-| `mydistro-work` | The staged root file system, the disk image, the local repository, and the Swift build caches. |
-| `mydistro-pkgcache` | Downloaded pacman packages. Later builds do not download them again. |
+| `apus-work` | The staged root file system, the disk image, the local repository, and the Swift build caches. |
+| `apus-pkgcache` | Downloaded pacman packages. Later builds do not download them again. |
 
 ## Build steps
 
@@ -80,10 +80,10 @@ The build uses two container volumes. macOS file systems do not usually make a d
 
 1. It removes the output of the last build.
 2. It builds each package in `packages/` with `makepkg`, and puts the packages in the local repository `/work/repo`. See [packages.md](packages.md).
-3. It makes a pacman configuration that puts `[mydistro]` before the Arch Linux ARM repositories.
+3. It makes a pacman configuration that puts `[apus]` before the Arch Linux ARM repositories.
 4. It installs the packages in `rootfs/packages` with `pacstrap`.
 5. It copies `rootfs/overlay/` into the root file system.
-6. In a chroot, it makes the initramfs, applies the systemd presets, enables the mydistro services, and masks the first-boot wizards.
+6. In a chroot, it makes the initramfs, applies the systemd presets, enables the Apus services, and masks the first-boot wizards.
 7. It moves the contents of `/boot` to a staging directory for the EFI system partition, and adds systemd-boot.
 8. It writes the disk image with `systemd-repart`.
 9. It copies `live.img`, `packages.lock`, and the repository to `out/`.
@@ -111,4 +111,4 @@ Each change to `build/Containerfile` makes a new builder image. The old images s
 
 ## Old Buildroot version
 
-The first version of mydistro used Buildroot. It is at the git tag `buildroot-v0`. See [decisions.md](decisions.md).
+The first version of Apus used Buildroot. It is at the git tag `buildroot-v0`. See [decisions.md](decisions.md).

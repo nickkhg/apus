@@ -18,7 +18,7 @@ struct TerminalWidgetTests {
     @Test("The tile draws text")
     func theTileDrawsText() {
         let list = items(TerminalWidget(screen: screen("make ui\r\ndone\r\n"),
-                                        title: "~/mydistro — bash"))
+                                        title: "~/apus — bash"))
         let texts = list.filter { if case .bitmap = $0 { true } else { false } }
         print("ITEMS \(list.count) TEXTS \(texts.count)")
         #expect(!texts.isEmpty)

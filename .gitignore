@@ -2,5 +2,5 @@ out/
 build/cache/
 .build/
 xcuserdata/
-mydistro.xcodeproj/project.xcworkspace/
+apus.xcodeproj/project.xcworkspace/
 __pycache__/

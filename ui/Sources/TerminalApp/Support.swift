@@ -3,7 +3,7 @@ import Glibc
 /// Prints a line and flushes it, so that the message is in the log of the
 /// system even when the terminal ends at once.
 func report(_ message: String) {
-    print("mydistro-terminal: \(message)")
+    print("apus-terminal: \(message)")
     fflush(nil)
 }
 

@@ -3,7 +3,7 @@
 //   swift run -c release --package-path ui/Toolkit toolkit-bench
 //
 // It draws the shell into memory, so it needs no screen. The numbers are for
-// the Mac; mydistro in a VM is slower.
+// the Mac; Apus in a VM is slower.
 
 import Foundation
 import Render
@@ -26,14 +26,14 @@ func measure(_ name: String, _ body: () -> Void) {
 // The same shell as on the screen: three apps, and two open windows.
 let state = ShellState(
     apps: [
-        AppEntry(id: "org.mydistro.files", name: "Files", color: Color(hex: 0x4C8DF6)),
-        AppEntry(id: "org.mydistro.terminal", name: "Terminal", color: Color(hex: 0x3BB273)),
-        AppEntry(id: "org.mydistro.settings", name: "Settings", color: Color(hex: 0xE0A458)),
+        AppEntry(id: "org.apus.files", name: "Files", color: Color(hex: 0x4C8DF6)),
+        AppEntry(id: "org.apus.terminal", name: "Terminal", color: Color(hex: 0x3BB273)),
+        AppEntry(id: "org.apus.settings", name: "Settings", color: Color(hex: 0xE0A458)),
     ],
     windows: [
-        WindowEntry(id: "1", title: "Hello from Swift", appID: "org.mydistro.terminal",
+        WindowEntry(id: "1", title: "Hello from Swift", appID: "org.apus.terminal",
                     place: .principal, hasFocus: true),
-        WindowEntry(id: "2", title: "Files", appID: "org.mydistro.files", place: .widget),
+        WindowEntry(id: "2", title: "Files", appID: "org.apus.files", place: .widget),
     ],
     clock: Clock(hour: "14", minute: "05", weekday: "TUE"))
 let host = ViewHost()

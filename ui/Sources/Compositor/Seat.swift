@@ -35,7 +35,7 @@ final class Seat {
     ))
 
     init() throws(Failure) {
-        if getenv("MYDISTRO_DEBUG") != nil { libseat_set_log_level(LIBSEAT_LOG_LEVEL_DEBUG) }
+        if getenv("APUS_DEBUG") != nil { libseat_set_log_level(LIBSEAT_LOG_LEVEL_DEBUG) }
         handle = libseat_open_seat(Seat.listener, Unmanaged.passUnretained(self).toOpaque())
         guard let handle else { throw .open }
         // Devices can be opened once the seat is enabled. Dispatch without

@@ -1,12 +1,12 @@
 // swift-tools-version: 6.4
 //
-// mydistro's display server, written in Swift.
+// Apus's display server, written in Swift.
 //
 // This package is the system side of the user interface: the compositor, the
 // Wayland server, the display and input drivers, and the test programs. It
-// builds for mydistro only (aarch64 Linux).
+// builds for Apus only (aarch64 Linux).
 //
-// The user interface that mydistro draws — the toolkit and the shell — is the
+// The user interface that Apus draws — the toolkit and the shell — is the
 // package in Toolkit/. That package also builds on macOS, so its tests run in
 // seconds and Xcode gives code completion for it. Write UI code there.
 //
@@ -19,10 +19,10 @@ import PackageDescription
 
 // A C library, wrapped as a Swift module (Sources/<name>/module.modulemap +
 // shim.h; the module map names the library to link). `package` is the Arch
-// Linux package that provides it (a dependency of the mydistro-ui package).
+// Linux package that provides it (a dependency of the apus-ui package).
 //
 // On Linux, pkg-config gives the compiler flags. On a Mac, the build uses the
-// mydistro Swift SDK (`make sdk`), which has the include directories. There,
+// Apus Swift SDK (`make sdk`), which has the include directories. There,
 // pkg-config would find Homebrew's macOS libraries, so it is not used.
 func system(_ name: String, pkgConfig: String, package: String) -> Target {
     #if os(Linux)
@@ -33,7 +33,7 @@ func system(_ name: String, pkgConfig: String, package: String) -> Target {
 }
 
 let package = Package(
-    name: "mydistro-ui",
+    name: "apus-ui",
     // These stay static: the programs of this package are the only things
     // that use them, and a target of a package cannot be linked into a
     // program of that package and be a dynamic library of it. The toolkit
@@ -42,18 +42,18 @@ let package = Package(
         .library(name: "DRMKit", targets: ["DRMKit"]),
         .library(name: "Wayland", targets: ["Wayland"]),
         .library(name: "Compositor", targets: ["Compositor"]),
-        .executable(name: "mydistro-compositor", targets: ["CompositorMain"]),
-        .executable(name: "mydistro-hello-client", targets: ["HelloClient"]),
-        .executable(name: "mydistro-terminal", targets: ["TerminalApp"]),
-        .executable(name: "mydistro-system", targets: ["SystemMonitor"]),
-        .executable(name: "mydistro-display-probe", targets: ["DisplayProbe"]),
-        .executable(name: "mydistro-ui-check", targets: ["UICheck"]),
-        .executable(name: "mydistro-screen", targets: ["ScreenTool"]),
+        .executable(name: "apus-compositor", targets: ["CompositorMain"]),
+        .executable(name: "apus-hello-client", targets: ["HelloClient"]),
+        .executable(name: "apus-terminal", targets: ["TerminalApp"]),
+        .executable(name: "apus-system", targets: ["SystemMonitor"]),
+        .executable(name: "apus-display-probe", targets: ["DisplayProbe"]),
+        .executable(name: "apus-ui-check", targets: ["UICheck"]),
+        .executable(name: "apus-screen", targets: ["ScreenTool"]),
     ],
     dependencies: [
         // The toolkit and the shell. The name of a dependency on a directory
         // is the name of the directory ("Toolkit"), not the name in its
-        // manifest ("mydistro-toolkit").
+        // manifest ("apus-toolkit").
         .package(path: "Toolkit"),
     ],
     targets: [
@@ -92,7 +92,7 @@ let package = Package(
             "DRMKit", "CDRM", "CInput", "CUdev", "CXKBCommon", "CSeat", "Wayland",
             // The toolkit, the shell and the renderer: one library that the
             // machine carries. See Toolkit/Package.swift.
-            .product(name: "MydistroUI", package: "Toolkit"),
+            .product(name: "ApusUI", package: "Toolkit"),
             // GPU rendering: GBM makes the buffers, EGL draws into them,
             // GLES draws the display list. See GPUScreen and GLRenderer.
             "CGBM", "CEGL", "CGLES",
@@ -110,7 +110,7 @@ let package = Package(
         .target(name: "CPTY"),
         .executableTarget(name: "TerminalApp", dependencies: [
             "CWaylandClient", "CXDGShellClient", "CXKBCommon", "CPTY",
-            .product(name: "MydistroUI", package: "Toolkit"),
+            .product(name: "ApusUI", package: "Toolkit"),
             ]),
 
         // What a test on the Mac uses to see and to touch the screen: it
@@ -120,20 +120,20 @@ let package = Package(
         .target(name: "CUinput"),
         .executableTarget(name: "ScreenTool", dependencies: ["CUinput"]),
 
-        // How an app of mydistro opens a window: the connection, the shared
+        // How an app of Apus opens a window: the connection, the shared
         // memory of the pixels, the size that the compositor asks for, and
         // the pointer and the keys, all through the toolkit. An app gives a
         // view tree and gets a window.
         .target(name: "AppClient", dependencies: [
             "CWaylandClient", "CXDGShellClient", "CXKBCommon",
-            .product(name: "MydistroUI", package: "Toolkit"),
+            .product(name: "ApusUI", package: "Toolkit"),
             ]),
 
         // The system monitor: an app of the toolkit, and the second user of
         // it. The bundle in Apps/System.app puts it in /Applications.
         .executableTarget(name: "SystemMonitor", dependencies: [
             "AppClient",
-            .product(name: "MydistroUI", package: "Toolkit"),
+            .product(name: "ApusUI", package: "Toolkit"),
             ]),
 
         // Takes over the screen and draws a test pattern (used by tests/display.exp).

@@ -1,0 +1,18 @@
+# Apus branding. Arch's `filesystem` package owns /usr/lib/os-release,
+# so we ship ours under /usr/share/apus and a pacman hook copies it into
+# place whenever filesystem (or this package) is installed or upgraded.
+pkgname=apus-release
+pkgver=1
+pkgrel=1
+pkgdesc='Apus release information and branding'
+arch=('any')
+license=('custom')
+depends=('filesystem')
+source=('os-release' 'apus-branding.hook' 'apus-branding')
+sha256sums=('SKIP' 'SKIP' 'SKIP')
+
+package() {
+    install -Dm644 os-release "$pkgdir/usr/share/apus/os-release"
+    install -Dm644 apus-branding.hook "$pkgdir/usr/share/libalpm/hooks/apus-branding.hook"
+    install -Dm755 apus-branding "$pkgdir/usr/share/libalpm/scripts/apus-branding"
+}

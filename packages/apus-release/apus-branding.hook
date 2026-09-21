@@ -1,0 +1,11 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = filesystem
+Target = apus-release
+
+[Action]
+Description = Applying Apus branding...
+When = PostTransaction
+Exec = /usr/share/libalpm/scripts/apus-branding

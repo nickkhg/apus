@@ -5,7 +5,7 @@ import Render
 // A view says that it wants the keys with `onKey`. The host sends each key
 // to the view in front that wants them, and that view answers whether it
 // used the key. A key that no view used goes on to whatever is under the
-// toolkit: in mydistro that is the app with the focus.
+// toolkit: in Apus that is the app with the focus.
 //
 // This is the same rule as the pointer: the front view gets the event, and
 // the views behind it hear nothing.

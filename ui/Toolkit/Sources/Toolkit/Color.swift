@@ -17,7 +17,7 @@ public struct Color: View, Equatable, Hashable, Sendable {
         self.alpha = Color.clamp(alpha)
     }
 
-    /// From 0xRRGGBB, as the rest of mydistro writes colours.
+    /// From 0xRRGGBB, as the rest of Apus writes colours.
     public init(hex: UInt32, alpha: Double = 1) {
         self.init(red: Double((hex >> 16) & 0xFF) / 255,
                   green: Double((hex >> 8) & 0xFF) / 255,
@@ -41,7 +41,7 @@ public struct Color: View, Equatable, Hashable, Sendable {
     public static let red = Color(red: 1, green: 0, blue: 0)
     public static let green = Color(red: 0, green: 1, blue: 0)
     public static let blue = Color(red: 0, green: 0, blue: 1)
-    /// The mydistro accent colour.
+    /// The Apus accent colour.
     public static let accent = Color(hex: 0x965ADC)
 
     /// The same colour, nearer to black. 0 keeps it, 1 makes it black.

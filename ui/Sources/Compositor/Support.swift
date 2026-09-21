@@ -7,9 +7,9 @@ func log(_ message: String) {
     fflush(nil)
 }
 
-/// Logs only when MYDISTRO_DEBUG is set.
+/// Logs only when APUS_DEBUG is set.
 func debug(_ message: @autoclosure () -> String) {
-    if getenv("MYDISTRO_DEBUG") != nil { log("compositor: \(message())") }
+    if getenv("APUS_DEBUG") != nil { log("compositor: \(message())") }
 }
 
 /// Milliseconds on the monotonic clock, as Wayland timestamps use.

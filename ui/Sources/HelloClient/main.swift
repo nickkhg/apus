@@ -1,4 +1,4 @@
-// mydistro-hello-client [--seconds N] [--size WxH]
+// apus-hello-client [--seconds N] [--size WxH]
 //
 // A minimal Wayland app: opens one window filled with a colour (with a white
 // border) through wl_shm and xdg-shell. Used to test the compositor.
@@ -15,7 +15,7 @@ let borderColor: UInt32 = 0xFFFFFF
 let border = 8
 
 func fail(_ message: String) -> Never {
-    print("mydistro-hello-client: \(message)")
+    print("apus-hello-client: \(message)")
     exit(1)
 }
 
@@ -88,7 +88,7 @@ while let argument = arguments.popFirst() {
         (client.width, client.height) = (parts[0], parts[1])
         client.sizeIsFixed = true
     default:
-        fail("usage: mydistro-hello-client [--seconds N] [--size WxH] [--min-size WxH|none]")
+        fail("usage: apus-hello-client [--seconds N] [--size WxH] [--min-size WxH|none]")
     }
 }
 
@@ -110,7 +110,7 @@ func makeBuffer(_ client: Client) {
         client.buffer = nil
     }
     client.buffers += 1
-    let name = "/mydistro-hello-\(getpid())-\(client.buffers)"
+    let name = "/apus-hello-\(getpid())-\(client.buffers)"
     let fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0o600)
     guard fd >= 0 else { fail("shm_open: \(String(cString: strerror(errno)))") }
     shm_unlink(name)
@@ -281,7 +281,7 @@ xdg_surface_add_listener(xdgSurface, xdgSurfaceListener, clientPointer)
 let toplevel = xdg_surface_get_toplevel(xdgSurface)
 xdg_toplevel_add_listener(toplevel, toplevelListener, clientPointer)
 xdg_toplevel_set_title(toplevel, "Hello from Swift")
-xdg_toplevel_set_app_id(toplevel, "org.mydistro.hello")
+xdg_toplevel_set_app_id(toplevel, "org.apus.hello")
 if client.minimum.width > 0 || client.minimum.height > 0 {
     xdg_toplevel_set_min_size(toplevel, Int32(client.minimum.width),
                               Int32(client.minimum.height))

@@ -1,11 +1,11 @@
 // swift-tools-version: 6.4
 //
-// The mydistro toolkit: the declarative user interface layer, and the shell
-// that mydistro draws with it.
+// The Apus toolkit: the declarative user interface layer, and the shell
+// that Apus draws with it.
 //
 // This package builds for two systems:
 //
-//   mydistro (aarch64 Linux)   `make ui` cross-compiles it with the mydistro
+//   Apus (aarch64 Linux)   `make ui` cross-compiles it with the Apus
 //                              Swift SDK, together with the display server.
 //   macOS                      `make test-ui` builds and tests it on the Mac
 //                              in seconds. Xcode gives code completion.
@@ -17,19 +17,19 @@
 import Foundation
 import PackageDescription
 
-// `make ui` sets MYDISTRO_CROSS. Then the build uses the mydistro Swift SDK,
+// `make ui` sets APUS_CROSS. Then the build uses the Apus Swift SDK,
 // which supplies the include directories, and pkg-config must not run: on the
 // Mac it would answer with the macOS libraries of Homebrew.
-let cross = ProcessInfo.processInfo.environment["MYDISTRO_CROSS"] == "1"
+let cross = ProcessInfo.processInfo.environment["APUS_CROSS"] == "1"
 
 func system(_ name: String, pkgConfig: String) -> Target {
     cross ? .systemLibrary(name: name) : .systemLibrary(name: name, pkgConfig: pkgConfig)
 }
 
 let package = Package(
-    name: "mydistro-toolkit",
+    name: "apus-toolkit",
     platforms: [.macOS(.v26)],
-    // One dynamic library holds the whole user interface stack: mydistro
+    // One dynamic library holds the whole user interface stack: Apus
     // carries one copy of it, in /usr/lib, and every program on the machine
     // draws with that copy. A change to the toolkit is then a new library
     // and not a new build of each app.
@@ -42,9 +42,9 @@ let package = Package(
     // has no stable ABI without library evolution, so a library and the
     // programs that use it must come from one build. See docs/ui.md.
     products: [
-        .library(name: "MydistroUI", type: .dynamic,
+        .library(name: "ApusUI", type: .dynamic,
                  targets: ["Render", "Toolkit", "Shell", "Terminal"]),
-        // The display server links these C libraries too (mydistro-ui-check).
+        // The display server links these C libraries too (apus-ui-check).
         .library(name: "CFreeType", targets: ["CFreeType"]),
         .library(name: "CHarfBuzz", targets: ["CHarfBuzz"]),
     ],
@@ -61,7 +61,7 @@ let package = Package(
         // knows nothing about the screen, the windows or Wayland.
         .target(name: "Toolkit", dependencies: ["Render", "CFreeType", "CHarfBuzz"]),
 
-        // The user interface of mydistro itself: RootView and what is in it.
+        // The user interface of Apus itself: RootView and what is in it.
         // Write your UI here.
         .target(name: "Shell", dependencies: ["Toolkit", "Render"]),
 
