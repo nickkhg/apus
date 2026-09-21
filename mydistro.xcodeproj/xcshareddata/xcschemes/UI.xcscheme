@@ -62,7 +62,7 @@
       </CommandLineArguments>
       <EnvironmentVariables>
          <EnvironmentVariable
-            key = "VM_RES"
+            key = "VM_SCREEN"
             value = "1600x1000"
             isEnabled = "YES">
          </EnvironmentVariable>
@@ -78,7 +78,7 @@
          </EnvironmentVariable>
          <EnvironmentVariable
             key = "MYDISTRO_RENDERER"
-            value = "1"
+            value = "gpu"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>
