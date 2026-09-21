@@ -1,3 +1,4 @@
+import Foundation
 import DRMKit
 import Glibc
 import Render
@@ -234,7 +235,18 @@ public final class Compositor {
     }
 
     /// The first DRM card with a connected output, opened through the seat.
+    ///
+    /// MYDISTRO_DRM_DEVICE names one card instead. A machine can have more
+    /// than one, and only one of them may draw: a virtual machine on a Mac
+    /// has the display of the framework beside the device that carries the
+    /// GPU.
     private static func openDisplayDevice(seat: Seat) throws -> DRMDevice {
+        if let path = ProcessInfo.processInfo.environment["MYDISTRO_DRM_DEVICE"] {
+            guard let fd = try? seat.openDevice(path) else {
+                throw DRMError.open(path: path, errno: errno)
+            }
+            return DRMDevice(fd: fd, path: path)
+        }
         for index in 0..<8 {
             let path = "/dev/dri/card\(index)"
             guard access(path, F_OK) == 0, let fd = try? seat.openDevice(path) else { continue }

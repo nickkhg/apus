@@ -42,6 +42,11 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
     private var submissions = 0
     private var blobs = 0
     private var maps = 0
+    /// Where each mapped blob sits in the host-visible window. The window
+    /// keeps a mapping until it is taken out again, and a later blob at the
+    /// same offset is refused while the old one is still there, so every
+    /// map has to be undone.
+    private var placements: [UInt32: (offset: UInt64, size: UInt64)] = [:]
 
     init(width: Int, height: Int, venusCapset: Data) {
         self.width = UInt32(width)
@@ -223,7 +228,7 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
 
         case .resourceUnmapBlob:
             let resource: UInt32 = (try? element.readBytes(withExactLength: 8))?.value(at: 0) ?? 0
-            handleUnmapBlob(resource, header, element)
+            answersLater = handleUnmapBlob(resource, header, element)
 
         case .resourceUnref:
             let resource: UInt32 = (try? element.readBytes(withExactLength: 8))?.value(at: 0) ?? 0
@@ -356,6 +361,7 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
                     + error.localizedDescription)
                 self.write(header.answer(.errorUnspecified), to: element)
             } else {
+                self.placements[map.resource] = (map.offset, size)
                 self.write(VirtioGPU.mapInfo(header: header, info: info), to: element)
             }
             element.returnToQueue()
@@ -365,11 +371,27 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
 
     /// Takes a blob out of the window again. The guest asks for this before
     /// it lets the resource go.
+    ///
+    /// Like a map, this waits for the framework and answers from the
+    /// callback, so the guest does not make another blob at the same offset
+    /// while the old one is still in the window.
     private func handleUnmapBlob(
         _ resource: UInt32, _ header: VirtioGPU.Header, _ element: VZVirtioQueueElement
-    ) {
+    ) -> Bool {
         renderer { VirglRenderer.unmap(resource: resource) }
-        write(header.answer(.okNoData), to: element)
+        guard let hostVisible, let where_ = placements.removeValue(forKey: resource) else {
+            write(header.answer(.okNoData), to: element)
+            return false
+        }
+        hostVisible.unmapMemory(atOffset: where_.offset, size: where_.size) { error in
+            if let error {
+                log("virtio-gpu: resource \(resource) would not leave the window: "
+                    + error.localizedDescription)
+            }
+            self.write(header.answer(.okNoData), to: element)
+            element.returnToQueue()
+        }
+        return true
     }
 
     private func write(_ data: Data, to element: VZVirtioQueueElement) {
