@@ -20,4 +20,7 @@ mydistro-ui
 # step between blobs that a Mac needs. See docs/gpu.md.
 vulkan-icd-loader
 vulkan-virtio
+# vulkaninfo, which tests/venus.exp reads to check that the guest found the
+# GPU of the Mac.
+vulkan-tools
 

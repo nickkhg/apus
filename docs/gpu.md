@@ -48,6 +48,16 @@ GPU0:
 
 `0x106b` is Apple. Every call the guest makes goes through Venus to MoltenVK and then to Metal.
 
+`make test-venus` checks this. It needs the renderer, which the next section builds, so `make test` leaves it out.
+
+The device also draws. It carries the 2D commands, so the compositor runs on it alone:
+
+```sh
+MYDISTRO_DRM_DEVICE=/dev/dri/card1 mydistro-compositor
+```
+
+`VM_SNAPSHOT` names a PNG file, and every flush replaces it. Virtualization has no screenshot of its own, which is why the tests read the screen inside the guest. With a device of our own the host holds the pixels, so it can write them, with no help from the guest.
+
 The program adds the device beside the one the framework gives, so nothing that works today changes. `make test` passes with the device off, which is the default.
 
 ## How to build it

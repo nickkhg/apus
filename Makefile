@@ -82,7 +82,7 @@ RUN = container run --rm --cap-add ALL -c $(CPUS) -m $(MEM) \
 	-v $(VOL_PKG):/var/cache/pacman/pkg \
 	-w $(CURDIR)
 
-.PHONY: help builder volumes build sdk ui ui-container protocols shell vm live installed gui demo demo-dev test test-dev test-ui test-ui-linux bench clean distclean
+.PHONY: help builder volumes build sdk ui ui-container protocols shell vm live installed gui demo demo-dev test test-venus test-dev test-ui test-ui-linux bench clean distclean
 
 help:
 	@echo "make build      build out/live.img"
@@ -97,6 +97,7 @@ help:
 	@echo "make sdk        the macOS Swift toolchain and the mydistro Swift SDK (make ui does this)"
 	@echo "make test       install, display, compositor and GPU tests"
 	@echo "make test-ui    unit tests of the toolkit and the shell, on the Mac (seconds)"
+	@echo "make test-venus  the guest finds the GPU of the Mac (needs the renderer)"
 	@echo "make test-ui-linux  the same tests in the builder container"
 	@echo "make bench      how long one frame of the shell takes"
 	@echo "make test-dev   the compositor test, with the programs from 'make ui'"
@@ -223,6 +224,12 @@ test: vm
 	tests/display.exp
 	tests/compositor.exp
 	tests/gpu.exp
+
+# The guest finds the GPU of the Mac. This one needs the renderer, which
+# build/make-virglrenderer.sh builds, so `make test` leaves it out. Needs the
+# installed disk from `make test`. See docs/gpu.md.
+test-venus: vm
+	tests/venus.exp
 
 # The compositor test with the programs from `make ui`. Needs the installed
 # disk from `make test`.
