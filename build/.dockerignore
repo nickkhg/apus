@@ -1,6 +1,12 @@
-# The build context is build/. Only the two tarballs that the Containerfile
-# adds are wanted from cache/. The rest of it is large, and the checkouts in
-# it hold symbolic links that the container tool cannot pack.
+# The build context is build/. The Containerfile adds two tarballs from
+# cache/, and the rest of cache/ is large. The checkouts in it also hold
+# symbolic links, which the container tool will not pack: it stops with
+# "archive/tar: invalid tar header".
+#
+# Note that a rebuild of the image fails even with this file. The container
+# tool carries the 829 MB tarball and then stops, and the 1.1 GB one never
+# arrives, so the ADD of it cannot find it. That is why the build
+# requirements of packages/ are installed in build.sh and not in the image.
 cache/swift-6.4.0-macos
 cache/swift-sdks
 cache/venusbuild
