@@ -208,9 +208,12 @@ installed: vm
 	$(VM) installed
 
 gui: vm
-	VM_GPU=window $(VM) installed
+	VM_GPU=window VM_CUSTOM_GPU=1 $(VM) installed
 
-# The installed system in a window, with the compositor and a test window running.
+# The installed system in a window, with the compositor and a test window
+# running. The compositor draws with the GPU of the Mac when the renderer is
+# built (build/make-virglrenderer.sh) and falls back to the CPU when it is
+# not. See docs/gpu.md.
 demo: vm
 	vm/demo.exp
 

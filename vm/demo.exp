@@ -30,9 +30,14 @@ if {[info exists env(MYDISTRO_RENDERER)]} {
     append uienv "MYDISTRO_RENDERER=$env(MYDISTRO_RENDERER) "
 }
 
-spawn env VM_GPU=window $env(MYDISTRO_VM) installed
+# VM_CUSTOM_GPU adds the virtio-gpu device that this program makes, which
+# is the one that carries the GPU of the Mac. mydistro-gpu then puts the
+# compositor on it. Without the renderer on the host, or without the Zink
+# package in the guest, both fall back and the compositor draws with the
+# CPU. See docs/gpu.md.
+spawn env VM_GPU=window VM_CUSTOM_GPU=1 $env(MYDISTRO_VM) installed
 login
-send "LIBSEAT_BACKEND=noop ${uienv}${bin}mydistro-compositor &\r"
+send "LIBSEAT_BACKEND=noop ${uienv}mydistro-gpu ${bin}mydistro-compositor &\r"
 expect {
     "COMPOSITOR-READY"     {}
     "mydistro-compositor:" { fail "compositor reported an error" }

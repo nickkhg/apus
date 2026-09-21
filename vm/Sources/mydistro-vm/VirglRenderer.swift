@@ -30,15 +30,45 @@ final class VirglRenderer {
     /// virglrenderer keeps one renderer for the process.
     nonisolated(unsafe) private static var started = false
 
+    /// The callbacks the renderer holds. See `start`.
+    nonisolated(unsafe) private static let callbacks =
+        UnsafeMutablePointer<virgl_renderer_callbacks>.allocate(capacity: 1)
+
+    /// What to call when the renderer finishes the work behind a fence.
+    /// The renderer calls back from a thread of its own, so the handler
+    /// takes the answer to the queue of the device itself.
+    nonisolated(unsafe) private static var fenceHandler:
+        ((UInt32, UInt32, UInt64) -> Void)?
+
+    /// The C function that the renderer calls. It carries no state of its
+    /// own, so it reads the handler above.
+    private static let writeContextFence:
+        @convention(c) (UnsafeMutableRawPointer?, UInt32, UInt32, UInt64) -> Void
+    = { _, context, ring, fence in
+        VirglRenderer.fenceHandler?(context, ring, fence)
+    }
+
+    /// Says where finished fences go. Set before the machine starts.
+    static func onFence(_ handler: @escaping (UInt32, UInt32, UInt64) -> Void) {
+        fenceHandler = handler
+    }
+
     /// Starts the renderer for Venus, with no OpenGL renderer under it.
     /// macOS has no EGL, and the OpenGL half of virglrenderer is not built.
     static func start() throws(GPUFailure) {
         guard !started else { return }
 
-        var callbacks = virgl_renderer_callbacks()
+        // virglrenderer keeps the pointer it is given here and reads the
+        // callbacks through it for as long as it runs, so the memory has to
+        // outlive this call. A structure on the stack of this function
+        // looks right until the first fence, and then the renderer calls
+        // whatever the stack holds by then.
+        //
         // Version 3 is the first with per-context fences, which Venus uses.
         // The OpenGL callbacks stay nil: nothing here makes a GL context.
-        callbacks.version = 3
+        callbacks.initialize(to: virgl_renderer_callbacks())
+        callbacks.pointee.version = 3
+        callbacks.pointee.write_context_fence = writeContextFence
 
         // RENDER_SERVER is what turns Venus on. Without it virglrenderer
         // answers every capset request with zeros, and the guest's Mesa
@@ -46,12 +76,18 @@ final class VirglRenderer {
         // puts the render server in this process, as a thread, so the flag
         // starts a thread and not a second program.
         //
-        // ASYNC_FENCE_CB goes with THREAD_SYNC: the Venus renderer refuses
-        // to start without both.
+        // THREAD_SYNC and ASYNC_FENCE_CB are not here, and that is on
+        // purpose. With either of them the renderer wants an eventfd to
+        // learn that work is done, and macOS has none: virglrenderer builds
+        // with HAVE_EVENTFD_H undefined, so create_eventfd answers -1. The
+        // renderer then never says that a fence is finished. Without the
+        // two flags it keeps the same numbers in shared memory, and
+        // virgl_renderer_poll reads them, which is what the device does
+        // while it holds an answer. The render server uses a thread and a
+        // callback of its own either way.
         let flags = Int32(VIRGL_RENDERER_VENUS | VIRGL_RENDERER_NO_VIRGL
-            | VIRGL_RENDERER_THREAD_SYNC | VIRGL_RENDERER_ASYNC_FENCE_CB
             | VIRGL_RENDERER_RENDER_SERVER | VIRGL_RENDERER_USE_EXTERNAL_BLOB)
-        let result = virgl_renderer_init(nil, flags, &callbacks)
+        let result = virgl_renderer_init(nil, flags, callbacks)
         guard result == 0 else {
             throw .renderer("virgl_renderer_init failed (\(result)); "
                 + "is MoltenVK installed? brew install molten-vk")
@@ -167,10 +203,21 @@ extension VirglRenderer {
         virgl_renderer_resource_unref(resource)
     }
 
-    /// Lets the renderer finish what it can. The device calls this after a
-    /// stream, so that a guest that waits for a fence is not left waiting.
-    static func poll() {
-        virgl_renderer_poll()
+    /// Asks the renderer to tell us when the work of a context is done.
+    /// The answer comes back through `onFence`.
+    static func createFence(context: UInt32, ringIndex: UInt32, fenceID: UInt64) -> Int32 {
+        virgl_renderer_context_create_fence(context, 0, ringIndex, fenceID)
     }
+
+    /// Reads the finished fences of one context. Whatever is done comes
+    /// back through `onFence` before this returns.
+    ///
+    /// This takes a context and not the whole renderer: virgl_renderer_poll
+    /// walks every context it holds, and it walks into ones that are gone.
+    static func poll(context: UInt32) {
+        virgl_renderer_context_poll(context)
+    }
+
+
 }
 #endif

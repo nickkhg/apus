@@ -24,3 +24,7 @@ vulkan-virtio
 # GPU of the Mac.
 vulkan-tools
 
+# Zink (packages/mydistro-zink): OpenGL on Vulkan, so that the GLES of the
+# compositor reaches the GPU of the Mac. The compositor asks for it by name.
+mydistro-zink
+

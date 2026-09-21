@@ -30,7 +30,9 @@ step "Installing package build requirements"
 # is a volume, so this downloads once.
 pacman -Sy --noconfirm --needed \
     meson ninja cmake python-mako python-packaging python-yaml \
-    glslang spirv-tools expat zlib zstd vulkan-headers vulkan-icd-loader
+    glslang spirv-tools expat zlib zstd vulkan-headers vulkan-icd-loader \
+    libx11 libxext libxdamage libxfixes libxshmfence libxxf86vm libxrandr \
+    xorgproto libxcb
 
 step "Building mydistro packages"
 # Every packages/<name>/PKGBUILD becomes a package in the local [mydistro]

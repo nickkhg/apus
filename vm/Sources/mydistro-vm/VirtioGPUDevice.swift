@@ -48,6 +48,27 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
     /// map has to be undone.
     private var placements: [UInt32: (offset: UInt64, size: UInt64)] = [:]
 
+    /// The commands that wait for the renderer to finish their work.
+    ///
+    /// A command with VIRTIO_GPU_FLAG_FENCE asks the device to answer only
+    /// once the work is done. Answering at once tells the guest that the
+    /// GPU has finished when it has not, and a guest that then reads the
+    /// picture back reads a half-drawn one.
+    ///
+    /// The number here is ours, not the guest's: the renderer gives it back
+    /// when the work is done, and the answer then carries the number the
+    /// guest asked with, which the header holds.
+    private var nextFence: UInt64 = 1
+    private var fencesRefused = 0
+    /// The contexts the guest has made and not destroyed. A fence can only
+    /// be read from one of these.
+    private var liveContexts: Set<UInt32> = []
+    /// Reads the renderer for finished fences while any answer waits.
+    private var fencePoll: (any DispatchSourceTimer)?
+    private var waitingForFence:
+        [UInt64: (header: VirtioGPU.Header, element: VZVirtioQueueElement,
+                  response: VirtioGPU.Response)] = [:]
+
     /// The pictures the guest draws with the 2D commands, and which of them
     /// the one screen shows.
     private var resources: [UInt32: Resource2D] = [:]
@@ -136,6 +157,12 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
         ) {
             device.delegate = delegate
             delegate.device = device
+            // The renderer signals fences from a thread of its own. The
+            // answer has to go out on the queue of the device.
+            let queue = device.deviceQueue
+            VirglRenderer.onFence { [weak delegate] _, _, fence in
+                queue.async { delegate?.fenceFinished(fence) }
+            }
             delegate.hostVisible = device.sharedMemoryRegions.first {
                 $0.regionID == VirtioGPU.hostVisibleRegion
             }
@@ -159,6 +186,10 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
     }
 
     func customVirtioDeviceWillReset(_ device: VZCustomVirtioDevice) {
+        // Nothing that waits for a fence can be answered after a reset, and
+        // the queues go away, so the elements go back now.
+        for (_, waiting) in waitingForFence { waiting.element.returnToQueue() }
+        waitingForFence.removeAll()
         log("virtio-gpu: reset")
     }
 
@@ -215,6 +246,7 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
             handleContextCreate(header, element)
 
         case .contextDestroy:
+            liveContexts.remove(header.contextID)
             renderer { VirglRenderer.destroyContext(id: header.contextID) }
             write(header.answer(.okNoData), to: element)
 
@@ -231,7 +263,7 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
             write(header.answer(.okNoData), to: element)
 
         case .submit3D:
-            handleSubmit(header, element)
+            answersLater = handleSubmit(header, element)
 
         case .resourceCreateBlob:
             handleCreateBlob(header, element)
@@ -296,39 +328,44 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
             result = VirglRenderer.createContext(id: header.contextID,
                                                  capset: create.capset, name: create.name)
         }
+        if result == 0 { liveContexts.insert(header.contextID) }
         log("VIRTIO-GPU-CONTEXT the guest made context \(header.contextID) "
             + "for capset \(create.capset) (\(create.name)), result \(result)")
         write(header.answer(result == 0 ? .okNoData : .errorUnspecified), to: element)
     }
 
-    private func handleSubmit(_ header: VirtioGPU.Header, _ element: VZVirtioQueueElement) {
+    /// Gives back true when it keeps the element to answer later.
+    private func handleSubmit(
+        _ header: VirtioGPU.Header, _ element: VZVirtioQueueElement
+    ) -> Bool {
         // `struct virtio_gpu_cmd_submit`: the size of the stream, then
         // padding, then the stream itself.
         guard let fields = try? element.readBytes(withExactLength: 8) else {
             write(header.answer(.errorUnspecified), to: element)
-            return
+            return false
         }
         let size = Int(fields.value(at: 0) as UInt32)
         guard size > 0, size <= element.readBuffersAvailableByteCount,
               var stream = (try? element.readBytes(withExactLength: size)).map({ [UInt8]($0) })
         else {
             write(header.answer(.errorUnspecified), to: element)
-            return
+            return false
         }
 
         var result: Int32 = 0
-        renderer {
-            result = VirglRenderer.submit(&stream, context: header.contextID)
-            // A guest that asked for a fence waits for the work, so let the
-            // renderer finish what it can before the answer goes back.
-            if header.flags & VirtioGPU.flagFence != 0 { VirglRenderer.poll() }
-        }
+        renderer { result = VirglRenderer.submit(&stream, context: header.contextID) }
         submissions += 1
         if submissions <= 3 || submissions % 500 == 0 {
             log("VIRTIO-GPU-SUBMIT stream \(submissions) of \(size) bytes to context "
                 + "\(header.contextID), result \(result)")
         }
-        write(header.answer(result == 0 ? .okNoData : .errorUnspecified), to: element)
+        guard result == 0 else {
+            write(header.answer(.errorUnspecified), to: element)
+            return false
+        }
+        if wait(for: header, element, answering: .okNoData) { return true }
+        write(header.answer(.okNoData), to: element)
+        return false
     }
 
     private func handleCreateBlob(_ header: VirtioGPU.Header, _ element: VZVirtioQueueElement) {
@@ -506,6 +543,83 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
             screen.show(image)
         }
         write(header.answer(.okNoData), to: element)
+    }
+
+    // MARK: - Fences
+
+    /// Holds an answer until the renderer finishes the work behind it.
+    ///
+    /// Gives back true when it took the element. A command with no fence
+    /// asked for, or a device with no renderer, gets false and the caller
+    /// answers at once.
+    private func wait(
+        for header: VirtioGPU.Header, _ element: VZVirtioQueueElement,
+        answering response: VirtioGPU.Response
+    ) -> Bool {
+        guard header.flags & VirtioGPU.flagFence != 0 else { return false }
+        let fence = nextFence
+        nextFence += 1
+        waitingForFence[fence] = (header, element, response)
+
+        var made: Int32 = -1
+        renderer {
+            made = VirglRenderer.createFence(context: header.contextID,
+                                             ringIndex: UInt32(header.ringIndex),
+                                             fenceID: fence)
+        }
+        if made == 0 { startPollingForFences() }
+        guard made == 0 else {
+            waitingForFence[fence] = nil
+            if fencesRefused == 0 {
+                log("virtio-gpu: the renderer makes no fences (\(made)); "
+                    + "the guest will be told that work is done before it is")
+            }
+            fencesRefused += 1
+            return false
+        }
+        return true
+    }
+
+    /// The renderer finished the work behind a fence, so the answer can go.
+    ///
+    /// Fences of one context finish in the order they were made, and a
+    /// renderer may skip the ones between, so this answers everything up to
+    /// and including the one that finished.
+    /// Asks the renderer, again and again, which fences are finished.
+    ///
+    /// The renderer keeps the numbers in shared memory and would ring an
+    /// eventfd, which macOS does not have. So the device reads them itself,
+    /// and only while something waits: with nothing waiting the timer stops
+    /// and the device is idle.
+    private func startPollingForFences() {
+        guard fencePoll == nil, let device else { return }
+        let timer = DispatchSource.makeTimerSource(queue: device.deviceQueue)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(1), leeway: .microseconds(250))
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            guard !waitingForFence.isEmpty else {
+                fencePoll?.cancel()
+                fencePoll = nil
+                return
+            }
+            // Only the contexts that something waits on, and only the
+            // ones the guest has not destroyed.
+            var contexts = Set<UInt32>()
+            for (_, waiting) in waitingForFence where liveContexts.contains(waiting.header.contextID) {
+                contexts.insert(waiting.header.contextID)
+            }
+            renderer { for context in contexts { VirglRenderer.poll(context: context) } }
+        }
+        timer.resume()
+        fencePoll = timer
+    }
+
+    fileprivate func fenceFinished(_ fence: UInt64) {
+        for number in waitingForFence.keys.sorted() where number <= fence {
+            guard let waiting = waitingForFence.removeValue(forKey: number) else { continue }
+            write(waiting.header.answer(waiting.response), to: waiting.element)
+            waiting.element.returnToQueue()
+        }
     }
 
     private func write(_ data: Data, to element: VZVirtioQueueElement) {
