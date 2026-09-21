@@ -21,8 +21,8 @@
 /// A value in the graph, without its type.
 public class AnyAttribute {
     /// What the rule read while it last ran. The graph writes this down as
-    /// the rule runs, so a rule that reads a value only in February depends
-    /// on it only in February.
+    /// the rule runs, so a rule that reads a value only on one branch
+    /// depends on that value only while it takes that branch.
     fileprivate var inputs: Set<ObjectIdentifier> = []
     /// The attributes whose rules read this one.
     fileprivate var outputs: Set<ObjectIdentifier> = []
