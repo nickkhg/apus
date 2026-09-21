@@ -575,7 +575,8 @@ func makeGuestView(for objects: [AnyObject]) -> GuestView? {
     guard let device = objects.compactMap({ $0 as? VirtioGPUDevice }).first else { return nil }
     let view = GuestView(frame: .zero)
     guard let layer = view.layer else { return nil }
-    device.screen = withSnapshot(GuestDisplay(layer: layer))
+    device.screen = withSnapshot(
+        GuestDisplay(layer: layer, onFirst: { [weak view] in view?.isHidden = false }))
     return view
 }
 

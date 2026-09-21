@@ -17,6 +17,10 @@ final class GuestView: NSView {
         wantsLayer = true
         layer?.contentsGravity = .resizeAspect
         layer?.backgroundColor = NSColor.black.cgColor
+        // Nothing drives this device until a program in the guest asks for
+        // it. Until then the view stays out of the way, and the window
+        // shows the graphics device of the framework below.
+        isHidden = true
     }
 
     required init?(coder: NSCoder) { nil }
@@ -36,8 +40,14 @@ final class GuestDisplay: GuestScreen, @unchecked Sendable {
     private let layer: CALayer
     private let lock = NSLock()
     private var pending: CGImage?
+    /// Run once, on the main thread, when the first picture arrives. The
+    /// view is hidden until then.
+    private var onFirst: (() -> Void)?
 
-    init(layer: CALayer) { self.layer = layer }
+    init(layer: CALayer, onFirst: (() -> Void)? = nil) {
+        self.layer = layer
+        self.onFirst = onFirst
+    }
 
     func show(_ image: CGImage) {
         lock.lock()
@@ -56,6 +66,8 @@ final class GuestDisplay: GuestScreen, @unchecked Sendable {
             CATransaction.setDisableActions(true)
             layer.contents = image
             CATransaction.commit()
+            onFirst?()
+            onFirst = nil
         }
     }
 }
