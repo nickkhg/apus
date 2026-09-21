@@ -354,6 +354,7 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
 
         var result: Int32 = 0
         renderer { result = VirglRenderer.submit(&stream, context: header.contextID) }
+        Counters.shared.countStream()
         submissions += 1
         if submissions <= 3 || submissions % 500 == 0 {
             log("VIRTIO-GPU-SUBMIT stream \(submissions) of \(size) bytes to context "
@@ -538,9 +539,12 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
             write(header.answer(.errorUnspecified), to: element)
             return
         }
-        if flush.resource == scanout, let resource = resources[flush.resource],
-           let screen, let image = resource.image() {
-            screen.show(image)
+        if flush.resource == scanout {
+            Counters.shared.countFlush()
+            if let resource = resources[flush.resource], let screen,
+               let image = resource.image() {
+                screen.show(image)
+            }
         }
         write(header.answer(.okNoData), to: element)
     }
@@ -617,6 +621,7 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
     fileprivate func fenceFinished(_ fence: UInt64) {
         for number in waitingForFence.keys.sorted() where number <= fence {
             guard let waiting = waitingForFence.removeValue(forKey: number) else { continue }
+            Counters.shared.countFence()
             write(waiting.header.answer(waiting.response), to: waiting.element)
             waiting.element.returnToQueue()
         }
@@ -679,27 +684,14 @@ func makeCustomGPU(
     return [delegate, provider]
 }
 
-/// Gives the device its screen, and the window the view to add.
+/// Gives the device a screen that writes each picture to a file, when
+/// VM_SNAPSHOT asks for one.
 ///
-/// `makeCustomGPU` gives back the objects that have to stay alive. The
-/// device is one of them.
-@available(macOS 27, *)
-@MainActor
-func makeGuestView(for objects: [AnyObject]) -> GuestView? {
-    // Off unless asked for. The guest gives the screen of this device to
-    // its framebuffer console, which paints it black and leaves it there,
-    // and a view of that over the display of the framework hides the one
-    // the compositor draws on. The device carries the GPU, and the
-    // framework carries the display.
-    guard getenv("VM_GPU_SCANOUT") != nil else { return nil }
-    guard let device = objects.compactMap({ $0 as? VirtioGPUDevice }).first else { return nil }
-    let view = GuestView(frame: .zero)
-    guard let layer = view.layer else { return nil }
-    device.screen = withSnapshot(
-        GuestDisplay(layer: layer, onFirst: { [weak view] in view?.isHidden = false }))
-    return view
-}
-
+/// The window shows the display of the framework and not this device. The
+/// guest gives the screen of this device to its framebuffer console, which
+/// paints it black and leaves it there, so there is nothing to look at. A
+/// guest that draws on it (MYDISTRO_DRM_DEVICE=/dev/dri/card1) writes
+/// pictures that this file keeps. See docs/gpu.md.
 /// Adds the PNG writer in front of a screen, when VM_SNAPSHOT asks for it.
 /// With no window there is no screen, and the writer is the whole of it.
 @available(macOS 27, *)

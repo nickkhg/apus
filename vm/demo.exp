@@ -34,6 +34,17 @@ if {[info exists env(MYDISTRO_RENDERER)]} {
 }
 append uienv "MYDISTRO_RENDERER=$renderer "
 
+# The compositor times its own frames and writes a line for every 60 of
+# them, which is about one line a second. The Debug menu of the window
+# reads those lines. MYDISTRO_FRAME_LOG names another number, or 0 for none.
+set frameLog 60
+if {[info exists env(MYDISTRO_FRAME_LOG)]} {
+    set frameLog $env(MYDISTRO_FRAME_LOG)
+}
+if {$frameLog ne "0"} {
+    append uienv "MYDISTRO_FRAME_LOG=$frameLog "
+}
+
 # VM_CUSTOM_GPU adds the virtio-gpu device that this program makes, which
 # is the one that carries the GPU of the Mac. mydistro-gpu then puts the
 # compositor on it. Without the renderer on the host, or without the Zink

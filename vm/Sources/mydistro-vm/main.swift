@@ -46,6 +46,9 @@ do {
 // Runner, which put it back.
 Terminal.onQuit = { Runner.requestStop() }
 Terminal.start()
+// Everything the guest writes goes out as before, and the window reads the
+// frame times out of it on the way.
+GuestConsole.start()
 
 // The custom device is held here: the framework's provider keeps only a
 // weak reference to its delegate.

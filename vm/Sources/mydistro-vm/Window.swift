@@ -15,6 +15,8 @@ final class Window: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// shows the graphics device of the framework by itself.
     private let customGPU: [AnyObject]
     private var window: NSWindow?
+    /// The numbers over the screen of the guest.
+    private var overlay: Overlay?
 
     init(runner: Runner, size: (width: Int, height: Int), followsWindow: Bool,
          customGPU: [AnyObject] = []) {
@@ -34,6 +36,10 @@ final class Window: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Menu.install(stop: { [runner] in runner.stop() },
+                     changed: { [weak self] name in self?.apply(name) })
+        GuestConsole.watch { Counters.shared.read($0) }
+
         let view = VZVirtualMachineView(
             frame: NSRect(x: 0, y: 0, width: size.width, height: size.height))
         view.virtualMachine = runner.machine
@@ -50,20 +56,32 @@ final class Window: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // VM_RESIZE=off keeps the size that VM_SCREEN asked for.
         view.automaticallyReconfiguresDisplay = followsWindow
 
-        // Our own device draws over that view. The view below keeps the
-        // keyboard and the pointer.
-        if #available(macOS 27, *), let screen = makeGuestView(for: customGPU) {
-            screen.frame = view.bounds
-            screen.autoresizingMask = [.width, .height]
-            view.addSubview(screen)
-        }
+        // Everything of ours is beside that view and not inside it.
+        // VZVirtualMachineView draws the guest itself, and it stops drawing
+        // it as soon as it is given a subview: the window then shows black,
+        // with whatever was added over the top of it.
+        let content = NSView(frame: view.frame)
+        content.autoresizesSubviews = true
+        view.autoresizingMask = [.width, .height]
+        content.addSubview(view)
+
+        if #available(macOS 27, *) { attachSnapshot(to: customGPU) }
+
+        // The numbers go last, so they are above everything.
+        let overlay = Overlay(frame: .zero)
+        // Fixed to the top left: the right and the bottom margins give.
+        overlay.autoresizingMask = [.maxXMargin, .minYMargin]
+        content.addSubview(overlay)
+        self.overlay = overlay
+        apply(.frames)
+        apply(.device)
 
         let window = NSWindow(
-            contentRect: view.frame,
+            contentRect: content.frame,
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
         window.title = "mydistro"
-        window.contentView = view
+        window.contentView = content
         window.delegate = self
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -71,6 +89,14 @@ final class Window: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self.window = window
 
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// A switch of the Debug menu changed.
+    private func apply(_ name: Menu.Switch) {
+        switch name {
+        case .frames: overlay?.showsFrames = Menu.on(.frames)
+        case .device: overlay?.showsDevice = Menu.on(.device)
+        }
     }
 
     /// Closing the window stops the guest, as closing the QEMU window did.
