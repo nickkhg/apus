@@ -3,7 +3,8 @@
 ## Requirements
 
 - A Mac with Apple silicon.
-- Apple `container` 1.0 or later. Start the service with `container system start`.
+- Apple `container` 1.0 or later. Start the service with `container system start`. The build stops and says this if the service is not running.
+- Homebrew, for the GPU renderer of the host side. `make vm` installs what that renderer needs and then builds it. A Mac with no Homebrew builds a virtual machine that gives the guest a 2D screen only.
 - Approximately 28 GB of free disk space. The Swift toolchain for macOS and the Swift SDK use approximately 7.5 GB of this.
 
 ## Commands

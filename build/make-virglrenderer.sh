@@ -14,13 +14,31 @@ cache="$PWD/build/cache"
 source="$cache/virglrenderer"
 
 # Homebrew gives the tools and the Vulkan headers. MoltenVK is the Vulkan
-# that virglrenderer loads at run time.
+# that virglrenderer loads at run time. This installs what is missing,
+# because `make vm` calls this script and a person who clones the repository
+# should not have to find the list themselves.
+missing=
 for formula in meson ninja vulkan-headers vulkan-loader molten-vk; do
-    brew list --formula "$formula" >/dev/null 2>&1 || {
-        echo "build/make-virglrenderer.sh: needs 'brew install $formula'" >&2
+    brew list --formula "$formula" >/dev/null 2>&1 || missing="$missing $formula"
+done
+if [ -n "$missing" ]; then
+    command -v brew >/dev/null 2>&1 || {
+        echo "build/make-virglrenderer.sh: the renderer needs Homebrew for:$missing" >&2
+        echo "Install Homebrew from https://brew.sh, or build without a GPU." >&2
         exit 1
     }
-done
+    echo "==> installing the build requirements of the renderer:$missing"
+    # `brew install` asks for "y" before it installs, and that is the
+    # default of Homebrew 7. A build from Xcode has nobody to answer, so it
+    # stops there. The line above says what this installs, so the question
+    # adds nothing. HOMEBREW_NO_ASK does the same as the -y option, and an
+    # older Homebrew that does not know the name ignores it, where it would
+    # stop at an option it does not know.
+    #
+    # HOMEBREW_NO_AUTO_UPDATE keeps a build from updating Homebrew itself.
+    # shellcheck disable=SC2086
+    HOMEBREW_NO_ASK=1 HOMEBREW_NO_AUTO_UPDATE=1 brew install $missing
+fi
 
 # The Venus protocol generator is Python with mako. It goes in a virtual
 # environment, so nothing is added to the Python of the Mac.

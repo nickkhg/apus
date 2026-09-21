@@ -131,7 +131,7 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastUpgradeCheck = 2700;
 			};
-			buildConfigurationList = 6D79646F000000000000010E /* Build configuration list for PBXProject "mydistro" */;
+			buildConfigurationList = 6D79646F000000000000010E /* Build configuration list for PBXProject "apus" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -183,7 +183,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		6D79646F000000000000010E /* Build configuration list for PBXProject "mydistro" */ = {
+		6D79646F000000000000010E /* Build configuration list for PBXProject "apus" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				6D79646F000000000000010F /* Debug */,

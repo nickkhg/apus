@@ -24,6 +24,9 @@ import Virtualization
 
 setbuf(stdout, nil)
 
+// Before anything makes a Metal device. See MetalValidation.swift.
+MetalValidation.quieten()
+
 let options: Options
 do {
     options = try Options.parse(

@@ -55,9 +55,9 @@ SWIFT_BUILD       = APUS_CROSS=1 $(SWIFT_MAC)/usr/bin/swift build --package-path
 # because Virtualization and AppKit are frameworks of the platform. The
 # program needs the com.apple.security.virtualization entitlement, and a
 # local (ad hoc) signature carries it.
-# The renderer of the host side of the GPU, when build/make-virglrenderer.sh
-# has built it. Without it the program builds and runs as before, and the
-# GPU device of our own is not in it.
+# The renderer of the host side of the GPU. `make vm` builds it, so a guest
+# has a GPU without a separate step. A Mac with no Homebrew cannot build it.
+# The build then says so and goes on, and the guest gets a 2D device only.
 VIRGL_DIR  := build/cache/virglrenderer
 VIRGL_LIB  := $(VIRGL_DIR)/build/src/libvirglrenderer.dylib
 # The renderer loads Vulkan by name at run time: libvulkan.dylib first, then
@@ -66,7 +66,10 @@ VIRGL_LIB  := $(VIRGL_DIR)/build/src/libvirglrenderer.dylib
 # program carries the two Homebrew directories.
 VULKAN_DIR := $(shell brew --prefix vulkan-loader 2>/dev/null)/lib
 MOLTEN_DIR := $(shell brew --prefix molten-vk 2>/dev/null)/lib
-VIRGL_FLAGS = $(if $(wildcard $(VIRGL_LIB)),\
+# $(wildcard) reads the directory once for a whole run of make, so it would
+# answer "no renderer" even after the rule below made one. The shell asks
+# again each time the flags are used.
+VIRGL_FLAGS = $(if $(shell test -f $(VIRGL_LIB) && echo yes),\
 	-Xswiftc -DVIRGL \
 	-Xcc -I$(CURDIR)/$(VIRGL_DIR)/src \
 	-Xcc -I$(CURDIR)/$(VIRGL_DIR)/build/src \
@@ -75,6 +78,11 @@ VIRGL_FLAGS = $(if $(wildcard $(VIRGL_LIB)),\
 	-Xlinker -rpath -Xlinker $(VULKAN_DIR) \
 	-Xlinker -rpath -Xlinker $(MOLTEN_DIR),)
 
+# The live image that `make build` writes, and the disk that the installer
+# writes into. A machine boots one of the two.
+LIVE_IMG   := out/live.img
+TARGET_IMG := out/vm/target.img
+
 VM_BUILD = xcrun swift build --package-path vm -c release $(VIRGL_FLAGS)
 VM       = $(shell xcrun swift build --package-path vm -c release --show-bin-path)/apus-vm
 # The expect scripts in tests/ and vm/ start the machine through this.
@@ -82,6 +90,18 @@ export APUS_VM := $(VM)
 
 # Xcode and other GUI apps start make with a minimal PATH.
 export PATH := /usr/local/bin:/opt/homebrew/bin:$(PATH)
+
+# Xcode turns Metal API Validation on for what it runs, with this variable,
+# and a child of make keeps it. Validation then stops apus-vm in MoltenVK:
+# "bytesPerRow(6619) must be a multiple of MTLPixelFormatBGRA8Unorm pixel
+# bytes(4)". MoltenVK computes that number for an image that Zink binds, and
+# the number is not a whole count of pixels. The frames are right, and
+# validation makes a fault of another project fatal here.
+#
+# So a build from Xcode ran no machine at all, and the same build in a
+# terminal worked. This takes the variable away from the machine.
+# MTL_DEBUG_LAYER=1 turns validation on again, for a person who wants it.
+unexport METAL_DEVICE_WRAPPER_TYPE
 
 # Work files live in container volumes (ext4): macOS file systems are
 # case-insensitive and don't keep Linux ownership. The package cache volume
@@ -95,7 +115,7 @@ RUN = container run --rm --cap-add ALL -c $(CPUS) -m $(MEM) \
 	-v $(VOL_PKG):/var/cache/pacman/pkg \
 	-w $(CURDIR)
 
-.PHONY: help builder volumes build sdk ui ui-container protocols shell vm live installed gui demo demo-dev test test-venus test-dev test-ui test-ui-linux bench clean distclean
+.PHONY: help preflight virgl install-disk builder volumes build sdk ui ui-container protocols shell vm live installed gui demo demo-dev test test-venus test-dev test-ui test-ui-linux bench clean distclean
 
 help:
 	@echo "make build      build out/live.img"
@@ -134,7 +154,22 @@ $(BUILDER_STAMP): build/Containerfile $(ALARM_TARBALL) $(SWIFT_TARBALL)
 	container build -t $(IMAGE) -f build/Containerfile build
 	touch $@
 
-builder: $(BUILDER_STAMP)
+builder: preflight $(BUILDER_STAMP)
+
+# Apple's `container` runs the build in a Linux VM of its own, and its
+# background service must be running first. The first start of that service
+# asks a question that only a person can answer, so this says what to run
+# and stops. A build from Xcode fails with a message about a connection
+# without it.
+preflight:
+	@container system status 2>/dev/null | grep -q running || { \
+	    echo "The Apple container service is not running."; \
+	    echo ""; \
+	    echo "    container system start"; \
+	    echo ""; \
+	    echo "Run that in a terminal, then build again. If the command is"; \
+	    echo "not there, install Apple container 1.0 or later. See README.md."; \
+	    exit 1; }
 
 $(SWIFT_MAC_PKG):
 	mkdir -p $(dir $@)
@@ -161,7 +196,7 @@ $(SDK_STAMP): $(BUILDER_STAMP) build/make-sdk.sh
 
 sdk: $(SWIFT_MAC)/usr/bin/swift volumes $(SDK_STAMP)
 
-volumes:
+volumes: preflight
 	@container volume inspect $(VOL_WORK) >/dev/null 2>&1 || container volume create -s 32G $(VOL_WORK)
 	@container volume inspect $(VOL_PKG)  >/dev/null 2>&1 || container volume create -s 16G $(VOL_PKG)
 
@@ -210,29 +245,63 @@ shell: builder volumes
 
 # The virtual machine. Signing is part of the build: without the
 # entitlement, Virtualization refuses to make a machine.
-vm:
+#
+# The renderer comes first. A Mac that cannot build it says why and gets a
+# program with no 3D in it, rather than no program.
+$(VIRGL_LIB):
+	@build/make-virglrenderer.sh || { \
+	    echo ""; \
+	    echo "==> No GPU: the build of virglrenderer failed (see above)."; \
+	    echo "==> apus-vm still works, and the guest gets a 2D device only."; \
+	    echo "==> See docs/gpu.md."; \
+	    echo ""; }
+
+virgl: $(VIRGL_LIB)
+
+vm: $(VIRGL_LIB)
 	$(VM_BUILD)
 	codesign --force --sign - --entitlements vm/apus-vm.entitlements $(VM)
 
-live: vm
+# The live image, for a target that names it. `make build` writes it.
+$(LIVE_IMG):
+	$(MAKE) build
+
+# The installed disk. `tests/install.exp` boots the live image, runs the
+# installer, and leaves the disk that the installer wrote.
+#
+# A clone has no such disk. Every target below boots one, and a machine with
+# nothing to boot starts, shows the firmware, and stops. The test then says
+# "VM exited before login", which names what happened and not why. This
+# installs the disk one time instead.
+#
+# `vm` comes after the bar, as an order-only prerequisite: the program must
+# be there first, but a new build of the program does not ask for a new
+# install. Without the bar each build of the program would install again,
+# because `vm` is a name and not a file.
+$(TARGET_IMG): $(LIVE_IMG) | vm
+	tests/install.exp
+
+install-disk: $(TARGET_IMG)
+
+live: $(LIVE_IMG) vm
 	$(VM) live
 
-installed: vm
+installed: $(TARGET_IMG) vm
 	$(VM) installed
 
-gui: vm
+gui: $(TARGET_IMG) vm
 	VM_GPU=window VM_CUSTOM_GPU=1 $(VM) installed
 
 # The installed system in a window, with the compositor and a test window
 # running. The compositor draws with the GPU of the Mac when the renderer is
 # built (build/make-virglrenderer.sh) and falls back to the CPU when it is
 # not. See docs/gpu.md.
-demo: vm
+demo: $(TARGET_IMG) vm
 	vm/demo.exp
 
 # The same, but the VM runs the programs from `make ui` through /mnt/host.
 # It builds them first, so that the VM never runs a program of an older build.
-demo-dev: ui vm
+demo-dev: ui $(TARGET_IMG) vm
 	APUS_UI_DIR=/mnt/host/ui vm/demo.exp
 
 test: vm
@@ -244,12 +313,12 @@ test: vm
 # The guest finds the GPU of the Mac. This one needs the renderer, which
 # build/make-virglrenderer.sh builds, so `make test` leaves it out. Needs the
 # installed disk from `make test`. See docs/gpu.md.
-test-venus: vm
+test-venus: $(TARGET_IMG) vm
 	tests/venus.exp
 
 # The compositor test with the programs from `make ui`. Needs the installed
 # disk from `make test`.
-test-dev: ui vm
+test-dev: ui $(TARGET_IMG) vm
 	APUS_UI_DIR=/mnt/host/ui tests/compositor.exp
 
 clean:

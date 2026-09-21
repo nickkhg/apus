@@ -134,3 +134,62 @@ Solution: none is necessary. Look at the other errors.
 Cause: the Swift build prints colour codes. Xcode finds `file:line:column: error:` only in plain text.
 
 Solution: `xcode/make.sh` removes the colour codes.
+
+## A build from Xcode stops, and the container service is not running
+
+Symptom: a build from Xcode stops with a message about a connection. The same build works in a terminal, after `container system start`.
+
+Cause: Apple's `container` runs the build in a Linux VM, and a background service holds that VM. The first start of the service asks a question, and only a person can answer it. Therefore the build does not start the service itself.
+
+Solution: run `container system start` in a terminal one time. `make` now examines the service first and says this, instead of stopping with a message about a connection.
+
+## A clone on a second Mac does not build apus-vm
+
+Symptom: `cannot find 'VirglRenderer' in scope`, approximately 26 times, in `VirtioGPUDevice.swift`.
+
+Cause: `VirglRenderer.swift` is inside `#if VIRGL`, and the Makefile defines `VIRGL` only when `build/cache` holds a build of virglrenderer. The device calls the renderer inside `renderer { ... }`, which is empty without `VIRGL`. This looked safe, but it is not: the compiler reads the body of a closure before it knows who calls it. The first Mac always had the renderer, so no build found this.
+
+Solution: two changes. `make vm` now builds the renderer, and the script installs what the build of the renderer needs. `vm/Sources/apus-vm/VirglRendererMissing.swift` gives the names that the closures ask for when a Mac cannot build the renderer.
+
+## "VM exited before login" on a machine that never installed a disk
+
+Symptom: `make demo`, `make demo-dev` or `make gui` stops with `TEST FAILED: VM exited before login`. The log before it shows a machine that starts, shows two screen sizes, and stops.
+
+Cause: those targets boot `out/vm/target.img`, which is the disk that the installer wrote. `tests/install.exp` writes it, and `make test` runs that test. A clone has no such disk. The machine then starts, the firmware finds nothing to boot, and the machine stops.
+
+Solution: `make` now installs the disk when there is none, so these targets work from a clone. `make install-disk` does only that step. The first run takes some minutes, because it builds the image and then installs it.
+
+## apus-vm stops in Metal: "bytesPerRow must be a multiple of pixel bytes"
+
+Symptom: from Xcode, `make demo-dev` or `make gui` stops with
+
+```
+_validateReplaceRegion:252: failed assertion `Replace Region Validation
+bytesPerRow(6619) must be a multiple of MTLPixelFormatBGRA8Unorm pixel bytes(4).
+```
+
+and then `expect: spawn id exp5 not open`, because the machine is gone. The same command in a terminal works.
+
+Cause: two things together.
+
+1. Zink binds memory to an image, and MoltenVK writes that memory into a Metal texture. MoltenVK computes the length of a row, and the number it computes is not a whole count of pixels. The number follows the size of the screen: 6619 on a screen of one size, 13238 on a screen of two times the pixels.
+2. Xcode turns Metal API Validation on for the programs that it runs, with `METAL_DEVICE_WRAPPER_TYPE`. A child of `make` keeps the variable. Validation stops the program at the row above, where Metal alone accepts it.
+
+The frames are correct. A picture of the shell in GPU mode, through Venus, shows the rail, the glow, the clock and the text, with nothing out of place.
+
+Solution: `apus-vm` takes the validation switches out of itself, before it makes a Metal device. See `vm/Sources/apus-vm/MetalValidation.swift`. The Makefile also takes `METAL_DEVICE_WRAPPER_TYPE` away from the machine (`unexport`). That alone was not sufficient. A build from Xcode stopped here again, because Xcode turns validation on with a name that the Makefile does not know.
+
+Therefore the program says what it did:
+
+```
+apus-vm: Metal validation off for this machine: METAL_DEVICE_WRAPPER_TYPE MTL_DEBUG_LAYER
+apus-vm: Metal names that this program leaves alone: ...
+```
+
+The second line names every other `MTL_` and `METAL_` name in the environment. A Mac that stops here again names the switch that the list does not have, so the next step is not a guess. The program leaves those names alone. A name that no test examined is not a name to take away in silence.
+
+Xcode has the same switch in the scheme: Product, Edit Scheme, Run, Diagnostics, Metal API Validation. Turning it off there stops the fault as well. The program does not need it: it takes the switches out of itself, whatever starts it.
+
+`APUS_METAL_VALIDATION=1` keeps validation on, to look at this again.
+
+`tests/venus.exp` now draws the shell in its GPU mode as well. Before, every step of it pinned `APUS_SHELL_MODE=cpu`, so the shadow, the blur and the gradient never went through Venus in any test.

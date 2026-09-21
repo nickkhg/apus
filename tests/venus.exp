@@ -147,6 +147,39 @@ if {[catch {exec python3 tests/renderers.py \
 }
 send_user "\nthe GPU and the CPU agree: $result\n"
 
+# The shell in its GPU mode, through the GPU of the Mac.
+#
+# Every step above pins APUS_SHELL_MODE=cpu, because the two modes draw
+# different pictures on purpose and a comparison of modes can never be a
+# comparison of pixels. The result was that the shadow, the blur and the
+# gradient never went through Venus in any test, and `make demo-dev` on a
+# second Mac was the first run of that pairing. It stopped in MoltenVK.
+#
+# This step makes no comparison. It asks only that the frame arrives.
+send "APUS_RENDERER=gpu LIBSEAT_BACKEND=noop "
+send "APUS_SCREENSHOT_SOCKET=/run/apus-screenshot.sock "
+send "apus-gpu apus-compositor &\r"
+expect {
+    "COMPOSITOR-READY"     {}
+    "apus-compositor:" { fail "the shell in GPU mode reported an error" }
+    eof                    { fail "the machine stopped while the shell drew its GPU mode" }
+    timeout                { fail "the shell in GPU mode did not start" }
+}
+after 1500
+send "apus-screen shot /mnt/screens/venus-gpu-mode.ppm\r"
+expect {
+    -re {ok [0-9]+ [0-9]+} {}
+    eof     { fail "the machine stopped while it drew the GPU mode" }
+    timeout { fail "the shell in GPU mode gave no picture" }
+}
+settle "the picture of the GPU mode"
+send "kill %%\r"
+expect { "COMPOSITOR-EXIT" {} timeout { fail "the shell in GPU mode did not stop" } }
+settle "the exit of the GPU mode"
+send "wait; echo GONE-\$(($marks))\r"
+expect { "GONE-$marks" {} timeout { fail "the shell in GPU mode did not go away" } }
+send_user "\nthe shell drew its GPU mode through Venus\n"
+
 send "poweroff\r"
 expect eof
 wait
