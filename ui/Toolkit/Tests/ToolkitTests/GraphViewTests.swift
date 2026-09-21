@@ -197,3 +197,58 @@ struct GraphStateTests {
         #expect(widths == [10, 20])
     }
 }
+
+@Suite("What the graph holds")
+struct GraphSizeTests {
+    /// A view with a value of its own, so that the store holds something.
+    private struct Counter: View, Equatable {
+        let label: String
+        @State private var count = 0
+
+        static func == (a: Counter, b: Counter) -> Bool { a.label == b.label }
+
+        var body: some View {
+            Color.white.frame(width: Double(10 + count), height: 4)
+        }
+    }
+
+    private struct Maybe: View {
+        let show: Bool
+
+        var body: some View {
+            VStack(spacing: 0) {
+                if show { Counter(label: "one") }
+                Color.red.frame(width: 5, height: 5)
+            }
+        }
+    }
+
+    @Test("A view that goes away takes its attributes with it")
+    func theGraphDoesNotGrow() {
+        let state = ViewState()
+        let box = Rect(x: 0, y: 0, width: 100, height: 100)
+        _ = ViewRenderer.render(Maybe(show: true), in: box, state: state)
+        let withCounter = state.graph.count
+        _ = ViewRenderer.render(Maybe(show: false), in: box, state: state)
+        let without = state.graph.count
+        #expect(without < withCounter, "the graph kept the view that went away")
+
+        // And it does not grow when the same tree is drawn again.
+        _ = ViewRenderer.render(Maybe(show: false), in: box, state: state)
+        _ = ViewRenderer.render(Maybe(show: false), in: box, state: state)
+        #expect(state.graph.count == without)
+    }
+
+    @Test("A tree that opens and closes leaves nothing behind")
+    func openingAndClosingLeavesNothing() {
+        let state = ViewState()
+        let box = Rect(x: 0, y: 0, width: 100, height: 100)
+        _ = ViewRenderer.render(Maybe(show: false), in: box, state: state)
+        let closed = state.graph.count
+        for _ in 0..<5 {
+            _ = ViewRenderer.render(Maybe(show: true), in: box, state: state)
+            _ = ViewRenderer.render(Maybe(show: false), in: box, state: state)
+        }
+        #expect(state.graph.count == closed)
+    }
+}

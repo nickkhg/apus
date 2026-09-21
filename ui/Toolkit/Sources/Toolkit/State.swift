@@ -118,6 +118,16 @@ public struct Binding<Value> {
 // MARK: - The store
 
 /// What the toolkit knows about a state property, without its value type.
+/// A state value in the graph, without its type. The store uses it to take
+/// the value out of the graph when its view goes away.
+protocol AnyStateBox: AnyObject {
+    var anyAttribute: AnyAttribute? { get }
+}
+
+extension State.Box: AnyStateBox {
+    var anyAttribute: AnyAttribute? { attribute }
+}
+
 protocol AnyStateProperty {
     var anyBox: AnyObject { get }
     /// Copies the value of an earlier box of the same property into this one.
@@ -207,7 +217,16 @@ public final class ViewState: @unchecked Sendable {
     private var entries: [Key: Entry] = [:]
     /// Where each view that can move is on its way. The key is the place of
     /// the view in the tree, as it is for state.
-    private var motions: [Key: AnyViewMotion] = [:]
+    private var motions: [Key: Moving] = [:]
+    /// The body that a move belongs to. A view inside a branch of an `if`,
+    /// or inside a ForEach, has a place of its own that holds no body, so
+    /// the move names the body that made it.
+    private struct Moving {
+        let motion: AnyViewMotion
+        let owner: Key
+    }
+    /// The bodies that are running now. The last one owns what it lowers.
+    private var owners: [Key] = []
     /// The values that `.animation(_:value:)` watches, from the last pass.
     private var watched: [Key: Any] = [:]
     private var seen: Set<Key> = []
@@ -227,8 +246,8 @@ public final class ViewState: @unchecked Sendable {
         seen.removeAll(keepingCapacity: true)
         // A view that is on its way is drawn differently in this frame, so
         // the view that made it must make it again.
-        for (key, motion) in motions where motion.isMoving(now: now) {
-            guard let entry = entries[Key(path: key.path, slot: -1)] else { continue }
+        for moving in motions.values where moving.motion.isMoving(now: now) {
+            guard let entry = entries[moving.owner] else { continue }
             graph.invalidate(entry.attribute)
         }
     }
@@ -239,16 +258,20 @@ public final class ViewState: @unchecked Sendable {
     func endPass() {
         // `seen` holds the name of each view as well as the name of each
         // state value, so the two counts say nothing about each other.
-        boxes = boxes.filter { seen.contains($0.key) }
+        for (key, box) in boxes where !seen.contains(key) {
+            // The value of a view that went away leaves the graph with it.
+            if let attribute = (box as? AnyStateBox)?.anyAttribute { graph.forget(attribute) }
+            boxes[key] = nil
+        }
         for (key, entry) in entries where !seen.contains(key) {
             graph.forget(entry.attribute)
             entries[key] = nil
         }
         // A move belongs to the view that made it, not to one pass. A view
-        // whose body did not run this time keeps it, so that the move it
-        // makes next is a move and not a jump.
-        motions = motions.filter { entries[Key(path: $0.key.path, slot: -1)] != nil }
-        watched = watched.filter { entries[Key(path: $0.key.path, slot: -1)] != nil }
+        // whose body did not run this time keeps its moves, because the
+        // pass counts the names of everything under a view that it keeps.
+        motions = motions.filter { seen.contains($0.key) }
+        watched = watched.filter { seen.contains($0.key) }
     }
 
     /// The view as it is now, on its way to what it says it is.
@@ -259,9 +282,11 @@ public final class ViewState: @unchecked Sendable {
     /// of the way there.
     func animating<V: View & Animatable>(_ view: V) -> V {
         let key = Key(path: path, slot: animationSlot())
+        seen.insert(key)
         let target = view.animatableData
-        guard let motion = motions[key] as? ViewMotion<V> else {
-            motions[key] = ViewMotion<V>(target)
+        guard let owner = owners.last else { return view }
+        guard let motion = (motions[key]?.motion as? ViewMotion<V>) else {
+            motions[key] = Moving(motion: ViewMotion<V>(target), owner: owner)
             return view
         }
         if motion.target != target {
@@ -281,6 +306,7 @@ public final class ViewState: @unchecked Sendable {
     /// is, and only what happens to it after that moves.
     func animationValueChanged(_ value: some Equatable) -> Bool {
         let key = Key(path: path, slot: watchSlot())
+        seen.insert(key)
         defer { watched[key] = value }
         guard let old = watched[key] else { return false }
         return !isEqual(old, value)
@@ -340,7 +366,9 @@ public final class ViewState: @unchecked Sendable {
 
         let runs = graph.evaluations
         let before = seen
+        owners.append(key)
         let nodes = graph.value(of: entry.attribute)
+        owners.removeLast()
         if graph.evaluations == runs {
             // The nodes are the ones from an earlier pass, so the state
             // under them is in this tree as well.
