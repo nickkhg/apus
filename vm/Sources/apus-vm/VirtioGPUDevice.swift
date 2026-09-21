@@ -73,6 +73,11 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
     /// the one screen shows.
     private var resources: [UInt32: Resource2D] = [:]
     private var scanout: UInt32 = 0
+    /// The pointer: which resource holds its picture, where it is, and
+    /// which pixel of the picture sits under the point. The guest sends
+    /// these on the second queue, and they draw no frame.
+    private var cursor: (resource: UInt32, x: Int, y: Int, hotX: Int, hotY: Int) =
+        (0, 0, 0, 0, 0)
     /// Where a flush goes. The window sets it, on the main thread, while
     /// the machine is already running, so it has a lock of its own.
     private let screenLock = NSLock()
@@ -299,6 +304,9 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
 
         case .transferToHost2D:
             handleTransfer(header, element)
+
+        case .updateCursor, .moveCursor:
+            handleCursor(header, element, picture: command == .updateCursor)
 
         case .resourceFlush:
             handleFlush(header, element)
@@ -547,6 +555,38 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
             }
         }
         write(header.answer(.okNoData), to: element)
+    }
+
+    /// The guest moved the pointer, or gave it a new picture.
+    ///
+    /// These come on the cursor queue, and the guest waits for no answer:
+    /// it asks and goes on. So the element goes back with nothing written
+    /// in it. The specification has no answer for either command.
+    private func handleCursor(
+        _ header: VirtioGPU.Header, _ element: VZVirtioQueueElement, picture: Bool
+    ) {
+        guard let body = try? element.readBytes(withExactLength: 32),
+              let update = VirtioGPU.Cursor(body) else { return }
+        if picture {
+            cursor.resource = update.resource
+            cursor.hotX = update.hotX
+            cursor.hotY = update.hotY
+        }
+        cursor.x = update.x
+        cursor.y = update.y
+        showCursor()
+    }
+
+    /// Gives the screen the picture of the pointer and its place, or hides
+    /// it. Resource 0 means that the guest wants no pointer.
+    private func showCursor() {
+        guard let screen else { return }
+        guard cursor.resource != 0, let resource = resources[cursor.resource],
+              let picture = resource.image(opaque: false) else {
+            screen.showCursor(nil, atX: 0, y: 0)
+            return
+        }
+        screen.showCursor(picture, atX: cursor.x - cursor.hotX, y: cursor.y - cursor.hotY)
     }
 
     // MARK: - Fences
