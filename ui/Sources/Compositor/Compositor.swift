@@ -1,4 +1,3 @@
-import Foundation
 import DRMKit
 import Glibc
 import Render
@@ -241,7 +240,8 @@ public final class Compositor {
     /// has the display of the framework beside the device that carries the
     /// GPU.
     private static func openDisplayDevice(seat: Seat) throws -> DRMDevice {
-        if let path = ProcessInfo.processInfo.environment["MYDISTRO_DRM_DEVICE"] {
+        if let name = getenv("MYDISTRO_DRM_DEVICE") {
+            let path = String(cString: name)
             guard let fd = try? seat.openDevice(path) else {
                 throw DRMError.open(path: path, errno: errno)
             }

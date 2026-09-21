@@ -15,8 +15,9 @@ mydistro-ui
 
 # Vulkan, for a guest with a GPU. vulkan-virtio is Mesa's Venus driver: it
 # turns Vulkan calls into a stream that the virtio-gpu device carries to the
-# renderer on the Mac. vulkan-icd-loader is what an app links to. The GLES of
-# the compositor reaches Vulkan through zink, which mesa already has.
-# See docs/gpu.md.
+# renderer on the Mac. vulkan-icd-loader is what an app links to.
+# packages/vulkan-virtio builds this one, because Mesa's has to learn the
+# step between blobs that a Mac needs. See docs/gpu.md.
 vulkan-icd-loader
 vulkan-virtio
+

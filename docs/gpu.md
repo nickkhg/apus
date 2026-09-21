@@ -92,30 +92,40 @@ virtio-gpu has a feature for exactly this: `VIRTIO_GPU_F_BLOB_ALIGNMENT`. The de
 
 ## What the compositor cannot do yet
 
-The compositor draws with GLES (see [ui.md](ui.md#the-two-renderers)). The usual way to put GLES on Vulkan is Zink, and Zink does not start here:
+The compositor draws with GLES (see [ui.md](ui.md#the-two-renderers)). The usual way to put GLES on Vulkan is Zink. Two walls stand in front of that, and the second one has no way around it.
+
+**Zink asks for a feature that MoltenVK does not have.**
 
 ```
 MESA: error: Zink requires the nullDescriptor feature of KHR/EXT robustness2.
 ```
 
-MoltenVK sets that feature to false, and not by accident. `MVKDevice.mm` states it as a constant:
+`MVKDevice.mm` states it as a constant, because Metal has no null descriptor:
 
 ```objc
 robustness2Features->nullDescriptor = false;
 ```
 
-Metal has no null descriptor, and Zink puts `VK_NULL_HANDLE` in a descriptor for every slot a shader does not use. No setting and no newer MoltenVK changes this. `MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS=1` does not change it either.
+`MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS=1` does not change it, and neither does a newer MoltenVK. A patched Zink starts without the feature. The compositor's shaders bind everything they read, so the feature has nothing to say about them.
 
-So the compositor keeps llvmpipe for now, and a guest program that speaks Vulkan gets the GPU. To give the compositor the GPU, one of these has to happen:
+**GBM needs a dma-buf, and this Vulkan has none.** That is the wall. The compositor hands each frame to the screen through GBM. A GBM buffer is a dma-buf with a DRM format modifier. Venus offers those only when the renderer on the host can export one, and Metal has no dma-buf to export. The guest device therefore reports none of the four extensions that GBM needs:
 
-1. The compositor draws with Vulkan, beside the GLES renderer it has. This is the way that depends on nobody else. It is approximately the size of `GLRenderer.swift`, with the shaders built to SPIR-V.
-2. Zink stops needing `nullDescriptor`, or MoltenVK starts answering it. Both are upstream work.
+| Extension | Reported |
+|---|---|
+| `VK_EXT_external_memory_dma_buf` | no |
+| `VK_EXT_image_drm_format_modifier` | no |
+| `VK_EXT_queue_family_foreign` | no |
+| `VK_KHR_external_memory_fd` | no |
+
+`gbm_create_device` fails, and no patch mends that: the thing it asks for is not there.
+
+So a program in the guest that speaks Vulkan gets the GPU, and a program that draws through GBM does not. To give the compositor the GPU, it has to draw with Vulkan, beside the GLES renderer it has. Each frame then goes in a blob, and the device scans that blob out. This way needs no dma-buf, because the blob is the shared memory that carries the frame. It is approximately the size of `GLRenderer.swift`, with the shaders built to SPIR-V.
 
 ## The work that remains
 
 1. The 2D command set of the device: resources, backing pages, transfers to the host, scanout and flush. The device answers `GET_DISPLAY_INFO` and accepts the rest without doing the work. Until someone writes it, the window shows the graphics device of the framework, and the device we make draws nothing.
 2. Fences. The device answers at once, so a guest that waits for work to finish is told it already has.
-3. A Vulkan renderer for the compositor, which is where the frame times above would change.
+3. A Vulkan renderer for the compositor, which is where the frame times above would change. See the section before this one for why GLES cannot take that place.
 
 ## The other way
 
