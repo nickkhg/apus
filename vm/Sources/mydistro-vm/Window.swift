@@ -10,12 +10,18 @@ final class Window: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let runner: Runner
     private let size: (width: Int, height: Int)
     private let followsWindow: Bool
+    /// What `makeCustomGPU` gave back. With a device of our own in it, the
+    /// window shows what that device draws. With nothing in it, the window
+    /// shows the graphics device of the framework by itself.
+    private let customGPU: [AnyObject]
     private var window: NSWindow?
 
-    init(runner: Runner, size: (width: Int, height: Int), followsWindow: Bool) {
+    init(runner: Runner, size: (width: Int, height: Int), followsWindow: Bool,
+         customGPU: [AnyObject] = []) {
         self.runner = runner
         self.size = size
         self.followsWindow = followsWindow
+        self.customGPU = customGPU
     }
 
     /// Opens the window and runs until the guest or the window stops.
@@ -43,6 +49,14 @@ final class Window: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // each direction, which is four times the work for each frame.
         // VM_RESIZE=off keeps the size that VM_SCREEN asked for.
         view.automaticallyReconfiguresDisplay = followsWindow
+
+        // Our own device draws over that view. The view below keeps the
+        // keyboard and the pointer.
+        if #available(macOS 27, *), let screen = makeGuestView(for: customGPU) {
+            screen.frame = view.bounds
+            screen.autoresizingMask = [.width, .height]
+            view.addSubview(screen)
+        }
 
         let window = NSWindow(
             contentRect: view.frame,

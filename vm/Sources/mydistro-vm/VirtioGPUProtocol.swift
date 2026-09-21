@@ -152,6 +152,91 @@ enum VirtioGPU {
         }
     }
 
+    /// A rectangle on a screen or in a resource: x, y, width, height.
+    struct Rectangle {
+        let x: UInt32, y: UInt32, width: UInt32, height: UInt32
+
+        init(_ data: Data, at start: Int) {
+            x = data.value(at: start)
+            y = data.value(at: start + 4)
+            width = data.value(at: start + 8)
+            height = data.value(at: start + 12)
+        }
+    }
+
+    /// `struct virtio_gpu_resource_create_2d`: a picture on the host, of
+    /// this size and this format. The guest draws it with the commands
+    /// below and asks for it on a screen.
+    struct CreateResource2D {
+        let resource: UInt32, format: UInt32, width: UInt32, height: UInt32
+
+        init?(_ data: Data) {
+            guard data.count >= 16 else { return nil }
+            resource = data.value(at: 0)
+            format = data.value(at: 4)
+            width = data.value(at: 8)
+            height = data.value(at: 12)
+        }
+    }
+
+    /// `struct virtio_gpu_resource_attach_backing`, and the entries after
+    /// it. The entries are the pages of guest memory that hold the picture.
+    struct AttachBacking {
+        let resource: UInt32
+        /// Each entry is an address in guest memory and a length.
+        let entries: [(address: UInt64, length: UInt32)]
+
+        init?(_ data: Data) {
+            guard data.count >= 8 else { return nil }
+            resource = data.value(at: 0)
+            let count: UInt32 = data.value(at: 4)
+            var entries: [(UInt64, UInt32)] = []
+            entries.reserveCapacity(Int(count))
+            for index in 0..<Int(count) {
+                let at = 8 + index * 16
+                guard data.count >= at + 16 else { return nil }
+                entries.append((data.value(at: at), data.value(at: at + 8)))
+            }
+            self.entries = entries
+        }
+    }
+
+    /// `struct virtio_gpu_set_scanout`: which resource a screen shows.
+    struct SetScanout {
+        let rectangle: Rectangle, scanout: UInt32, resource: UInt32
+
+        init?(_ data: Data) {
+            guard data.count >= 24 else { return nil }
+            rectangle = Rectangle(data, at: 0)
+            scanout = data.value(at: 16)
+            resource = data.value(at: 20)
+        }
+    }
+
+    /// `struct virtio_gpu_transfer_to_host_2d`: the guest has drawn into
+    /// its own memory and asks the device to take this part of it.
+    struct TransferToHost2D {
+        let rectangle: Rectangle, offset: UInt64, resource: UInt32
+
+        init?(_ data: Data) {
+            guard data.count >= 28 else { return nil }
+            rectangle = Rectangle(data, at: 0)
+            offset = data.value(at: 16)
+            resource = data.value(at: 24)
+        }
+    }
+
+    /// `struct virtio_gpu_resource_flush`: show what the transfers left.
+    struct Flush {
+        let rectangle: Rectangle, resource: UInt32
+
+        init?(_ data: Data) {
+            guard data.count >= 20 else { return nil }
+            rectangle = Rectangle(data, at: 0)
+            resource = data.value(at: 16)
+        }
+    }
+
     /// `struct virtio_gpu_resource_map_blob`: the guest asks for a blob to
     /// appear in the host-visible region, at this offset from its start.
     struct MapBlob {

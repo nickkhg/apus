@@ -57,7 +57,8 @@ runner.start()
 switch options.display {
 case .window:
     Window(runner: runner, size: options.screen,
-           followsWindow: options.followsWindow).run()
+           followsWindow: options.followsWindow, customGPU: customGPU).run()
 case .none, .headless:
+    if #available(macOS 27, *) { attachSnapshot(to: customGPU) }
     RunLoop.main.run()
 }

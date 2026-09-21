@@ -48,6 +48,19 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
     /// map has to be undone.
     private var placements: [UInt32: (offset: UInt64, size: UInt64)] = [:]
 
+    /// The pictures the guest draws with the 2D commands, and which of them
+    /// the one screen shows.
+    private var resources: [UInt32: Resource2D] = [:]
+    private var scanout: UInt32 = 0
+    /// Where a flush goes. The window sets it, on the main thread, while
+    /// the machine is already running, so it has a lock of its own.
+    private let screenLock = NSLock()
+    private var _screen: (any GuestScreen)?
+    var screen: (any GuestScreen)? {
+        get { screenLock.withLock { _screen } }
+        set { screenLock.withLock { _screen = newValue } }
+    }
+
     init(width: Int, height: Int, venusCapset: Data) {
         self.width = UInt32(width)
         self.height = UInt32(height)
@@ -233,10 +246,31 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
         case .resourceUnref:
             let resource: UInt32 = (try? element.readBytes(withExactLength: 8))?.value(at: 0) ?? 0
             renderer { VirglRenderer.unref(resource: resource) }
+            resources[resource] = nil
             write(header.answer(.okNoData), to: element)
 
-        // The 2D commands are still answered without the work. A guest that
-        // draws through Venus does not use them.
+        // The 2D commands: the guest draws a picture in its own memory and
+        // the device shows it. The console and the compositor use these.
+        case .resourceCreate2D:
+            handleCreateResource2D(header, element)
+
+        case .resourceAttachBacking:
+            handleAttachBacking(header, element)
+
+        case .resourceDetachBacking:
+            let resource: UInt32 = (try? element.readBytes(withExactLength: 8))?.value(at: 0) ?? 0
+            resources[resource]?.detach()
+            write(header.answer(.okNoData), to: element)
+
+        case .setScanout:
+            handleSetScanout(header, element)
+
+        case .transferToHost2D:
+            handleTransfer(header, element)
+
+        case .resourceFlush:
+            handleFlush(header, element)
+
         default:
             write(header.answer(.okNoData), to: element)
         }
@@ -394,6 +428,86 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
         return true
     }
 
+    // MARK: - The 2D commands
+
+    private func handleCreateResource2D(
+        _ header: VirtioGPU.Header, _ element: VZVirtioQueueElement
+    ) {
+        guard let body = try? element.readBytes(withExactLength: 16),
+              let create = VirtioGPU.CreateResource2D(body) else {
+            write(header.answer(.errorUnspecified), to: element)
+            return
+        }
+        resources[create.resource] = Resource2D(
+            width: Int(create.width), height: Int(create.height))
+        write(header.answer(.okNoData), to: element)
+    }
+
+    /// Takes the guest pages of a picture. Every page has to be guest RAM,
+    /// and the framework gives the address of each one on this side.
+    private func handleAttachBacking(
+        _ header: VirtioGPU.Header, _ element: VZVirtioQueueElement
+    ) {
+        let length = min(element.readBuffersAvailableByteCount, 8 + 16 * 4096)
+        guard length >= 8, let body = try? element.readBytes(withExactLength: length),
+              let attach = VirtioGPU.AttachBacking(body), let device else {
+            write(header.answer(.errorUnspecified), to: element)
+            return
+        }
+        var pages: [VZGuestMemoryMapping] = []
+        pages.reserveCapacity(attach.entries.count)
+        for entry in attach.entries {
+            guard let page = device.guestMemoryMapping(
+                atPhysicalAddress: entry.address, length: Int(entry.length)) else {
+                log("virtio-gpu: resource \(attach.resource) points outside guest memory")
+                write(header.answer(.errorUnspecified), to: element)
+                return
+            }
+            pages.append(page)
+        }
+        resources[attach.resource]?.attach(pages)
+        write(header.answer(.okNoData), to: element)
+    }
+
+    private func handleSetScanout(
+        _ header: VirtioGPU.Header, _ element: VZVirtioQueueElement
+    ) {
+        guard let body = try? element.readBytes(withExactLength: 24),
+              let set = VirtioGPU.SetScanout(body) else {
+            write(header.answer(.errorUnspecified), to: element)
+            return
+        }
+        scanout = set.resource
+        log("VIRTIO-GPU-SCANOUT screen \(set.scanout) shows resource \(set.resource), "
+            + "\(set.rectangle.width)x\(set.rectangle.height)")
+        write(header.answer(.okNoData), to: element)
+    }
+
+    private func handleTransfer(
+        _ header: VirtioGPU.Header, _ element: VZVirtioQueueElement
+    ) {
+        guard let body = try? element.readBytes(withExactLength: 28),
+              let transfer = VirtioGPU.TransferToHost2D(body) else {
+            write(header.answer(.errorUnspecified), to: element)
+            return
+        }
+        resources[transfer.resource]?.transfer(transfer.rectangle, from: transfer.offset)
+        write(header.answer(.okNoData), to: element)
+    }
+
+    private func handleFlush(_ header: VirtioGPU.Header, _ element: VZVirtioQueueElement) {
+        guard let body = try? element.readBytes(withExactLength: 20),
+              let flush = VirtioGPU.Flush(body) else {
+            write(header.answer(.errorUnspecified), to: element)
+            return
+        }
+        if flush.resource == scanout, let resource = resources[flush.resource],
+           let screen, let image = resource.image() {
+            screen.show(image)
+        }
+        write(header.answer(.okNoData), to: element)
+    }
+
     private func write(_ data: Data, to element: VZVirtioQueueElement) {
         guard element.writeBuffersAvailableByteCount >= data.count else {
             log("virtio-gpu: no room for an answer of \(data.count) bytes")
@@ -449,4 +563,33 @@ func makeCustomGPU(
     configuration.customVirtioDevices = [deviceConfiguration]
     log("a virtio-gpu device of our own is on the machine (VM_CUSTOM_GPU=1)")
     return [delegate, provider]
+}
+
+/// Gives the device its screen, and the window the view to add.
+///
+/// `makeCustomGPU` gives back the objects that have to stay alive. The
+/// device is one of them.
+@available(macOS 27, *)
+@MainActor
+func makeGuestView(for objects: [AnyObject]) -> GuestView? {
+    guard let device = objects.compactMap({ $0 as? VirtioGPUDevice }).first else { return nil }
+    let view = GuestView(frame: .zero)
+    guard let layer = view.layer else { return nil }
+    device.screen = withSnapshot(GuestDisplay(layer: layer))
+    return view
+}
+
+/// Adds the PNG writer in front of a screen, when VM_SNAPSHOT asks for it.
+/// With no window there is no screen, and the writer is the whole of it.
+@available(macOS 27, *)
+func withSnapshot(_ screen: (any GuestScreen)?) -> (any GuestScreen)? {
+    guard let path = ProcessInfo.processInfo.environment["VM_SNAPSHOT"] else { return screen }
+    return GuestSnapshot(path: path, then: screen)
+}
+
+/// Gives the device a screen when the machine runs with no window.
+@available(macOS 27, *)
+func attachSnapshot(to objects: [AnyObject]) {
+    guard let device = objects.compactMap({ $0 as? VirtioGPUDevice }).first else { return }
+    device.screen = withSnapshot(nil)
 }
