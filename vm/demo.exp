@@ -23,12 +23,16 @@ if {[info exists env(MYDISTRO_UI_DIR)]} {
 if {[info exists env(MYDISTRO_SCALE)]} {
     append uienv "MYDISTRO_SCALE=$env(MYDISTRO_SCALE) "
 }
-# Which renderer draws. `cpu` is the default; `gpu` draws with GBM, EGL and
-# GLES. In a VM there is no GPU, so Mesa renders with the CPU (llvmpipe)
-# either way. See docs/ui.md.
+# Which renderer draws. The demo asks for the GPU, because this is the one
+# place that shows what the machine can do. The tests keep the CPU, whose
+# pixels are the same on every run. `gpu` falls back to the CPU on a machine
+# with no GPU behind it, so this is safe everywhere. See docs/ui.md and
+# docs/gpu.md.
+set renderer "gpu"
 if {[info exists env(MYDISTRO_RENDERER)]} {
-    append uienv "MYDISTRO_RENDERER=$env(MYDISTRO_RENDERER) "
+    set renderer $env(MYDISTRO_RENDERER)
 }
+append uienv "MYDISTRO_RENDERER=$renderer "
 
 # VM_CUSTOM_GPU adds the virtio-gpu device that this program makes, which
 # is the one that carries the GPU of the Mac. mydistro-gpu then puts the
