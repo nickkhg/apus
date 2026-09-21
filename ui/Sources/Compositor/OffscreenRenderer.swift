@@ -265,21 +265,69 @@ final class OffscreenRasterizer: FrameRasterizer {
         return false
     }
 
-    // MARK: - Frames
+    /// Times the parts of a frame, to say what the read back really costs.
+/// APUS_SPLIT_LOG=N writes a line for each N frames.
+enum Split {
+    nonisolated(unsafe) static var submit = 0.0
+    nonisolated(unsafe) static var flush = 0.0
+    nonisolated(unsafe) static var draw = 0.0
+    nonisolated(unsafe) static var read = 0.0
+    nonisolated(unsafe) static var copy = 0.0
+    nonisolated(unsafe) static var frames = 0
+    static let every: Int = {
+        guard let text = getenv("APUS_SPLIT_LOG").map({ String(cString: $0) }),
+              let count = Int(text), count > 0 else { return 0 }
+        return count
+    }()
+
+    static func now() -> Double {
+        var time = timespec()
+        clock_gettime(CLOCK_MONOTONIC, &time)
+        return Double(time.tv_sec) + Double(time.tv_nsec) / 1_000_000_000
+    }
+
+    static func add(submit s: Double, flush f: Double, draw d: Double,
+                    read r: Double, copy c: Double, width: Int, height: Int) {
+        guard every > 0 else { return }
+        submit += s; flush += f; draw += d; read += r; copy += c
+        frames += 1
+        guard frames >= every else { return }
+        func ms(_ v: Double) -> Double { (v / Double(frames) * 10_000).rounded() / 10 }
+        let total = submit + flush + draw + read + copy
+        log("SPLIT \(width)x\(height) record \(ms(submit))ms flush \(ms(flush))ms"
+            + " wait \(ms(draw))ms read \(ms(read))ms copy \(ms(copy))ms"
+            + " (total \(ms(total))ms)")
+        submit = 0; flush = 0; draw = 0; read = 0; copy = 0; frames = 0
+    }
+}
+
+// MARK: - Frames
 
     func render(_ list: DisplayList, into pixels: UnsafeMutablePointer<UInt32>,
                 width: Int, height: Int, stride: Int) {
         guard prepare(width: width, height: height), let staging else { return }
+        let t0 = Split.now()
         glBindFramebuffer(GLenum(GL_FRAMEBUFFER), framebuffer)
         renderer.render(list, width: width, height: height)
+        let t1 = Split.now()
 
+        // glFlush pushes the work: the GL driver turns what it kept into
+        // Vulkan commands and sends them. glFinish then waits for the Mac to
+        // finish them. The two apart say which side the time is on.
+        glFlush()
+        let tFlush = Split.now()
         // The whole frame in one read. A read for each row would be one
         // call for every line of the screen.
         glFinish()
+        let t2 = Split.now()
         glPixelStorei(GLenum(GL_PACK_ALIGNMENT), 4)
         glReadPixels(0, 0, GLsizei(width), GLsizei(height),
                      readFormat, GLenum(GL_UNSIGNED_BYTE), staging)
+        let t3 = Split.now()
         if let error = firstError() { log("screen: the GPU reported \(error)") }
+        defer { Split.add(submit: t1 - t0, flush: tFlush - t1, draw: t2 - tFlush,
+                          read: t3 - t2, copy: Split.now() - t3,
+                          width: width, height: height) }
 
         let source = staging.assumingMemoryBound(to: UInt32.self)
         let swapsRedAndBlue = readFormat == GLenum(GL_RGBA)

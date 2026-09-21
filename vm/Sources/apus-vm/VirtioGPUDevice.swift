@@ -68,6 +68,8 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
     private var waitingForFence:
         [UInt64: (header: VirtioGPU.Header, element: VZVirtioQueueElement,
                   response: VirtioGPU.Response)] = [:]
+    /// When the guest asked for each fence, for APUS_VM_TIMING.
+    private var fenceAskedAt: [UInt64: Double] = [:]
 
     /// The pictures the guest draws with the 2D commands, and which of them
     /// the one screen shows.
@@ -195,6 +197,7 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
         // the queues go away, so the elements go back now.
         for (_, waiting) in waitingForFence { waiting.element.returnToQueue() }
         waitingForFence.removeAll()
+        fenceAskedAt.removeAll()
         log("virtio-gpu: reset")
     }
 
@@ -361,7 +364,9 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
         }
 
         var result: Int32 = 0
+        let began = HostTiming.now()
         renderer { result = VirglRenderer.submit(&stream, context: header.contextID) }
+        HostTiming.addSubmit(HostTiming.now() - began)
         Counters.shared.countStream()
         submissions += 1
         if submissions <= 3 || submissions % 500 == 0 {
@@ -604,6 +609,7 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
         let fence = nextFence
         nextFence += 1
         waitingForFence[fence] = (header, element, response)
+        fenceAskedAt[fence] = HostTiming.now()
 
         var made: Int32 = -1
         renderer {
@@ -638,9 +644,12 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
     private func startPollingForFences() {
         guard fencePoll == nil, let device else { return }
         let timer = DispatchSource.makeTimerSource(queue: device.deviceQueue)
-        timer.schedule(deadline: .now(), repeating: .milliseconds(1), leeway: .microseconds(250))
+        timer.schedule(deadline: .now(),
+                       repeating: .microseconds(HostTiming.pollMicroseconds),
+                       leeway: .microseconds(max(1, HostTiming.pollMicroseconds / 4)))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
+            HostTiming.addPoll()
             guard !waitingForFence.isEmpty else {
                 fencePoll?.cancel()
                 fencePoll = nil
@@ -661,6 +670,9 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
     fileprivate func fenceFinished(_ fence: UInt64) {
         for number in waitingForFence.keys.sorted() where number <= fence {
             guard let waiting = waitingForFence.removeValue(forKey: number) else { continue }
+            if let asked = fenceAskedAt.removeValue(forKey: number) {
+                HostTiming.addFence(HostTiming.now() - asked)
+            }
             Counters.shared.countFence()
             write(waiting.header.answer(waiting.response), to: waiting.element)
             waiting.element.returnToQueue()
