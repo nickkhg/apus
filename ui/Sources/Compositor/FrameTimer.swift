@@ -4,8 +4,24 @@ import Glibc
 ///
 /// APUS_FRAME_LOG turns it on, and says how many frames go into a line:
 /// `1` reports every 20 frames, and a number reports every that many. The
-/// line holds the average, the longest, and the size of the screen. Without
-/// the variable it does nothing at all, so a frame costs one comparison.
+/// line holds the cost of a frame, the longest wait between two frames, the
+/// rate, and the size of the screen. Without the variable it does nothing at
+/// all, so a frame costs one comparison.
+///
+/// Two different things are in the line, and a smooth screen needs both:
+///
+/// - `average` and `longest` are the cost of the drawing: the time from the
+///   start of a frame to its end. They say what the work costs.
+/// - The rate, and `worst gap`, are against the clock: how often a frame
+///   reached the screen, and the longest the screen went without a new one.
+///   The waiting for a page flip, for input, or for an app is in these and
+///   not in the cost. They say what a person sees.
+///
+/// The rate is therefore not 1 divided by the average. A compositor that
+/// draws a frame in 6 ms, and then waits 20 ms for the next thing to do,
+/// costs 6 ms a frame and shows 38 frames a second, not 163. An idle screen
+/// draws nothing, so an idle time between two frames lowers the rate of the
+/// line that holds it, and `worst gap` says how long that idle time was.
 ///
 /// The compositor draws the whole screen for each frame, so the cost rises
 /// with the number of pixels. A window on a Mac with small pixels gives the
@@ -24,32 +40,60 @@ struct FrameTimer {
     private var total = 0.0
     private var longest = 0.0
     private var frames = 0
+    /// When the first frame of this line started, for the rate.
+    private var windowStart = 0.0
+    /// When the frame before this one started, and the longest there has
+    /// been between two starts.
+    private var lastStart = 0.0
+    private var longestGap = 0.0
 
     init(name: String) { self.name = name }
 
     mutating func began() {
         guard FrameTimer.every > 0 else { return }
-        start = FrameTimer.now()
+        let now = FrameTimer.now()
+        if frames == 0 {
+            windowStart = now
+        } else {
+            longestGap = max(longestGap, now - lastStart)
+        }
+        lastStart = now
+        start = now
     }
 
     mutating func ended(width: Int, height: Int) {
         guard FrameTimer.every > 0 else { return }
-        let taken = FrameTimer.now() - start
+        let end = FrameTimer.now()
+        let taken = end - start
         total += taken
         longest = max(longest, taken)
         frames += 1
         guard frames >= FrameTimer.every else { return }
         let average: Double = total / Double(frames)
-        let averageMilliseconds: Double = average * 1000
-        let longestMilliseconds: Double = longest * 1000
-        let rate: Double = average > 0 ? 1 / average : 0
+        // The frames of this line, over the time they took, from the start
+        // of the first to the end of the last.
+        let span: Double = end - windowStart
+        let rate: Double = span > 0 ? Double(frames) / span : 0
         log("FRAME \(name) \(width)x\(height)"
-            + " average \(round(averageMilliseconds * 10) / 10)ms"
-            + " longest \(round(longestMilliseconds * 10) / 10)ms"
-            + " (\(Int(rate.rounded())) frames a second)")
+            + " average \(FrameTimer.milliseconds(average))ms"
+            + " longest \(FrameTimer.milliseconds(longest))ms"
+            + " worst gap \(FrameTimer.milliseconds(longestGap))ms"
+            + " (\(FrameTimer.count(rate)) frames a second)")
         total = 0
         longest = 0
+        longestGap = 0
         frames = 0
+    }
+
+    /// Seconds as milliseconds, to one place after the point.
+    private static func milliseconds(_ seconds: Double) -> Double {
+        (seconds * 10_000).rounded() / 10
+    }
+
+    /// A rate as a whole number, and a slow one with a place after the
+    /// point, because 0 says less than 4.6 does.
+    private static func count(_ rate: Double) -> String {
+        rate >= 10 ? "\(Int(rate.rounded()))" : "\((rate * 10).rounded() / 10)"
     }
 
     private static func now() -> Double {

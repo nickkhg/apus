@@ -57,6 +57,8 @@ final class GPUScreen: Screen, PageFlipHandler {
     private var canPageFlip = true
     /// True while a frame is being drawn.
     private var isDrawing = false
+    /// The pointer, on a plane of the display when the display has one.
+    private var pointer = ScreenPointer()
     private var timer = FrameTimer(name: "gpu")
     private var displayMayHaveChanged = false
 
@@ -214,13 +216,23 @@ final class GPUScreen: Screen, PageFlipHandler {
 
     // MARK: - Frames
 
-    func setNeedsFrame() {
-        needsFrame = true
-        // A frame that is being drawn must not start another one. Something
-        // that moves asks for the next frame while this one is drawn, and
-        // the flip that follows picks it up.
-        if !flipPending, !isDrawing { drawFrame() }
+    func setNeedsFrame() { needsFrame = true }
+
+    /// A frame that is being drawn must not start another one, and a frame
+    /// that the display has not taken yet must not be replaced. The flip
+    /// that follows picks the request up.
+    func drawIfNeeded() {
+        guard needsFrame, !flipPending, !isDrawing else { return }
+        drawFrame()
     }
+
+    var drawsPointer: Bool { pointer.isOnDisplay }
+
+    func usePointer(_ bitmap: Bitmap) {
+        pointer.use(bitmap, device: device, output: output)
+    }
+
+    func movePointer(toX x: Int, y: Int) { pointer.move(toX: x, y: y) }
 
     /// Draws the list and takes the finished buffer from GBM.
     private func drawIntoBuffer() throws -> (bo: OpaquePointer, framebuffer: ImportedFramebuffer) {
@@ -279,7 +291,8 @@ final class GPUScreen: Screen, PageFlipHandler {
         }
         frameShown()
         if displayMayHaveChanged { takeNewMode() }
-        if needsFrame { drawFrame() }
+        // A frame that is wanted is drawn by drawIfNeeded, at the end of
+        // this pass of the loop, with everything else that arrived.
     }
 
     // MARK: - Size
@@ -347,7 +360,12 @@ final class GPUScreen: Screen, PageFlipHandler {
             throw GLFailure.display("cannot make a framebuffer to read back")
         }
 
-        renderer.render(displayList(), width: width, height: height)
+        // The display puts the pointer over the frame, so the list that the
+        // display gets holds no pointer. The picture is what a person sees,
+        // so it goes back in.
+        var list = displayList()
+        if let (bitmap, x, y) = pointer.picture { list.append(.bitmap(bitmap, x: x, y: y)) }
+        renderer.render(list, width: width, height: height)
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         pixels.withUnsafeMutableBytes { bytes in
             glReadPixels(0, 0, GLsizei(width), GLsizei(height),

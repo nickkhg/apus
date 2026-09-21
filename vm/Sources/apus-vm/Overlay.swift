@@ -6,7 +6,8 @@ import AppKit
 /// click goes through it to the guest. The Debug menu says what it shows.
 @MainActor
 final class Overlay: NSView {
-    /// How many frames a second, and how long one frame takes.
+    /// How many frames a second reach the screen, how long the drawing of
+    /// one takes, and the longest the screen went without a new one.
     var showsFrames = true { didSet { refresh() } }
     /// What the guest asks of the virtio-gpu device that this tool makes.
     var showsDevice = false { didSet { refresh() } }
@@ -45,9 +46,12 @@ final class Overlay: NSView {
 
         if showsFrames {
             let rate = reading.framesASecond.map { "\($0) fps" }
-            let time = reading.frameTime.map { "\($0) a frame" }
-            let both = [rate, time].compactMap { $0 }.joined(separator: "   ")
-            lines.append(both.isEmpty ? "no frame times yet" : both)
+            let time = reading.frameTime.map { "\($0) to draw" }
+            // The number that a stutter is in: the frames a second can stay
+            // high while one gap of 150 ms holds the screen still.
+            let gap = reading.worstGap.map { "worst gap \($0)" }
+            let line = [rate, time, gap].compactMap { $0 }.joined(separator: "   ")
+            lines.append(line.isEmpty ? "no frame times yet" : line)
         }
         if showsDevice {
             lines.append(String(format: "%@ streams   %@ fences   %@ flushes",
