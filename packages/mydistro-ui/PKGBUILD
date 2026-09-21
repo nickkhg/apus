@@ -1,6 +1,10 @@
 # The Swift UI (ui/ in the source tree). build.sh copies ui/ next to this
-# file before makepkg runs. The Swift runtime is linked statically, so the
-# target needs only the C libraries below.
+# file before makepkg runs.
+#
+# The libraries are dynamic: the toolkit, the shell and the rest go to
+# /usr/lib, and every program on the machine draws with that one copy. The
+# Swift runtime goes to /usr/lib/swift/linux, so the programs no longer
+# carry a copy of it each. See docs/ui.md.
 pkgname=mydistro-ui
 pkgver=0.1.0
 pkgrel=1
@@ -17,11 +21,28 @@ depends=(
 # GNU strip can't parse Swift's LLVM-built binaries; the linker strips instead.
 options=('!debug' '!strip')
 
+# The parts of the Swift runtime that the programs of this system need.
+# Nothing here uses Foundation, so the Foundation libraries, ICU, the test
+# libraries and the mirrors stay out: they are 60 MB that nothing opens.
+_runtime=(
+    libswiftCore libswiftGlibc libswiftRuntime
+    libswift_Concurrency libswift_StringProcessing libswift_RegexParser
+    libswift_Builtin_float libswift_Volatile libswiftSynchronization
+    libswiftDispatch libdispatch libBlocksRuntime
+    # UI_CONFIG=debug builds against this one.
+    libswiftSwiftOnoneSupport
+)
+
 build() {
     cd "$startdir/ui"
     # SWIFT_SCRATCH (set by build.sh) keeps the build cache between image
     # builds, so only changed Swift files recompile.
-    swift build -c release --static-swift-stdlib -Xlinker --strip-all \
+    #
+    # A program looks beside itself first, which is what the /mnt/host/ui
+    # loop needs, and in /usr/lib after that.
+    swift build -c release -Xlinker --strip-all \
+        -Xlinker -rpath -Xlinker '$ORIGIN' \
+        -Xlinker -rpath -Xlinker /usr/lib/swift/linux \
         --scratch-path "${SWIFT_SCRATCH:-$srcdir/.build}"
 }
 
@@ -45,9 +66,28 @@ package() {
         fi
     done
 
+    # The libraries: one copy for the machine.
+    local library
+    for library in "$bin"/*.so; do
+        if [[ -f $library ]]; then
+            install -Dm755 "$library" "$pkgdir/usr/lib/${library##*/}"
+        fi
+    done
+
+    # The Swift runtime, and the directory in the loader's search path.
+    local runtime=/opt/swift/usr/lib/swift/linux name
+    for name in "${_runtime[@]}"; do
+        [[ -f $runtime/$name.so ]] || continue
+        install -Dm755 "$runtime/$name.so" "$pkgdir/usr/lib/swift/linux/$name.so"
+    done
+    install -Dm644 /dev/stdin "$pkgdir/etc/ld.so.conf.d/mydistro-swift.conf" <<'CONF'
+/usr/lib/swift/linux
+CONF
+
     # The system programs: the compositor and the tools.
     local program
     for program in "$bin"/mydistro-*; do
+        [[ $program == *.so ]] && continue
         if [[ -f $program && -x $program && " ${bundled[*]:-} " != *" ${program##*/} "* ]]; then
             install -Dm755 "$program" "$pkgdir/usr/bin/${program##*/}"
         fi

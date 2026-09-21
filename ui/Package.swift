@@ -34,6 +34,10 @@ func system(_ name: String, pkgConfig: String, package: String) -> Target {
 
 let package = Package(
     name: "mydistro-ui",
+    // These stay static: the programs of this package are the only things
+    // that use them, and a target of a package cannot be linked into a
+    // program of that package and be a dynamic library of it. The toolkit
+    // is dynamic, and it is most of the code. See Toolkit/Package.swift.
     products: [
         .library(name: "DRMKit", targets: ["DRMKit"]),
         .library(name: "Wayland", targets: ["Wayland"]),
@@ -86,13 +90,13 @@ let package = Package(
         // globals that apps use. It draws the shell with the toolkit.
         .target(name: "Compositor", dependencies: [
             "DRMKit", "CDRM", "CInput", "CUdev", "CXKBCommon", "CSeat", "Wayland",
+            // The toolkit, the shell and the renderer: one library that the
+            // machine carries. See Toolkit/Package.swift.
+            .product(name: "MydistroUI", package: "Toolkit"),
             // GPU rendering: GBM makes the buffers, EGL draws into them,
             // GLES draws the display list. See GPUScreen and GLRenderer.
             "CGBM", "CEGL", "CGLES",
-            .product(name: "Render", package: "Toolkit"),
-            .product(name: "Toolkit", package: "Toolkit"),
-            .product(name: "Shell", package: "Toolkit"),
-        ]),
+            ]),
         .executableTarget(name: "CompositorMain", dependencies: ["Compositor"]),
 
         // A minimal Wayland app (one coloured window), for testing the compositor.
@@ -106,10 +110,8 @@ let package = Package(
         .target(name: "CPTY"),
         .executableTarget(name: "TerminalApp", dependencies: [
             "CWaylandClient", "CXDGShellClient", "CXKBCommon", "CPTY",
-            .product(name: "Render", package: "Toolkit"),
-            .product(name: "Toolkit", package: "Toolkit"),
-            .product(name: "Terminal", package: "Toolkit"),
-        ]),
+            .product(name: "MydistroUI", package: "Toolkit"),
+            ]),
 
         // What a test on the Mac uses to see and to touch the screen: it
         // asks the compositor for the pixels, and makes a pointer and a
@@ -124,17 +126,15 @@ let package = Package(
         // view tree and gets a window.
         .target(name: "AppClient", dependencies: [
             "CWaylandClient", "CXDGShellClient", "CXKBCommon",
-            .product(name: "Render", package: "Toolkit"),
-            .product(name: "Toolkit", package: "Toolkit"),
-        ]),
+            .product(name: "MydistroUI", package: "Toolkit"),
+            ]),
 
         // The system monitor: an app of the toolkit, and the second user of
         // it. The bundle in Apps/System.app puts it in /Applications.
         .executableTarget(name: "SystemMonitor", dependencies: [
             "AppClient",
-            .product(name: "Toolkit", package: "Toolkit"),
-            .product(name: "Render", package: "Toolkit"),
-        ]),
+            .product(name: "MydistroUI", package: "Toolkit"),
+            ]),
 
         // Takes over the screen and draws a test pattern (used by tests/display.exp).
         .executableTarget(name: "DisplayProbe", dependencies: ["DRMKit"]),

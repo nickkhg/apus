@@ -41,8 +41,14 @@ SDK_STAMP        := $(SWIFT_SDKS)/$(SWIFT_SDK).artifactbundle/info.json
 # that has nothing to do with the machine. UI_CONFIG=debug asks for the
 # other one.
 UI_CONFIG        ?= release
+# The libraries are dynamic (see ui/Package.swift), so a program finds them
+# beside itself first ($ORIGIN, for the /mnt/host/ui loop) and in /usr/lib
+# after that. The Swift runtime is in the image, at /usr/lib/swift/linux, so
+# the programs no longer carry a copy each.
 SWIFT_BUILD       = MYDISTRO_CROSS=1 $(SWIFT_MAC)/usr/bin/swift build --package-path ui \
-	--swift-sdks-path $(SWIFT_SDKS) --swift-sdk $(SWIFT_SDK) --static-swift-stdlib \
+	--swift-sdks-path $(SWIFT_SDKS) --swift-sdk $(SWIFT_SDK) \
+	-Xlinker -rpath -Xlinker '$$ORIGIN' \
+	-Xlinker -rpath -Xlinker /usr/lib/swift/linux \
 	-c $(UI_CONFIG)
 
 # mydistro-vm boots the images. It builds with the Swift toolchain of Xcode,

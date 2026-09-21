@@ -29,11 +29,21 @@ func system(_ name: String, pkgConfig: String) -> Target {
 let package = Package(
     name: "mydistro-toolkit",
     platforms: [.macOS(.v26)],
+    // One dynamic library holds the whole user interface stack: mydistro
+    // carries one copy of it, in /usr/lib, and every program on the machine
+    // draws with that copy. A change to the toolkit is then a new library
+    // and not a new build of each app.
+    //
+    // It is one product and not four, because a target cannot be linked
+    // into a dynamic library and be a dynamic library. The modules inside
+    // it keep their names: a program still writes `import Toolkit`.
+    //
+    // This works because one build makes the whole system. Swift on Linux
+    // has no stable ABI without library evolution, so a library and the
+    // programs that use it must come from one build. See docs/ui.md.
     products: [
-        .library(name: "Render", targets: ["Render"]),
-        .library(name: "Toolkit", targets: ["Toolkit"]),
-        .library(name: "Shell", targets: ["Shell"]),
-        .library(name: "Terminal", targets: ["Terminal"]),
+        .library(name: "MydistroUI", type: .dynamic,
+                 targets: ["Render", "Toolkit", "Shell", "Terminal"]),
         // The display server links these C libraries too (mydistro-ui-check).
         .library(name: "CFreeType", targets: ["CFreeType"]),
         .library(name: "CHarfBuzz", targets: ["CHarfBuzz"]),

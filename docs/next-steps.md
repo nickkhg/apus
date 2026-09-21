@@ -45,8 +45,8 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
 ## The system
 
 - Root has no password. Add a user account and a password for use outside a VM.
-- Start the compositor at login, or with a display manager, as a normal user through logind.
-- `make gui` gives a text login on tty1. The compositor does not start on tty1 automatically.
+- The toolkit is one dynamic library, and the machine carries one copy of it (see [ui.md](ui.md#one-library-for-the-machine)). It has no stable ABI: the library and the programs must come from one build. `-enable-library-evolution` on the toolkit would make a new library work with the programs that are there already. Put `@frozen` on the types of the hot path with it: `Frame`, `Size`, `Color`, `Rect` and `Proposal`. Measure `make bench` after it: a resilient type reaches its fields through a function.
+- The shell runs as root. A shell of a person wants a session of that person. logind gives the seat, and the files that the apps open are that person's files.
 - The live system does not start the installer automatically.
 
 ## Packages and the repository
@@ -80,6 +80,7 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
 - The GPU renderer sends the pixels of a window to the GPU at each commit. The GPU can read a buffer of the app directly, with `EGL_WL_bind_wayland_display` or with dma-buf. That removes the copy.
 - The GPU renderer draws one quad for each item. Items with the same texture and colour could go into one draw.
 - `make gui` and `make demo` open a window. The automated tests do not test them. `tests/display.exp` and `tests/compositor.exp` test the same display with no window. In a window, the keyboard and the pointer are USB devices of the framework. The tests do not use those devices. They make their own with uinput.
+- `make build` builds every package in `packages/` again, every time: `build.sh` removes the repository and runs `makepkg --cleanbuild --force` for each one. Two of them are Mesa (`mydistro-zink`, `vulkan-virtio`), which is most of the minutes of an image build. A package whose PKGBUILD and sources did not change could come from the repository of the last build.
 - The tests use one VM disk in sequence. `tests/display.exp` and `tests/compositor.exp` need the disk from `tests/install.exp`.
 - Old builder images use disk space. On 19 September, `container system df` reported 42 GB that `container image prune` can remove.
 

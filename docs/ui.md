@@ -23,7 +23,7 @@ Swift has no official build for Arch Linux. The Fedora build works on Arch Linux
 | `libxml2.so.2` | `libxml2.so.16` | Install `libxml2-legacy` |
 | `libpython3.13.so` (only for `lldb`) | Python 3.14 | None. `lldb` does not work in the builder. |
 
-The target system does not need these changes. The build links the Swift runtime statically (`--static-swift-stdlib`), so the programs need only glibc, libstdc++, and the C libraries below.
+The target system does not need these changes. The image carries the Swift runtime in `/usr/lib/swift/linux` (see [One library for the machine](#one-library-for-the-machine)), and the programs need glibc, libstdc++, and the C libraries below.
 
 ## The Swift SDK: compile on the Mac
 
@@ -34,7 +34,7 @@ build/cache/swift-6.4.0-macos/usr/bin/swift build --package-path ui \
     --swift-sdks-path build/cache/swift-sdks --swift-sdk mydistro-aarch64
 ```
 
-`make ui` runs this command (with `--static-swift-stdlib`). A full build takes approximately 5 seconds on the Mac.
+`make ui` runs this command, with the run paths that a dynamic library needs. A full build takes approximately 5 seconds on the Mac.
 
 `build/make-sdk.sh` makes the SDK in the builder container. The SDK contains:
 
@@ -85,6 +85,27 @@ A test with SourceKit-LSP gave the documentation of the C function `libinput_dis
 `ui/Toolkit/` is a package of its own: the toolkit and the shell (`Render`, `Toolkit`, `Shell`). It builds for mydistro and for macOS. Write UI code there. See [toolkit.md](toolkit.md).
 
 `make ui` builds both, because `ui/` depends on `ui/Toolkit/`.
+
+## One library for the machine
+
+The toolkit, the shell and the renderer are one dynamic library, `libMydistroUI.so`. The machine carries one copy of it in `/usr/lib`, and every program on it draws with that copy. A change to the toolkit is then a new library, and not a new build of each app.
+
+The Swift runtime is in `/usr/lib/swift/linux`. Nothing on this system uses Foundation, so the package carries the core of the runtime alone. It leaves out Foundation, ICU and the test libraries: 60 MB that nothing opens.
+
+What that does to the programs:
+
+| | A copy in each program | One library |
+|---|---|---|
+| Every program together | 81 MB | 6.7 MB |
+| The largest one (the compositor) | 17.0 MB | 2.4 MB |
+| The library itself | — | 3.2 MB |
+
+A program looks for a library beside itself first, and then in `/usr/lib/swift/linux`. The first of those is what the development loop needs. A program in `/mnt/host/ui` then finds the library of its own build, and not the one in the image.
+
+Two things about this:
+
+- It is one library and not four, because a target cannot be linked into a dynamic library and be a dynamic library. The modules inside it keep their names, so a program still writes `import Toolkit`.
+- The library and the programs that use it must come from one build. Swift on Linux has no stable ABI without library evolution, so a change to a public type can change how it sits in memory. `make build` builds everything together, which is what keeps them one build. To replace only the library on a running machine, the toolkit needs `-enable-library-evolution` and `@frozen` on the types of the hot path. See [next-steps.md](next-steps.md).
 
 ## The display server package
 
@@ -170,7 +191,9 @@ The tests that need a screen run in the VM. See [testing.md](testing.md).
 
 To test the new programs automatically, run `make test-dev`. It runs the compositor test with the programs from `out/ui/`.
 
-`make ui` makes a debug build. It does not change the image. To put the UI in the image, run `make build`. The image build compiles `ui/` again with the Linux toolchain in the container. It keeps the Swift build cache in the `mydistro-work` volume, so it compiles only the changed files.
+`make ui` puts `libMydistroUI.so` in `out/ui/` beside the programs, so `make test-dev` and `make demo-dev` carry a change to the toolkit in 3 MB, not in 81 MB.
+
+`make ui` makes a release build. It does not change the image. To put the UI in the image, run `make build`. The image build compiles `ui/` again with the Linux toolchain in the container. It keeps the Swift build cache in the `mydistro-work` volume, so it compiles only the changed files.
 
 `make ui-container` does the same as `make ui` in the builder container, with the cache `/work/swiftpm/dev`.
 
