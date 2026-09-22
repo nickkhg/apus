@@ -240,12 +240,20 @@ public final class Compositor {
         screen.release()
     }
 
-    /// The first DRM card with a connected output, opened through the seat.
+    /// The DRM card to draw on: the one that carries a GPU, or the first
+    /// one with a connected output.
     ///
-    /// APUS_DRM_DEVICE names one card instead. A machine can have more
-    /// than one, and only one of them may draw: a virtual machine on a Mac
-    /// has the display of the framework beside the device that carries the
-    /// GPU.
+    /// APUS_DRM_DEVICE names one card instead. A machine can have more than
+    /// one: a virtual machine on a Mac has the display of the framework,
+    /// which is a 2D scanout and nothing else, beside the device that
+    /// carries the GPU of the Mac. Both have an output, and the first of
+    /// them is the one with no GPU, so a search that stops at the first
+    /// takes the slow one. A frame of the shell costs 10.2 ms on the device
+    /// with the GPU and 24.5 ms on the other, and the window of apus-vm
+    /// shows the device with the GPU.
+    ///
+    /// A machine with one real GPU has one card, and it answers that it
+    /// carries a GPU or it does not; either way it is the one that is left.
     private static func openDisplayDevice(seat: Seat) throws -> DRMDevice {
         if let name = getenv("APUS_DRM_DEVICE") {
             let path = String(cString: name)
@@ -254,14 +262,25 @@ public final class Compositor {
             }
             return DRMDevice(fd: fd, path: path)
         }
+        var first: DRMDevice?
         for index in 0..<8 {
             let path = "/dev/dri/card\(index)"
             guard access(path, F_OK) == 0, let fd = try? seat.openDevice(path) else { continue }
             let device = DRMDevice(fd: fd, path: path)
-            if let outputs = try? device.connectedOutputs(), !outputs.isEmpty { return device }
-            seat.closeDevice(fd)
+            guard let outputs = try? device.connectedOutputs(), !outputs.isEmpty else {
+                seat.closeDevice(fd)
+                continue
+            }
+            if device.carriesGPU {
+                if let first { seat.closeDevice(first.fd) }
+                log("SCREEN-DEVICE \(path) carries a GPU")
+                return device
+            }
+            if first == nil { first = device } else { seat.closeDevice(fd) }
         }
-        throw DRMError.noDevice
+        guard let first else { throw DRMError.noDevice }
+        log("SCREEN-DEVICE \(first.path) has no GPU of its own")
+        return first
     }
 
     // MARK: - Drawing

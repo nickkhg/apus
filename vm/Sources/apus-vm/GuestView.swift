@@ -29,6 +29,11 @@ final class GuestView: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
+        // Nothing of ours is shown until our device draws something. The
+        // guest may put its screen on the device of the framework instead,
+        // and the view of the framework is below this one, so a view that
+        // covered it from the start would show black over a working screen.
+        isHidden = true
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
         // The guest draws every pixel of its screen. A window of another
@@ -62,6 +67,7 @@ final class GuestView: NSView {
 
     /// A new frame from the guest.
     func show(_ image: CGImage) {
+        isHidden = false
         guestSize = CGSize(width: image.width, height: image.height)
         // The layer holds the picture, and CoreAnimation draws it on the
         // next pass of the window server. There is no drawRect here.

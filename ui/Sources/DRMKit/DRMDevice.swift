@@ -75,6 +75,27 @@ public final class DRMDevice {
     }
 
     /// Connected outputs, each with its preferred mode and a CRTC to drive it.
+    /// Whether this card carries 3D.
+    ///
+    /// A virtual machine on a Mac has two virtio-gpu cards: the display of
+    /// the framework, which is a 2D scanout and nothing else, and the device
+    /// that carries the GPU of the Mac. They look the same to everything
+    /// but this question. A card of another kind answers no, which is right
+    /// for a machine with one real GPU, where the first card is the one.
+    public var carriesGPU: Bool {
+        // `value` is not where the answer goes: it is where the kernel is
+        // told to put it. It holds the address of an int, and the kernel
+        // writes through it. A zero there gives EFAULT and no answer.
+        let place = UnsafeMutablePointer<Int32>.allocate(capacity: 1)
+        defer { place.deallocate() }
+        place.pointee = 0
+        var request = CDRMVirtgpuGetparam(
+            param: CDRM_VIRTGPU_PARAM_3D_FEATURES,
+            value: UInt64(UInt(bitPattern: place)))
+        guard drmIoctl(fd, CDRM_IOCTL_VIRTGPU_GETPARAM, &request) == 0 else { return false }
+        return place.pointee != 0
+    }
+
     public func connectedOutputs() throws(DRMError) -> [Output] {
         guard let resources = drmModeGetResources(fd) else { throw .resources }
         defer { drmModeFreeResources(resources) }
