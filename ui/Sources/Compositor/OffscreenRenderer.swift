@@ -380,7 +380,8 @@ enum Split {
 
         // Ask for this frame and do not wait: a read into a pixel buffer
         // gives the order to the GPU and returns.
-        glBindBuffer(CGLES_PIXEL_PACK_BUFFER, packBuffers[packIndex])
+        let writing = packIndex
+        glBindBuffer(CGLES_PIXEL_PACK_BUFFER, packBuffers[writing])
         glReadPixels(0, 0, GLsizei(width), GLsizei(height),
                      readFormat, GLenum(GL_UNSIGNED_BYTE), nil)
         glFlush()
@@ -388,8 +389,8 @@ enum Split {
 
         // Take the frame before this one. The GPU has had a whole frame to
         // finish it, so nothing waits here. The first frame has nothing
-        // behind it, and it is the one frame that waits.
-        let ready = packHasFrame ? 1 - packIndex : packIndex
+        // behind it, and it is the one frame that waits for its own.
+        let ready = packHasFrame ? 1 - writing : writing
         if !packHasFrame { glFinish() }
         let t2 = Split.now()
         glBindBuffer(CGLES_PIXEL_PACK_BUFFER, packBuffers[ready])
@@ -405,7 +406,11 @@ enum Split {
         }
         glBindBuffer(CGLES_PIXEL_PACK_BUFFER, 0)
         if let error = firstError() { log("screen: the GPU reported \(error)") }
-        packIndex = packHasFrame ? 1 - packIndex : packIndex
+        // The next frame goes into the other buffer, always. Leaving the
+        // two the same for one turn made the frame after the first read a
+        // buffer that nothing had written, which is black, and a shell that
+        // then had nothing to draw left that black frame on the screen.
+        packIndex = 1 - writing
         packHasFrame = true
         Split.add(submit: t1 - t0, flush: tFlush - t1, draw: t2 - tFlush,
                   read: t3 - t2, copy: Split.now() - t3,
