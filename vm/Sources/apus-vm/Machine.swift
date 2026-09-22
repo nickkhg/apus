@@ -55,6 +55,9 @@ func makeConfiguration(_ options: Options, _ layout: Layout) throws -> VZVirtual
     configuration.serialPorts = [console()]
     configuration.networkDevices = [network()]
     configuration.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
+    // A socket of the machine, for the clipboard. The guest connects to it
+    // and the two sides send each other text. See Clipboard.swift.
+    configuration.socketDevices = [VZVirtioSocketDeviceConfiguration()]
     configuration.memoryBalloonDevices = [VZVirtioTraditionalMemoryBalloonDeviceConfiguration()]
     configuration.directorySharingDevices = try shares(layout)
 

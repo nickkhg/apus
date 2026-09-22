@@ -60,6 +60,13 @@ let customGPU = makeCustomGPU(options, configuration)
 let runner = Runner(configuration: configuration)
 runner.start()
 
+// The clipboard of the Mac and the clipboard of the guest are the same one.
+// The guest connects when its shell starts, so the listener goes on now and
+// waits. It is held here, because the framework keeps only a weak reference
+// to the delegate of a listener.
+let clipboard = Clipboard()
+clipboard.attach(to: runner.machine)
+
 switch options.display {
 case .window:
     Window(runner: runner, size: options.screen,
