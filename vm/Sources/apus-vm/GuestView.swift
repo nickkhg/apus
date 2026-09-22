@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import Foundation
 
 /// The screen of the guest, drawn from the pictures of our own virtio-gpu
 /// device.
@@ -66,8 +67,26 @@ final class GuestView: NSView {
     }
 
     /// A new frame from the guest.
+    /// When the last picture came, and how many have come close together.
+    ///
+    /// The guest may put its screen on the device of the framework instead
+    /// of on ours, and the view of the framework is below this one. Our
+    /// device still gets a picture then: the framebuffer console of the
+    /// guest paints it black once and leaves it. A view that showed that
+    /// would cover a screen that works with a black one.
+    ///
+    /// A console paints and stops. A compositor draws again and again. So
+    /// this waits for a second picture that comes soon after the first.
+    private var lastPicture = Date.distantPast
+    private var pictures = 0
+
     func show(_ image: CGImage) {
-        isHidden = false
+        if isHidden {
+            let now = Date()
+            pictures = now.timeIntervalSince(lastPicture) < 1 ? pictures + 1 : 1
+            lastPicture = now
+            if pictures >= 2 { isHidden = false }
+        }
         guestSize = CGSize(width: image.width, height: image.height)
         // The layer holds the picture, and CoreAnimation draws it on the
         // next pass of the window server. There is no drawRect here.
