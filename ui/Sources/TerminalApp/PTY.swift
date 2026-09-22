@@ -46,7 +46,19 @@ final class PTY {
         var attributes = posix_spawnattr_t()
         posix_spawnattr_init(&attributes)
         defer { posix_spawnattr_destroy(&attributes) }
-        posix_spawnattr_setflags(&attributes, Int16(PTY.spawnSetSID))
+        // The shell and everything it runs start with the signals as a
+        // program expects them, whatever the terminal itself inherited.
+        var defaulted = sigset_t()
+        sigfillset(&defaulted)
+        sigdelset(&defaulted, SIGKILL)
+        sigdelset(&defaulted, SIGSTOP)
+        posix_spawnattr_setsigdefault(&attributes, &defaulted)
+        var unblocked = sigset_t()
+        sigemptyset(&unblocked)
+        posix_spawnattr_setsigmask(&attributes, &unblocked)
+        posix_spawnattr_setflags(&attributes,
+                                 Int16(PTY.spawnSetSID | PTY.spawnSetSigDefault
+                                       | PTY.spawnSetSigMask))
 
         var argv: [UnsafeMutablePointer<CChar>?] = [strdup(command)]
         argv += arguments.map { strdup($0) }
@@ -70,9 +82,19 @@ final class PTY {
         close(fd)
     }
 
-    /// POSIX_SPAWN_SETSID of glibc. The C headers give it to the
-    /// preprocessor only, so Swift does not see it.
+    /// The `posix_spawn` flags of glibc. The C headers give them to the
+    /// preprocessor only, so Swift does not see them.
+    ///
+    /// The shell needs the last two. A signal that a process ignores, and a
+    /// signal that it blocks, both cross `exec`, and the terminal is started
+    /// by the compositor, which ignores SIGCHLD and blocks SIGINT and
+    /// SIGTERM for its event loop. A program that inherits an ignored
+    /// SIGCHLD cannot wait for its own children — `waitpid` answers "no
+    /// child processes" — which is what pacman does for every package it
+    /// installs. See AppCatalog.resetSignals.
     private static let spawnSetSID: Int32 = 0x80
+    private static let spawnSetSigDefault: Int32 = 0x04
+    private static let spawnSetSigMask: Int32 = 0x08
 
     /// The environment of the program: ours, with TERM for this terminal.
     private static func environment() -> [String] {
