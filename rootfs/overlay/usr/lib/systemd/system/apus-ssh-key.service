@@ -1,0 +1,25 @@
+# Takes the key that the Mac shares and lets it into this machine.
+#
+# `make vm` writes out/ssh/authorized_keys, and the VM shares out/ read-only
+# at /mnt/host. So a person debugging the guest puts their key in one place
+# on the Mac and reaches the machine, and no key is ever in the image or in
+# the repository.
+#
+# On real hardware there is no such directory, the service does nothing, and
+# sshd lets nobody in.
+[Unit]
+Description=Take the SSH key that the VM host shares
+ConditionVirtualization=apple
+ConditionPathExists=/mnt/host/ssh/authorized_keys
+Before=sshd.service
+After=mnt-host.automount
+Wants=mnt-host.automount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/install -Dm600 -o root -g root \
+    /mnt/host/ssh/authorized_keys /root/.ssh/authorized_keys
+
+[Install]
+WantedBy=multi-user.target

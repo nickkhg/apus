@@ -7,6 +7,11 @@ dosfstools
 less
 nano
 
+# A shell from the Mac, for debugging the machine while it runs. It lets
+# nobody in by itself: root has no password, and a key only reaches the
+# machine through the directory that the VM shares. See docs/building.md.
+openssh
+
 # Apus branding (packages/apus-release)
 apus-release
 

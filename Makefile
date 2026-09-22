@@ -29,6 +29,8 @@ SWIFT_MAC_PKG    := build/cache/swift-$(SWIFT_VERSION)-RELEASE-osx.pkg
 SWIFT_MAC_URL    := https://download.swift.org/swift-$(SWIFT_VERSION)-release/xcode/swift-$(SWIFT_VERSION)-RELEASE/$(notdir $(SWIFT_MAC_PKG))
 SWIFT_MAC_SHA256 := 8fd03185b98fe27f54a54631c2449decf75d5b466ce8e34abbd414141063c6aa
 SWIFT_MAC        := build/cache/swift-$(SWIFT_VERSION)-macos
+# The key for a shell on the guest. It is made once and never committed.
+SSH_KEY          := build/cache/apus
 SWIFT_SDKS       := build/cache/swift-sdks
 SWIFT_SDK        := apus-aarch64
 SDK_STAMP        := $(SWIFT_SDKS)/$(SWIFT_SDK).artifactbundle/info.json
@@ -115,7 +117,7 @@ RUN = container run --rm --cap-add ALL -c $(CPUS) -m $(MEM) \
 	-v $(VOL_PKG):/var/cache/pacman/pkg \
 	-w $(CURDIR)
 
-.PHONY: help preflight virgl install-disk builder volumes build sdk ui ui-container protocols shell vm live installed gui demo demo-dev test test-venus test-dev test-ui test-ui-linux bench clean distclean
+.PHONY: help preflight virgl install-disk builder volumes build sdk ui ui-container protocols shell vm live installed gui demo demo-dev test test-venus test-dev test-ui test-ui-linux ssh bench clean distclean
 
 help:
 	@echo "make build      build out/live.img"
@@ -129,6 +131,7 @@ help:
 	@echo "make ui-container  the same build in the build container"
 	@echo "make sdk        the macOS Swift toolchain and the Apus Swift SDK (make ui does this)"
 	@echo "make test       install, display, compositor and GPU tests"
+	@echo "make ssh        a shell on the running guest over SSH"
 	@echo "make test-ui    unit tests of the toolkit and the shell, on the Mac (seconds)"
 	@echo "make test-venus  the guest finds the GPU of the Mac (needs the renderer)"
 	@echo "make test-ui-linux  the same tests in the builder container"
@@ -219,6 +222,17 @@ ui-container: builder volumes
 # Unit tests of the toolkit and the shell: layout, text and the panel. They
 # need no screen, no VM and no container, because the toolkit package also
 # builds for macOS. A run takes a few seconds.
+# A shell on the guest that is running now. The guest takes its address from
+# the DHCP server of the framework, which writes the lease under the name
+# apus; the newest lease is the machine that is up.
+ssh: $(SSH_KEY)
+	@ip=$$(awk -F= '/name=apus/ { found = 1 } found && /ip_address/ { print $$2; found = 0 }' \
+		/var/db/dhcpd_leases | tail -1); \
+	test -n "$$ip" || { echo "no guest: is the VM running?" >&2; exit 1; }; \
+	echo "==> $$ip"; \
+	ssh -i $(SSH_KEY) -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+		-o LogLevel=ERROR root@$$ip $(SSH_ARGS)
+
 test-ui: $(SWIFT_MAC)/usr/bin/swift
 	$(SWIFT_MAC)/usr/bin/swift test --package-path ui/Toolkit
 
@@ -258,9 +272,22 @@ $(VIRGL_LIB):
 
 virgl: $(VIRGL_LIB)
 
-vm: $(VIRGL_LIB)
+vm: $(VIRGL_LIB) out/ssh/authorized_keys
 	$(VM_BUILD)
 	codesign --force --sign - --entitlements vm/apus-vm.entitlements $(VM)
+
+# The key that reaches the guest over SSH. The VM shares out/ read-only at
+# /mnt/host, and apus-ssh-key.service takes the key from there, so the key
+# is never in the image and never in the repository. `ssh -i build/cache/apus
+# root@<guest>` is then a shell on the machine; the guest's address is in
+# /var/db/dhcpd_leases under the name apus. See docs/building.md.
+out/ssh/authorized_keys: | $(SSH_KEY)
+	mkdir -p $(dir $@)
+	cp $(SSH_KEY).pub $@
+
+$(SSH_KEY):
+	mkdir -p $(dir $@)
+	ssh-keygen -t ed25519 -N "" -C apus -f $@ -q
 
 # The live image, for a target that names it. `make build` writes it.
 $(LIVE_IMG):

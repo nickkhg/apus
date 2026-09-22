@@ -113,3 +113,24 @@ Each change to `build/Containerfile` makes a new builder image. The old images s
 ## Old Buildroot version
 
 The first version of Apus used Buildroot. It is at the git tag `buildroot-v0`. See [decisions.md](decisions.md).
+
+## A shell on the guest
+
+`make ssh` opens a shell on the machine that is running now. It is how you
+look at a guest while it is up: what a process has in its environment, what
+the kernel logged, what a program prints when it fails.
+
+```sh
+make ssh                        # a shell
+make ssh SSH_ARGS='dmesg | tail'   # one command
+```
+
+The key is made once, in `build/cache/apus`, and never committed. `make vm`
+copies the public half to `out/ssh/authorized_keys`, and the VM shares `out/`
+read-only at `/mnt/host`, so `apus-ssh-key.service` in the guest takes it from
+there at boot. Nothing else gets in: root has no password, sshd refuses an
+empty one, and on a machine that is not a VM on a Mac there is no such
+directory and no key at all.
+
+The guest takes its address from the DHCP server of the framework, which
+writes the lease under the name `apus` in `/var/db/dhcpd_leases`.

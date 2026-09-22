@@ -395,9 +395,12 @@ final class VirtioGPUDevice: NSObject, VZCustomVirtioDeviceDelegate, @unchecked 
                 flags: blob.flags, blobID: blob.blobID, size: blob.size)
         }
         blobs += 1
-        if blobs <= 3 {
+        // A blob that fails is always worth a line: the guest answers a
+        // failure here by taking no Vulkan device at all.
+        if blobs <= 3 || result != 0 {
             log("VIRTIO-GPU-BLOB resource \(blob.resource), \(blob.size) bytes, "
-                + "memory \(blob.memory), result \(result)")
+                + "memory \(blob.memory), flags \(blob.flags), id \(blob.blobID), "
+                + "context \(header.contextID), result \(result)")
         }
         write(header.answer(result == 0 ? .okNoData : .errorUnspecified), to: element)
     }

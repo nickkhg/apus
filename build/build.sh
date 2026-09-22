@@ -76,7 +76,7 @@ rm -f /boot/initramfs-linux-fallback.img
 # Apply the distribution's presets now, so first boot enables nothing new.
 systemctl preset-all
 systemctl enable systemd-networkd systemd-resolved apus-pacman-init \
-    mnt-host.automount mnt-screens.automount
+    mnt-host.automount mnt-screens.automount sshd apus-ssh-key
 # First boot must not stop at an interactive wizard. Locale, time zone and
 # hostname are preset, and root has no password.
 systemctl mask systemd-firstboot.service systemd-homed-firstboot.service
