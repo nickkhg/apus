@@ -14,8 +14,22 @@ final class Input {
         /// Absolute position (a tablet, or QEMU's virtio-tablet), 0...1.
         case pointerPosition(x: Double, y: Double)
         case button(code: UInt32, pressed: Bool)
+        /// A wheel turned, or two fingers moved on a touchpad. Positive is
+        /// down and to the right, as wl_pointer.axis counts. `source` says
+        /// what the numbers mean, because a wheel and a touchpad do not
+        /// measure in the same units.
+        case scroll(dx: Double, dy: Double, source: ScrollSource)
         /// A key of the keyboard.
         case key(Key)
+    }
+
+    /// What made a scroll event, and with it what its numbers mean.
+    enum ScrollSource {
+        /// A wheel, in degrees. One click of a usual wheel is 15 of them.
+        case wheel
+        /// Fingers on a touchpad, or a device that scrolls smoothly, in the
+        /// pixels that the pointer would have moved.
+        case finger
     }
 
     /// One key, for the compositor and for the app with the focus.
@@ -134,6 +148,10 @@ final class Input {
             let pointer = libinput_event_get_pointer_event(event)
             handler(.button(code: libinput_event_pointer_get_button(pointer),
                             pressed: libinput_event_pointer_get_button_state(pointer) == LIBINPUT_BUTTON_STATE_PRESSED))
+        case LIBINPUT_EVENT_POINTER_SCROLL_WHEEL:
+            scroll(event, source: .wheel)
+        case LIBINPUT_EVENT_POINTER_SCROLL_FINGER, LIBINPUT_EVENT_POINTER_SCROLL_CONTINUOUS:
+            scroll(event, source: .finger)
         case LIBINPUT_EVENT_KEYBOARD_KEY:
             let keyboard = libinput_event_get_keyboard_event(event)
             // xkb keycodes are evdev codes + 8.
@@ -151,5 +169,23 @@ final class Input {
         default:
             break
         }
+    }
+
+    /// One scroll event, on either axis or on both.
+    private func scroll(_ event: OpaquePointer, source: ScrollSource) {
+        let pointer = libinput_event_get_pointer_event(event)
+        /// An axis that this event does not carry reads as no movement, and
+        /// not as the value of the axis that it does carry.
+        func value(_ axis: libinput_pointer_axis) -> Double {
+            guard libinput_event_pointer_has_axis(pointer, axis) != 0 else { return 0 }
+            return libinput_event_pointer_get_scroll_value(pointer, axis)
+        }
+        let dx = value(LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL)
+        let dy = value(LIBINPUT_POINTER_AXIS_SCROLL_VERTICAL)
+        // libinput ends a touchpad gesture with a zero, which wl_pointer
+        // says with axis_stop. Nothing here needs kinetic scrolling, so the
+        // event that says "the fingers left" carries no movement and goes.
+        guard dx != 0 || dy != 0 else { return }
+        handler(.scroll(dx: dx, dy: dy, source: source))
     }
 }

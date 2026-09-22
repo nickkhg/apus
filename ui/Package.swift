@@ -89,7 +89,7 @@ let package = Package(
         // The compositor: screen, input, seat, window list, and the Wayland
         // globals that apps use. It draws the shell with the toolkit.
         .target(name: "Compositor", dependencies: [
-            "DRMKit", "CDRM", "CInput", "CUdev", "CXKBCommon", "CSeat", "Wayland",
+            "DRMKit", "CDRM", "CInput", "CUdev", "CXKBCommon", "CSeat", "CLinux", "Wayland",
             // The toolkit, the shell and the renderer: one library that the
             // machine carries. See Toolkit/Package.swift.
             .product(name: "ApusUI", package: "Toolkit"),

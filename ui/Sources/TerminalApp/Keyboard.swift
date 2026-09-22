@@ -70,6 +70,37 @@ final class Keyboard {
         xkb_state_update_mask(state, depressed, latched, locked, 0, 0, group)
     }
 
+    /// The chord that a key makes with the modifiers that are held.
+    ///
+    /// Copy and paste are Control+Shift+C and Control+Shift+V, which is what
+    /// a terminal uses: Control+C alone is the byte that stops a program, so
+    /// a terminal cannot have it for copying. The chord has to be read
+    /// before the key becomes bytes, because xkbcommon makes the same byte
+    /// for Control+C and for Control+Shift+C.
+    enum Chord { case copy, paste, scrollUp, scrollDown }
+
+    func chord(forKey code: UInt32) -> Chord? {
+        guard let state else { return nil }
+        let keysym = xkb_state_key_get_one_sym(state, code + 8)
+        let control = xkb_state_mod_name_is_active(state, "Control", XKB_STATE_MODS_EFFECTIVE) > 0
+        let shift = xkb_state_mod_name_is_active(state, "Shift", XKB_STATE_MODS_EFFECTIVE) > 0
+        // Shift and Page Up scrolls, as it does in a Linux console.
+        if shift, !control {
+            switch keysym {
+            case Key.pageUp: return .scrollUp
+            case Key.pageDown: return .scrollDown
+            default: break
+            }
+        }
+        guard control, shift else { return nil }
+        // The keysym of a letter with Shift held is the capital.
+        switch keysym {
+        case 0x43, 0x63: return .copy       // C, c
+        case 0x56, 0x76: return .paste      // V, v
+        default: return nil
+        }
+    }
+
     /// What a key that went down sends to the program. `code` is the code of
     /// the kernel, as wl_keyboard gives it; xkb adds 8 to it.
     func bytes(forKey code: UInt32) -> [UInt8] {

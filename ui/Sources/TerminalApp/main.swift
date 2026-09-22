@@ -27,6 +27,7 @@ final class App {
     var wmBase: OpaquePointer?
     var seat: OpaquePointer?
     var keyboardObject: OpaquePointer?
+    var pointerObject: OpaquePointer?
     var surface: OpaquePointer?
     var xdgSurface: OpaquePointer?
     var toplevel: OpaquePointer?
@@ -66,6 +67,14 @@ final class App {
 
     var command = "/bin/bash"
     let keyboard = Keyboard()
+    /// Copying and pasting, and with it the clipboard of the Mac.
+    let clipboard = Clipboard()
+    /// What a person has selected with the pointer, if anything.
+    var selection: Selection?
+    /// True while the button is down and the selection is being drawn out.
+    var isSelecting = false
+    /// Where the pointer is in the window, in points.
+    var pointer = (x: 0.0, y: 0.0)
     /// The size of one character, in pixels. It follows the scale, because
     /// the grid is drawn in the pixels of the buffer.
     var cell = CellSize(font: .monospaced(size: 15))
@@ -73,6 +82,15 @@ final class App {
     let fontSize: Double = 15
     var screen = Screen(columns: 80, rows: 24)
     var pty: PTY?
+
+    /// Scroll that has arrived and is not yet a whole line of the grid.
+    var scrolled = 0.0
+    /// What the last axis_source said made the scroll. A wheel and a
+    /// touchpad send the same event with numbers that mean different things.
+    var scrollIsWheel = true
+    /// How far a wheel turns for one line. wl_pointer counts a wheel in
+    /// degrees, and one click of a usual wheel is 15 of them: three lines.
+    static let degreesPerLine = 5.0
 }
 
 let app = App()
@@ -141,7 +159,8 @@ func draw(_ app: App) {
     let list = app.sizeClass == .widget
         ? ViewRenderer.displayList(for: TerminalWidget(screen: app.screen, title: app.screen.title),
                                    in: frame, scale: Double(app.scale))
-        : Grid.displayList(for: app.screen, cell: app.cell, in: frame)
+        : Grid.displayList(for: app.screen, cell: app.cell, in: frame,
+                           selection: app.selection)
     SoftwareRenderer.render(list, into: canvas)
     app.screen.hasChanged = false
     // The shell draws the title in the head of the window and in the card
@@ -160,6 +179,56 @@ func draw(_ app: App) {
     wl_surface_attach(surface, buffer, 0, 0)
     wl_surface_damage_buffer(surface, 0, 0, Int32.max, Int32.max)
     wl_surface_commit(surface)
+}
+
+/// Turns the scroll that has arrived into lines, and moves the view.
+///
+/// A wheel and a touchpad do not measure in the same units, so the step is
+/// not the same for the two. What is left over below one line is kept for
+/// the next event: a touchpad sends many small moves, and dropping each one
+/// would leave the view where it was.
+func applyScroll(_ app: App) {
+    let perLine = app.scrollIsWheel
+        ? App.degreesPerLine
+        : app.cell.height / Double(app.scale)
+    guard perLine > 0 else { return }
+    let lines = (app.scrolled / perLine).rounded(.towardZero)
+    guard lines != 0 else { return }
+    app.scrolled -= lines * perLine
+    // Down the axis is towards the newest line, which is less scrollback.
+    app.screen.scrollBack(by: -Int(lines))
+}
+
+/// The place in the text under the pointer.
+///
+/// wl_pointer gives a place in the surface, in points. The grid is drawn in
+/// the pixels of the buffer, so the scale of the window is between the two.
+/// A column one past the last is allowed: a drag that leaves the right edge
+/// of the window selects to the end of the line.
+func textPosition(_ app: App, x: Double, y: Double) -> TextPosition {
+    let column = Int((x * Double(app.scale) / app.cell.width).rounded(.down))
+    let row = Int((y * Double(app.scale) / app.cell.height).rounded(.down))
+    return app.screen.position(atRow: min(max(0, row), app.screen.rows - 1),
+                               column: min(max(0, column), app.screen.columns))
+}
+
+/// Puts what is selected on the clipboard of the system, and with it on the
+/// clipboard of the Mac.
+func copySelection(_ app: App, data: UnsafeMutableRawPointer?) {
+    guard let selection = app.selection, !selection.isEmpty else { return }
+    let text = app.screen.text(in: selection)
+    guard !text.isEmpty else { return }
+    app.clipboard.copy(text, data: data)
+}
+
+/// Writes what is on the clipboard to the shell, as if it had been typed.
+func pasteIntoTheShell(_ app: App, display: OpaquePointer?) {
+    guard let text = app.clipboard.paste(display: display), !text.isEmpty else { return }
+    // A shell reads a return as "run this", so a paste of several lines runs
+    // all but the last. That is what a terminal without bracketed paste
+    // does, and what a person pasting a command expects.
+    app.screen.scrollToBottom()
+    app.pty?.write(Array(text.utf8))
 }
 
 // MARK: - The listeners of libwayland
@@ -205,6 +274,8 @@ enum Listeners {
             case "wl_seat":
                 app.seat = OpaquePointer(wl_registry_bind(registry, name, wl_seat_interface_ptr(), 5))
                 wl_seat_add_listener(app.seat, Listeners.seat, data)
+            case "wl_data_device_manager":
+                app.clipboard.bind(registry: registry, name: name)
             case "wl_output":
                 app.output = OpaquePointer(
                     wl_registry_bind(registry, name, wl_output_interface_ptr(), 2))
@@ -261,12 +332,75 @@ enum Listeners {
     nonisolated(unsafe) static let seat = permanent(wl_seat_listener(
         capabilities: { data, seat, capabilities in
             let app = appState(data)
-            guard capabilities & WL_SEAT_CAPABILITY_KEYBOARD.rawValue != 0,
-                  app.keyboardObject == nil else { return }
-            app.keyboardObject = wl_seat_get_keyboard(seat)
-            wl_keyboard_add_listener(app.keyboardObject, Listeners.keyboard, data)
+            if capabilities & WL_SEAT_CAPABILITY_KEYBOARD.rawValue != 0,
+               app.keyboardObject == nil {
+                app.keyboardObject = wl_seat_get_keyboard(seat)
+                wl_keyboard_add_listener(app.keyboardObject, Listeners.keyboard, data)
+            }
+            // The pointer scrolls back through the lines that went off the
+            // top, and it draws out a selection.
+            if capabilities & WL_SEAT_CAPABILITY_POINTER.rawValue != 0,
+               app.pointerObject == nil {
+                app.pointerObject = wl_seat_get_pointer(seat)
+                wl_pointer_add_listener(app.pointerObject, Listeners.pointer, data)
+            }
+            // The clipboard belongs to the seat as well.
+            app.clipboard.start(seat: seat, data: data)
         },
         name: { _, _, _ in }
+    ))
+
+    /// The pointer. Only the wheel does anything: there is no text to select
+    /// and nothing in the window to press.
+    nonisolated(unsafe) static let pointer = permanent(wl_pointer_listener(
+        enter: { data, _, serial, _, x, y in
+            let app = appState(data)
+            app.clipboard.lastSerial = serial
+            app.pointer = (wl_fixed_to_double(x), wl_fixed_to_double(y))
+        },
+        leave: { _, _, _, _ in },
+        motion: { data, _, _, x, y in
+            let app = appState(data)
+            app.pointer = (wl_fixed_to_double(x), wl_fixed_to_double(y))
+            guard app.isSelecting, let anchor = app.selection?.anchor else { return }
+            let focus = textPosition(app, x: app.pointer.x, y: app.pointer.y)
+            let drawn = Selection(anchor: anchor, focus: focus)
+            guard drawn != app.selection else { return }
+            app.selection = drawn
+            app.screen.hasChanged = true
+        },
+        button: { data, _, serial, _, button, state in
+            let app = appState(data)
+            app.clipboard.lastSerial = serial
+            // BTN_LEFT of the kernel. Only that one selects.
+            guard button == 0x110 else { return }
+            if state == WL_POINTER_BUTTON_STATE_PRESSED.rawValue {
+                let place = textPosition(app, x: app.pointer.x, y: app.pointer.y)
+                app.selection = Selection(anchor: place, focus: place)
+                app.isSelecting = true
+                app.screen.hasChanged = true       // the last selection goes
+            } else {
+                app.isSelecting = false
+                // A click with no drag in it is not a selection; it only
+                // takes the last one away.
+                if app.selection?.isEmpty == true { app.selection = nil }
+            }
+        },
+        axis: { data, _, _, axis, value in
+            guard axis == WL_POINTER_AXIS_VERTICAL_SCROLL.rawValue else { return }
+            appState(data).scrolled += wl_fixed_to_double(value)
+        },
+        // The events of one movement end with a frame, and the view moves
+        // once for all of them.
+        frame: { data, _ in applyScroll(appState(data)) },
+        axis_source: { data, _, source in
+            appState(data).scrollIsWheel = source == WL_POINTER_AXIS_SOURCE_WHEEL.rawValue
+        },
+        axis_stop: { _, _, _, _ in },
+        axis_discrete: { _, _, _, _ in },
+        axis_value120: { _, _, _, _ in },
+        axis_relative_direction: { _, _, _, _ in },
+        warp: { _, _, _, _ in }
     ))
 
     nonisolated(unsafe) static let keyboard = permanent(wl_keyboard_listener(
@@ -278,11 +412,33 @@ enum Listeners {
         },
         enter: { _, _, _, _, _ in },
         leave: { _, _, _, _ in },
-        key: { data, _, _, _, key, keyState in
+        key: { data, _, serial, _, key, keyState in
             let app = appState(data)
+            app.clipboard.lastSerial = serial
             guard keyState == WL_KEYBOARD_KEY_STATE_PRESSED.rawValue else { return }
+            // Copy, paste and the keys that scroll are read before the key
+            // becomes bytes: Control+Shift+C makes the same byte as
+            // Control+C, which is the one that stops a program.
+            if let chord = app.keyboard.chord(forKey: key) {
+                switch chord {
+                case .copy: copySelection(app, data: data)
+                case .paste: pasteIntoTheShell(app, display: wl_proxy_get_display(app.surface))
+                case .scrollUp: app.screen.scrollBack(by: app.screen.rows / 2)
+                case .scrollDown: app.screen.scrollBack(by: -(app.screen.rows / 2))
+                }
+                return
+            }
             let bytes = app.keyboard.bytes(forKey: key)
-            if !bytes.isEmpty { app.pty?.write(bytes) }
+            guard !bytes.isEmpty else { return }
+            // A person who types wants to see what they are typing, so the
+            // view goes back to the live screen, as every terminal does, and
+            // what was selected is no longer what they are looking at.
+            app.screen.scrollToBottom()
+            if app.selection != nil {
+                app.selection = nil
+                app.screen.hasChanged = true
+            }
+            app.pty?.write(bytes)
         },
         modifiers: { data, _, _, depressed, latched, locked, group in
             appState(data).keyboard.setModifiers(depressed: depressed, latched: latched,

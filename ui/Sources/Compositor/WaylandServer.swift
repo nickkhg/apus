@@ -98,6 +98,8 @@ final class Toplevel {
 
 final class WaylandServer {
     let display: Display
+    /// What one app copied and another pastes, and the same text on the Mac.
+    let clipboard: Clipboard
     private let shm: Shm
     var socketName: String { display.socketName }
 
@@ -144,6 +146,7 @@ final class WaylandServer {
     init(loop: EventLoop) throws(Display.Failure) {
         display = try Display(loop: loop)
         shm = Shm(display: display)
+        clipboard = Clipboard(display: display, loop: loop)
         display.addGlobal(WlCompositor.self, version: 6) { [unowned self] compositor in
             compositor.onRequest = { [unowned self, unowned compositor] request in
                 handle(request, of: compositor)
@@ -162,8 +165,6 @@ final class WaylandServer {
             }
         }
         display.addGlobal(WlSeat.self, version: 7) { [unowned self] seat in
-            // The seat has a keyboard only. The shell answers the pointer,
-            // and an app gets no pointer events yet.
             // The seat has a keyboard and a pointer. The shell keeps the
             // pointer while it is over its own chrome; the compositor gives
             // it here only while it is over the window of an app.
@@ -297,6 +298,31 @@ final class WaylandServer {
         }
     }
 
+    /// A wheel or a touchpad, for the surface that has the pointer.
+    ///
+    /// The numbers are wl_pointer's: on the vertical axis, down is positive,
+    /// and one click of a usual wheel is 15. `axis_source` says which device
+    /// they came from, so that an app can tell one click of a wheel from a
+    /// finger that moved a little.
+    func sendPointer(scrollDX dx: Double, dy: Double, fromWheel: Bool, time: UInt32) {
+        guard let resource = pointerFocus?.resource, !resource.isDestroyed else { return }
+        let source = fromWheel ? WlPointer.AxisSource.wheel : .finger
+        for pointer in pointers(of: resource.client) {
+            // axis_source came with version 5. An older app gets the axis
+            // events alone, which say the same thing less exactly.
+            if pointer.version >= 5 { pointer.sendAxisSource(axisSource: source.rawValue) }
+            if dy != 0 {
+                pointer.sendAxis(time: time,
+                                 axis: WlPointer.Axis.verticalScroll.rawValue, value: dy)
+            }
+            if dx != 0 {
+                pointer.sendAxis(time: time,
+                                 axis: WlPointer.Axis.horizontalScroll.rawValue, value: dx)
+            }
+            pointer.sendFrame()
+        }
+    }
+
     /// The wl_pointer objects of one client.
     private func pointers(of client: Client?) -> [Resource<WlPointer>] {
         pointers.filter { $0.client === client && !$0.isDestroyed }
@@ -306,6 +332,9 @@ final class WaylandServer {
     /// when the window in front changes.
     func setKeyboardFocus(_ surface: Surface?) {
         guard focus !== surface else { return }
+        // The clipboard goes with the keyboard: the protocol offers what
+        // was copied to the app that a person is typing into.
+        clipboard.focusChanged(to: surface?.resource?.client)
         if let old = focus?.resource, !old.isDestroyed {
             for keyboard in keyboards(of: old.client) {
                 keyboard.sendLeave(serial: display.nextSerial(), surface: old)
