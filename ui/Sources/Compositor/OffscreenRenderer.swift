@@ -63,6 +63,15 @@ final class OffscreenRasterizer: FrameRasterizer {
     /// waits, as it did before.
     private let mapBufferRange: MapBufferRange?
     private let unmapBuffer: UnmapBuffer?
+    /// What the pack buffers are made with.
+    ///
+    /// GL_STREAM_READ says what a buffer that the GPU writes and the CPU
+    /// reads is for, and it came with OpenGL ES 3. On ES 2 the pixel buffer
+    /// is an extension and the hint is not: glBufferData answers an invalid
+    /// enum, the buffer is never given its size, every map of it gives
+    /// nothing back, and the screen stays black. The hint is only advice,
+    /// so an ES 2 context gets one that it knows.
+    private let packUsage: GLenum
 
     private typealias MapBufferRange = @convention(c)
         (GLenum, GLintptr, GLsizeiptr, GLbitfield) -> UnsafeMutableRawPointer?
@@ -70,12 +79,28 @@ final class OffscreenRasterizer: FrameRasterizer {
 
     init() throws(GLFailure) {
         (display, context) = try OffscreenRasterizer.startEGL()
-        mapBufferRange = unsafeBitCast(
-            eglGetProcAddress("glMapBufferRangeEXT"), to: MapBufferRange?.self)
-        unmapBuffer = unsafeBitCast(
-            eglGetProcAddress("glUnmapBufferOES"), to: UnmapBuffer?.self)
         // The context is current, so a shader can compile.
         renderer = try GLRenderer()
+        // eglGetProcAddress answers for a function that the driver knows,
+        // whether or not this context can call it: Mesa hands back a
+        // dispatch stub either way. So what the context says it has decides,
+        // and not whether an address came back. Without that, a context of
+        // OpenGL ES 2 took this path, glBindBuffer(GL_PIXEL_PACK_BUFFER)
+        // was an invalid enum, every frame came back empty, and the screen
+        // was black.
+        packUsage = OffscreenRasterizer.isES3()
+            ? GLenum(CGLES_STREAM_READ) : GLenum(GL_DYNAMIC_DRAW)
+        if OffscreenRasterizer.canReadIntoBuffers() {
+            mapBufferRange = unsafeBitCast(
+                eglGetProcAddress("glMapBufferRange")
+                    ?? eglGetProcAddress("glMapBufferRangeEXT"), to: MapBufferRange?.self)
+            unmapBuffer = unsafeBitCast(
+                eglGetProcAddress("glUnmapBuffer")
+                    ?? eglGetProcAddress("glUnmapBufferOES"), to: UnmapBuffer?.self)
+        } else {
+            mapBufferRange = nil
+            unmapBuffer = nil
+        }
         log("GPU-RENDERER \(OffscreenRasterizer.describe()) (offscreen)")
         log("screen: a frame comes back "
             + (mapBufferRange != nil && unmapBuffer != nil
@@ -243,10 +268,32 @@ final class OffscreenRasterizer: FrameRasterizer {
     }
 
     private static func describe() -> String {
-        func text(_ name: GLenum) -> String {
-            glGetString(name).map { String(cString: $0) } ?? "?"
-        }
-        return "\(text(GLenum(GL_RENDERER))) \(text(GLenum(GL_VERSION)))"
+        "\(string(GLenum(GL_RENDERER))) \(string(GLenum(GL_VERSION)))"
+    }
+
+    private static func string(_ name: GLenum) -> String {
+        glGetString(name).map { String(cString: $0) } ?? ""
+    }
+
+    /// True when this context can read a frame into a pixel buffer and map
+    /// it, which is what lets a frame come back without waiting for it.
+    ///
+    /// OpenGL ES 3 has all three in the core. ES 2 has them only as
+    /// extensions, and a driver that offers the functions to
+    /// eglGetProcAddress does not thereby offer them to this context.
+    static func canReadIntoBuffers() -> Bool {
+        if isES3() { return true }
+        let extensions = string(GLenum(GL_EXTENSIONS))
+        return ["GL_NV_pixel_buffer_object", "GL_EXT_map_buffer_range", "GL_OES_mapbuffer"]
+            .allSatisfy(extensions.contains)
+    }
+
+    /// True for a context of OpenGL ES 3 or later. The version string of ES
+    /// starts "OpenGL ES " and then the number.
+    static func isES3() -> Bool {
+        let version = string(GLenum(GL_VERSION))
+        guard let digit = version.drop(while: { !$0.isNumber }).first else { return false }
+        return digit >= "3"
     }
 
     /// Makes the texture that a frame is drawn into, at this size.
@@ -300,7 +347,7 @@ final class OffscreenRasterizer: FrameRasterizer {
             if bytes != packBytes {
                 for buffer in packBuffers {
                     glBindBuffer(CGLES_PIXEL_PACK_BUFFER, buffer)
-                    glBufferData(CGLES_PIXEL_PACK_BUFFER, bytes, nil, CGLES_STREAM_READ)
+                    glBufferData(CGLES_PIXEL_PACK_BUFFER, bytes, nil, packUsage)
                 }
                 glBindBuffer(CGLES_PIXEL_PACK_BUFFER, 0)
                 packBytes = bytes
