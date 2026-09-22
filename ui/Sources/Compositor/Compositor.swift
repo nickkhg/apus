@@ -89,6 +89,9 @@ public final class Compositor {
     /// Writes the screen to a file for the tests, when
     /// APUS_SCREENSHOT_SOCKET names a socket. Otherwise nil.
     private var screenshot: Screenshot?
+    /// Carries the clipboard to and from the machine that runs the VM.
+    private var hostClipboard: HostClipboard!
+
     /// The shell's view tree: its `@State` values and the pointer.
     private let host = ViewHost()
     /// What the shell can ask the compositor to do.
@@ -110,10 +113,10 @@ public final class Compositor {
     /// Counts the windows that have been opened, to name each one.
     private var nextWindowID = 0
     /// The apps in /Applications. The dock shows one icon for each.
-    private let apps: [AppBundle]
+    private var apps: [AppBundle]
     /// The same apps, as the shell gets them. They do not change, so the
     /// compositor makes them once and not for each frame.
-    private let appEntries: [AppEntry]
+    private var appEntries: [AppEntry]
 
     /// How many pixels there are to the point. See Options.scale.
     private var scale: Double = 1
@@ -144,12 +147,19 @@ public final class Compositor {
         pointer = (Double(screen.width) / 2, Double(screen.height) / 2)
         apps = AppCatalog.bundles()
         appEntries = apps.map(\.entry)
-        debug("\(apps.count) apps in \(AppCatalog.directory)")
         // An app that the dock starts connects to this compositor. The
         // compositor does not wait for the child, so the kernel removes the
         // child when it ends.
         setenv("WAYLAND_DISPLAY", server.socketName, 1)
+        setSessionEnvironment()
         signal(SIGCHLD, SIG_IGN)
+
+        // The clipboard of the apps and the clipboard of the Mac are the
+        // same clipboard. On real hardware there is no Mac and no socket,
+        // and the apps go on sharing a clipboard between themselves.
+        hostClipboard = HostClipboard(loop: loop)
+        server.clipboard.textChanged = { [unowned self] text in hostClipboard.send(text) }
+        hostClipboard.received = { [unowned self] text in server.clipboard.setHostText(text) }
 
         loop.watch(fd: seat.fd) { [unowned self] in seat.dispatch() }
         loop.watch(fd: drm.fd) { [unowned self] in drm.handleEvents() }
@@ -650,6 +660,47 @@ public final class Compositor {
         return "\(seconds / 3600) h"
     }
 
+    /// Tells the apps that they are on Wayland.
+    ///
+    /// A toolkit that can draw on more than one kind of display server picks
+    /// one when it starts, and most of them still pick X11 first. Each reads
+    /// an environment variable of its own to be told otherwise, and a
+    /// session sets them all: that is how a program that knows nothing about
+    /// Apus comes up on it without being told anything about it.
+    ///
+    /// Apus has no X server at all, so there is nothing to fall back to and
+    /// nothing to weigh up. A toolkit that is not listed here, or one that
+    /// takes a command line option rather than a variable, needs a desktop
+    /// entry of its own in `~/.local/share/applications`, which wins over
+    /// the one that the package installed. That entry can put `env` in
+    /// front of the program to change one of these for one app.
+    ///
+    /// Each of them is set over whatever was there. systemd starts the shell
+    /// as a service on tty1 and sets `XDG_SESSION_TYPE=tty`, which says how
+    /// the compositor was started and not what it offers the apps it starts.
+    /// Leaving that in place is how an app ends up looking for an X server.
+    private func setSessionEnvironment() {
+        let session = [
+            // What kind of session this is. Chromium and others read it.
+            "XDG_SESSION_TYPE": "wayland",
+            "XDG_CURRENT_DESKTOP": "Apus",
+            "GDK_BACKEND": "wayland",                   // GTK 3 and GTK 4
+            "QT_QPA_PLATFORM": "wayland",               // Qt 5 and Qt 6
+            "SDL_VIDEODRIVER": "wayland",               // SDL 2 and SDL 3
+            "CLUTTER_BACKEND": "wayland",
+            "MOZ_ENABLE_WAYLAND": "1",                  // Firefox
+            "ELECTRON_OZONE_PLATFORM_HINT": "auto",     // apps built on Electron
+        ]
+        for (name, value) in session { setenv(name, value, 1) }
+    }
+
+    /// Reads the apps of the machine again: the bundles of /Applications and
+    /// the desktop entries of the packages that are installed.
+    private func readApps() {
+        apps = AppCatalog.bundles()
+        appEntries = apps.map(\.entry)
+    }
+
     /// Puts a window in front, which makes it the principal.
     private func raiseWindow(_ id: String) {
         guard let index = windows.firstIndex(where: { $0.id == id }) else { return }
@@ -741,6 +792,13 @@ public final class Compositor {
             } else if code == 0x110 {
                 host.pointerButton(pressed: pressed)
             }
+        case .scroll(let dx, let dy, let source):
+            // A scroll goes where the pointer is, as a button does. The
+            // shell has nothing that scrolls yet, so a scroll over its own
+            // chrome goes nowhere.
+            guard windowUnderPointer != nil else { break }
+            server.sendPointer(scrollDX: dx, dy: dy, fromWheel: source == .wheel,
+                               time: monotonicMilliseconds())
         case .key(let key):
             // Ctrl+Alt+Backspace (XKB_KEY_BackSpace = 0xff08) quits.
             if key.pressed, key.control, key.alt, key.keysym == 0xFF08 {
@@ -749,6 +807,10 @@ public final class Compositor {
             }
             // The Super key opens Summon and closes it again.
             if key.pressed, key.keysym == Keysym.superLeft || key.keysym == Keysym.superRight {
+                // The list is read again as it opens, so an app that was
+                // installed a moment ago is in it. Reading a few hundred
+                // small files takes less time than the list takes to appear.
+                if !shell.summonIsOpen { readApps() }
                 shell.summonIsOpen.toggle()
                 screen.setNeedsFrame()
                 return
