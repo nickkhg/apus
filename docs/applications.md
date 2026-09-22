@@ -1,6 +1,6 @@
 # Applications
 
-An app of Apus is a bundle in `/Applications`. The compositor reads the bundles when it starts. Summon lists one line for each bundle. A person chooses a line to start the app, and the layout gives the app a cell of the canvas.
+An app of Apus is a bundle in `/Applications`. A program that came from a package is a desktop entry in `/usr/share/applications`. The compositor reads both, and Summon lists one line for each. A person chooses a line to start the app, and the layout gives the app a cell of the canvas.
 
 ## A bundle
 
@@ -47,12 +47,101 @@ To add an app:
 2. Make the directory `ui/Apps/<Name>.app` with an `app.conf` in it.
 3. Run `make build`.
 
+## The apps of the packages
+
+A program that comes from a package has no bundle. It has the desktop entry
+that it ships, which pacman installs in `/usr/share/applications`:
+
+```
+/usr/share/applications/chromium.desktop
+    [Desktop Entry]
+    Type=Application
+    Name=Chromium
+    Exec=/usr/bin/chromium %U
+```
+
+`DesktopEntries.swift` reads those into the same list as the bundles, so
+`pacman -S chromium` is all that a new app needs. Summon reads the list again
+each time it opens, so an app that was installed a moment ago is in it
+without a restart.
+
+It reads the directories that the freedesktop.org specification names:
+`$XDG_DATA_HOME/applications` (or `~/.local/share/applications`), and then
+`$XDG_DATA_DIRS`, which is `/usr/local/share:/usr/share` by default. The
+first file of a name wins.
+
+| Key | What it does |
+|---|---|
+| `Type` | Must be `Application`. |
+| `Name` | The name that Summon shows. |
+| `Exec` | The program and its arguments. The field codes (`%u`, `%f`, …) stand for a thing to open, and Apus opens an app with nothing, so they go. |
+| `TryExec` | When it names a program that is not there, the entry is dropped. |
+| `NoDisplay`, `Hidden` | `true` drops the entry. |
+| `Terminal` | `true` drops the entry: Apus cannot give a program a terminal to start in. |
+
+The id of such an app is the name of its file without `.desktop`, which is
+also the `app_id` that a Wayland window of it gives. A bundle of
+`/Applications` with the same id wins, so an app of Apus keeps its name and
+its colour.
+
+A desktop entry names an icon of a theme, and Apus does not draw those, so
+the tile of the app is a colour worked out from its id. It is the same colour
+on every boot.
+
+### Telling an app that it is on Wayland
+
+A toolkit that can draw on more than one kind of display server picks one when
+it starts, and most still pick X11 first. Each reads a variable of its own to
+be told otherwise, and the compositor sets them all before it starts anything:
+
+```
+XDG_SESSION_TYPE=wayland     XDG_CURRENT_DESKTOP=Apus
+GDK_BACKEND=wayland          QT_QPA_PLATFORM=wayland
+SDL_VIDEODRIVER=wayland      CLUTTER_BACKEND=wayland
+MOZ_ENABLE_WAYLAND=1         ELECTRON_OZONE_PLATFORM_HINT=auto
+```
+
+That is how a program that knows nothing about Apus comes up on it without
+being told anything about it. Apus has no X server, so there is nothing to
+fall back to: an app that cannot draw on Wayland fails, and says so.
+
+Each one is set over whatever was there. systemd starts the shell as a service
+on tty1 and sets `XDG_SESSION_TYPE=tty`, which says how the compositor was
+started, not what it offers the apps that it starts; an app that reads that
+value goes looking for an X server. To give one app a different value, put
+`env` in front of the program in a desktop entry of your own.
+
+### An app that needs a command line option
+
+Some programs take an option rather than a variable, and the packaged desktop
+entry does not pass it. Chromium is one: it picks X11 unless it is given
+`--ozone-platform=wayland`, and it refuses to run as root without
+`--no-sandbox`.
+
+There is no key in any package format that says such a thing, so there is no
+way to know it from the package. The answer is the one that every Linux
+desktop uses: a desktop entry of your own, which wins over the packaged one.
+
+```sh
+mkdir -p ~/.local/share/applications
+sed 's|^Exec=.*|Exec=/usr/bin/chromium --no-sandbox --ozone-platform=wayland %U|' \
+    /usr/share/applications/chromium.desktop > ~/.local/share/applications/chromium.desktop
+```
+
+`--no-sandbox` is needed only because Apus runs everything as root. A program
+that refuses to run as root is right to: that is the reason, and an ordinary
+user account is the fix.
+
 ## How an app starts
 
 1. The Super key opens Summon. A person types to narrow the list, and presses Enter.
 2. Summon asks the compositor: `ShellActions.openApp(id)`.
 3. If a window of that app is open, it comes to the front and gets the keyboard.
 4. If no window is open, `posix_spawn` starts the program of the bundle. The child gets the environment of the compositor, which has `WAYLAND_DISPLAY` in it, and a session of its own. The compositor does not wait for the child.
+
+   The child also gets its signals back. A signal that a process ignores, and a signal that it blocks, both cross `exec`, and the compositor does both: it ignores `SIGCHLD` so that it never has to wait for an app, and its event loop blocks `SIGINT` and `SIGTERM` to read them from a file descriptor. Neither belongs to the app, so `posix_spawn` sets every signal back to its default action with an empty mask (`AppCatalog.resetSignals`). `apus-terminal` does the same for the shell it starts.
+
+   A program that inherits an ignored `SIGCHLD` cannot wait for its own children: the kernel takes each one away as it ends, and `waitpid` answers `ECHILD`. pacman does that for every package it installs and every hook it runs, so an install inside Apus failed on all of them. A program that inherits a blocked `SIGINT` cannot be stopped with Ctrl+C.
 5. The app connects, and it opens a window. The layout gives the window a cell, and the window gets the keyboard.
 
 The compositor writes `APP-STARTED <id> pid <number>` on the console, and `WINDOW-MAPPED` when the window comes.
@@ -105,11 +194,37 @@ The terminal says `TERM=xterm-256color` to the programs in it. It understands th
 
 The terminal ends when the shell in it ends. The Close button of the panel also ends it, because the app stops at `xdg_toplevel.close`.
 
+### Scrolling back
+
+The terminal keeps the lines that go off the top of the screen — 5000 of them
+— and the wheel scrolls back into them. A trackpad works the same way: the
+compositor sends `wl_pointer.axis` to the window under the pointer, with
+`axis_source` saying whether a wheel or a finger made it, and the terminal
+turns that into lines.
+
+While the view stands above the live screen, the cursor is not drawn: it
+marks a place that the view is not showing. Typing brings the view back to
+the live screen, as every terminal does. Output does not: text that arrives
+while a person is reading moves the screen underneath the view, and the same
+lines stay in front of them.
+
+Only the whole screen scrolling counts as history. A program that scrolls a
+part of the screen, such as an editor with a status line, is drawing rather
+than printing, and what it moves is not something to read back.
+
+### Selecting and pasting
+
+Drag with the left button to select, `Ctrl+Shift+C` to copy, `Ctrl+Shift+V`
+to paste. What is copied goes on the clipboard of the system and on the
+clipboard of the Mac. See [clipboard.md](clipboard.md).
+
 ### Limits of the terminal
 
-- There is no text that a user can select, and no copy and no paste.
-- There are no lines above the first line: what scrolls away is gone.
-- The pointer does nothing in the window. An app gets no pointer events yet.
+- A selection is by character. There is no selecting a word or a line, and no
+  rectangular selection.
+- There is no primary selection: a selection is not on the clipboard until
+  `Ctrl+Shift+C`, and the middle button does not paste.
+- A paste is not bracketed, so a paste of several lines runs all but the last.
 - A key does not repeat while it stays down.
 - The terminal reads underline, italic and a cursor of another shape, and then drops them.
 - One window. A second click on the icon brings the window to the front.

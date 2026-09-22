@@ -10,8 +10,17 @@ Apus has two kinds of packages:
 Use pacman:
 
 ```sh
-pacman -S htop
+pacman -Syu htop
 ```
+
+Sync the databases (`-y`) in the same command. The image ships the databases
+as they were when it was built, and Arch Linux ARM keeps only the current
+version of a package on its mirrors, so `pacman -S` on its own can ask for a
+version that is no longer there.
+
+An app that a package installs appears in Summon by itself: pacman installs
+the desktop entry of the program, and the compositor reads those. See
+[applications.md](applications.md).
 
 ## The [apus] repository
 
