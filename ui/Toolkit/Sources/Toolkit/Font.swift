@@ -32,3 +32,15 @@ public struct Font: Sendable, Equatable, Hashable {
     public static let body = Font(size: 15)
     public static let caption = Font(size: 12)
 }
+
+extension Font {
+    /// How wide `string` is in this font, in pixels, with nothing rounded.
+    ///
+    /// A layout works in whole points, so the size that `ViewRenderer` gives
+    /// for a `Text` is rounded up to one. Code that puts characters in cells
+    /// of its own needs the advance as the font has it: rounded, a cell
+    /// drifts from the glyphs in it.
+    public func width(of string: String) -> Double {
+        FontCache.shared.shape(string, font: self).width
+    }
+}

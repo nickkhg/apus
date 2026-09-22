@@ -12,26 +12,24 @@ public struct CellSize: Sendable {
 
     /// Measures the font.
     ///
-    /// The measured width of a piece of text is the advances of its
-    /// characters plus a small constant. Dividing one measurement by the
-    /// number of characters therefore gives a width that is a little too
-    /// large, and the grid then steps further than the glyphs do: the text
-    /// drifts to the left of its cells, one part of a pixel for each
-    /// character, and the cursor ends up to the right of the character that
-    /// it marks.
+    /// A cell is one advance of the face wide, and every glyph of a
+    /// monospaced face has the same advance. The width keeps its fraction:
+    /// a whole number would make the grid step further than the glyphs do,
+    /// and the text would drift to the left of its cells, one part of a
+    /// pixel for each character.
     ///
-    /// Two measurements that differ by a known number of characters cancel
-    /// the constant and give the advance exactly. The width keeps its
-    /// fraction, because a whole number would bring the same drift back.
+    /// The width comes from the font itself and not from `ViewRenderer`,
+    /// which rounds the size of a text up to a whole point. A cell that is
+    /// a fraction of a pixel narrower than the advance makes a frame that
+    /// is narrower than the text it holds, and a `Text` that does not fit
+    /// its frame cuts itself and ends in "…". Over a line of a terminal
+    /// that eats the last characters of every line.
     public init(font: Font) {
         self.font = font
-        let steps = 20
-        let one = ViewRenderer.size(of: Text("M").font(font), fitting: .unspecified)
-        let many = ViewRenderer.size(of: Text(String(repeating: "M", count: steps + 1)).font(font),
-                                     fitting: .unspecified)
-        width = max(1, (many.width - one.width) / Double(steps))
+        width = max(1, font.width(of: "M"))
         // A line has a little space over and under the characters.
-        height = max(1, (one.height + 2).rounded(.up))
+        let line = ViewRenderer.size(of: Text("M").font(font), fitting: .unspecified)
+        height = max(1, (line.height + 2).rounded(.up))
     }
 
     /// How many characters fit in this many pixels.
@@ -51,10 +49,20 @@ public enum Grid {
     /// terminal is opaque, so the alpha byte is always 255.
     private static func opaque(_ rgb: UInt32) -> UInt32 { rgb | 0xFF00_0000 }
 
+    /// The colour over the characters that are selected.
+    ///
+    /// It goes over the line, as the block at the cursor does, and it lets
+    /// the characters through: output with colours in it stays readable, and
+    /// no run has to be drawn twice.
+    public static let selectionColor: UInt32 = 0x4C8DF6
+
     /// The items that draw `screen` in `frame`.
-    public static func displayList(for screen: Screen, cell: CellSize, in frame: Rect) -> DisplayList {
+    public static func displayList(for screen: Screen, cell: CellSize, in frame: Rect,
+                                   selection: Selection? = nil) -> DisplayList {
         var list: DisplayList = [.fill(frame, color: opaque(Palette.background))]
-        for (row, line) in screen.lines.enumerated() {
+        // What the window draws is the live screen, or the lines above it
+        // when a person has scrolled back into what went off the top.
+        for (row, line) in screen.visibleLines.enumerated() {
             let y = Double(frame.y) + Double(row) * cell.height
             for run in runs(of: line) {
                 let x = Double(frame.x) + Double(run.column) * cell.width
@@ -77,8 +85,20 @@ public enum Grid {
                     in: Rect(x: Int(x), y: Int(y), width: Int(width.rounded(.up)),
                              height: Int(cell.height)))
             }
+            // The selection goes on after the runs of the line, so that it
+            // covers the whole of what is selected and not one run of it.
+            if let columns = selection?.columns(onLine: screen.firstVisibleLine + row,
+                                                width: line.count) {
+                let x = Double(frame.x) + Double(columns.lowerBound) * cell.width
+                let width = Double(columns.count) * cell.width
+                list.append(.fill(Rect(x: Int(x), y: Int(y),
+                                       width: Int(width.rounded(.up)), height: Int(cell.height)),
+                                  color: Color(hex: selectionColor, alpha: 0.35).premultiplied))
+            }
         }
-        if screen.isCursorVisible {
+        // The cursor marks a place on the live screen. A view that stands
+        // above it would put the block on a line that is not that one.
+        if screen.isCursorVisible, !screen.isScrolledBack {
             list.append(cursor(of: screen, cell: cell, in: frame))
         }
         return list

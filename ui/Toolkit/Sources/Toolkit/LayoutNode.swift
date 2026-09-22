@@ -115,9 +115,20 @@ final class StackNode: LayoutNode {
         return .along(axis, main, across: across)
     }
 
-    /// Shares the space along the axis between the children. Each child gets
-    /// an equal share of what is left, least flexible child first, so that
-    /// fixed-size children keep their size and spacers take the remainder.
+    /// Shares the space along the axis between the children.
+    ///
+    /// The children that have a size of their own go first, least flexible
+    /// first. Each one is offered an equal share of what is left, so a child
+    /// that wants less than its share leaves the rest to the ones after it,
+    /// and children that all want more than there is are cut by the same
+    /// amount.
+    ///
+    /// The children that grow without limit — a Spacer, a colour, a frame
+    /// with `maxWidth: .infinity` — come after, and share what is left over.
+    /// Such a child has no size to keep, so counting it as a claimant while
+    /// the others are served would take room from a child that does have
+    /// one: a label beside a Spacer would be offered half of the row and
+    /// would cut itself short in the middle of an empty row.
     private func childSizes(fitting proposal: Proposal) -> [Size] {
         let across = proposal.length(axis.other)
         guard let available = proposal.length(axis), available.isFinite else {
@@ -129,30 +140,41 @@ final class StackNode: LayoutNode {
 
         var sizes = [Size](repeating: .zero, count: children.count)
         var remaining = available - totalSpacing
-        var count = children.count
-        for index in orderByFlexibility(across: across) {
-            let share = count > 0 ? max(0, remaining / Double(count)) : 0
-            let size = children[index].size(fitting: Proposal(width: 0, height: 0)
-                .replacing(axis, with: share)
-                .replacing(axis.other, with: across))
-            sizes[index] = size
-            remaining -= size.length(axis)
-            count -= 1
+
+        /// Gives these children an equal share of what is left, in order.
+        func serve(_ order: [Int]) {
+            var count = order.count
+            for index in order {
+                let share = count > 0 ? max(0, remaining / Double(count)) : 0
+                let size = children[index].size(fitting: Proposal(width: 0, height: 0)
+                    .replacing(axis, with: share)
+                    .replacing(axis.other, with: across))
+                sizes[index] = size
+                remaining -= size.length(axis)
+                count -= 1
+            }
         }
+
+        let order = orderByFlexibility(across: across)
+        serve(order.bounded)
+        serve(order.unbounded)
         return sizes
     }
 
-    /// The children, least flexible first. A child's flexibility is the
-    /// difference between its largest and its smallest length.
-    private func orderByFlexibility(across: Double?) -> [Int] {
+    /// The children in the order that they are served: the ones with a size
+    /// of their own, least flexible first, and then the ones that grow
+    /// without limit. A child's flexibility is the difference between its
+    /// largest and its smallest length.
+    private func orderByFlexibility(across: Double?) -> (bounded: [Int], unbounded: [Int]) {
         let smallest = Proposal(width: 0, height: 0).replacing(axis.other, with: across)
         let largest = Proposal(width: .infinity, height: .infinity).replacing(axis.other, with: across)
         let flexibility = children.map { child in
             child.size(fitting: largest).length(axis) - child.size(fitting: smallest).length(axis)
         }
-        return children.indices.sorted { left, right in
+        let order = children.indices.sorted { left, right in
             flexibility[left] == flexibility[right] ? left < right : flexibility[left] < flexibility[right]
         }
+        return (order.filter { flexibility[$0].isFinite }, order.filter { !flexibility[$0].isFinite })
     }
 
     override func render(in frame: Frame, into pass: inout RenderPass) {

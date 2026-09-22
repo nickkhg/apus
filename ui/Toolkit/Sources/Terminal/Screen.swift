@@ -75,11 +75,27 @@ public enum Palette {
 public final class Screen {
     public private(set) var columns: Int
     public private(set) var rows: Int
+    /// The live screen: the lines that the program writes to.
     public private(set) var lines: [[Cell]]
     public private(set) var cursor = (row: 0, column: 0)
     public private(set) var isCursorVisible = true
     /// True when the screen changed and must be drawn again.
     public var hasChanged = true
+
+    /// The lines that have gone off the top of the screen, oldest first. A
+    /// person scrolls back into them; a program never sees them again.
+    public private(set) var history: [[Cell]] = []
+    /// How many lines above the live screen the view starts. Zero is the
+    /// live screen, which is where a terminal stands while a person works.
+    public private(set) var scrollback = 0
+    /// How many lines are kept above the screen. Beyond this the oldest go.
+    public static let historyLimit = 5000
+    /// How many lines have gone off the top since the terminal began.
+    ///
+    /// It only grows, so a place in the text keeps its number however much
+    /// scrolls past it. A selection is kept in these numbers: the lines
+    /// under it move, and the selection stays on the words it was made on.
+    public private(set) var scrolledLines = 0
 
     private var style = Style()
     private var savedCursor = (row: 0, column: 0)
@@ -136,7 +152,88 @@ public final class Screen {
         cursor = (row: min(max(0, cursor.row - first), rows - 1), column: min(cursor.column, columns - 1))
         scrollTop = 0
         scrollBottom = rows - 1
+        scrollback = min(scrollback, history.count)
         hasChanged = true
+    }
+
+    // MARK: - Looking back over what scrolled away
+
+    /// The lines that the window draws: the live screen, or the lines above
+    /// it when a person has scrolled back.
+    public var visibleLines: [[Cell]] {
+        guard scrollback > 0 else { return lines }
+        let above = min(scrollback, history.count)
+        let old = history[(history.count - above)...].map(fitted)
+        return Array((old + lines).prefix(rows))
+    }
+
+    /// True when the view stands above the live screen. The cursor is not
+    /// drawn then: it marks a place that the view is not showing.
+    public var isScrolledBack: Bool { scrollback > 0 }
+
+    /// The number of the first line that the window draws. The last one it
+    /// draws is this plus `rows` less one.
+    public var firstVisibleLine: Int { scrolledLines - scrollback }
+
+    /// The numbers of the lines that are still there: the oldest one kept,
+    /// up to and including the last line of the live screen.
+    public var lineNumbers: ClosedRange<Int> {
+        (scrolledLines - history.count)...(scrolledLines + rows - 1)
+    }
+
+    /// The line with this number, from the lines above or from the live
+    /// screen, or nothing when it has gone.
+    public func line(number: Int) -> [Cell]? {
+        if number >= scrolledLines {
+            let row = number - scrolledLines
+            return row < rows ? lines[row] : nil
+        }
+        let index = history.count - (scrolledLines - number)
+        return index >= 0 ? history[index] : nil
+    }
+
+    /// Moves the view by this many lines: up through what scrolled away for
+    /// a positive count, back down towards the live screen for a negative
+    /// one. The view stops at the oldest line that was kept, and at the
+    /// live screen.
+    public func scrollBack(by count: Int) {
+        let wanted = min(max(0, scrollback + count), history.count)
+        guard wanted != scrollback else { return }
+        scrollback = wanted
+        hasChanged = true
+    }
+
+    /// Back to the live screen, where the work is. The terminal does this
+    /// when a person types, as every terminal does.
+    public func scrollToBottom() {
+        guard scrollback != 0 else { return }
+        scrollback = 0
+        hasChanged = true
+    }
+
+    /// A line of the history at the width of the screen now. The window can
+    /// have been another size when the line was written.
+    private func fitted(_ line: [Cell]) -> [Cell] {
+        if line.count == columns { return line }
+        if line.count > columns { return Array(line[0..<columns]) }
+        return line + Array(repeating: Cell(character: " ", style: Style()),
+                            count: columns - line.count)
+    }
+
+    /// Keeps a line that went off the top of the screen.
+    ///
+    /// A person who is looking at the lines above keeps looking at the same
+    /// text: the view moves up with the screen underneath it, instead of the
+    /// text sliding away while they read.
+    private func remember(_ line: [Cell]) {
+        scrolledLines += 1
+        history.append(line)
+        if history.count > Screen.historyLimit {
+            history.removeFirst(history.count - Screen.historyLimit)
+        } else if scrollback > 0 {
+            scrollback += 1
+        }
+        scrollback = min(scrollback, history.count)
     }
 
     /// Reads what the program printed.
@@ -375,8 +472,13 @@ public final class Screen {
     }
 
     private func scrollUp(_ count: Int) {
+        // A line is kept only when the whole screen scrolls. A program that
+        // scrolls a part of it — an editor with a status line — is drawing,
+        // not printing, and what it moves is not what a person reads back.
+        let whole = scrollTop == 0 && scrollBottom == rows - 1
         for _ in 0..<max(1, count) {
-            lines.remove(at: scrollTop)
+            let line = lines.remove(at: scrollTop)
+            if whole { remember(line) }
             lines.insert(emptyLine(), at: scrollBottom)
         }
     }

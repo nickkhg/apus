@@ -83,6 +83,45 @@ struct StackTests {
         #expect(items.map(\.0.width) == [20, 30])
     }
 
+    @Test("A spacer does not take room from the views beside it")
+    func spacerDoesNotSqueezeItsNeighbours() {
+        // The label-value row of a panel: a name, a spacer, and a value at
+        // the far end. A spacer has no size of its own, so neither text may
+        // be offered less than it asks for while the row still has room.
+        let nameFont = Font(size: 10, weight: .bold)
+        let valueFont = Font(size: 11)
+        let wanted = nameFont.width(of: "MEMORY") + valueFont.width(of: "0.5 GB / 1.9 GB")
+        let row = HStack(spacing: 8) {
+            Text("MEMORY").font(nameFont)
+            Spacer()
+            Text("0.5 GB / 1.9 GB").font(valueFont)
+        }
+        // Wide enough for both texts and the spacing, with room to spare.
+        let width = Int(wanted.rounded(.up)) + 16 + 40
+        let pictures = ViewRenderer
+            .displayList(for: row, in: Rect(x: 0, y: 0, width: width, height: 20))
+            .compactMap { item in
+                if case .bitmap(let picture, _, _) = item { picture } else { nil }
+            }
+        // A text that did not fit its frame is drawn cut short and ending
+        // in "…", so its picture is narrower than the whole string.
+        #expect(pictures.count == 2)
+        #expect(Double(pictures[0].width) >= nameFont.width(of: "MEMORY"))
+        #expect(Double(pictures[1].width) >= valueFont.width(of: "0.5 GB / 1.9 GB"))
+    }
+
+    @Test("A row that is too narrow cuts its children by the same amount")
+    func aNarrowRowSharesEqually() {
+        // Two views that both want more than there is: neither may take
+        // everything and leave the other with nothing.
+        let view = HStack {
+            red.frame(minWidth: 60)
+            green.frame(minWidth: 60)
+        }
+        let items = fills(view, width: 100, height: 10)
+        #expect(items.map(\.0.width) == [60, 60])
+    }
+
     @Test("Two spacers share the free space")
     func twoSpacersShare() {
         let view = HStack {

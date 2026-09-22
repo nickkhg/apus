@@ -20,8 +20,8 @@ struct GridTests {
         let narrow = ViewRenderer.size(of: Text("i").font(cell.font), fitting: .unspecified)
         let wide = ViewRenderer.size(of: Text("W").font(cell.font), fitting: .unspecified)
         #expect(narrow.width == wide.width)
-        // The measured width of one character is its advance plus a small
-        // constant, so the cell is a little narrower than that measurement.
+        // A measurement is rounded up to a whole point, so the cell is a
+        // little narrower than one.
         #expect(cell.width <= narrow.width)
         #expect(narrow.width - cell.width <= 1)
     }
@@ -104,6 +104,34 @@ struct GridTests {
     }
 }
 
+@Suite("The grid when a person has scrolled back")
+struct ScrolledBackGridTests {
+    @Test("The view above the live screen is what gets drawn")
+    func theViewAboveIsDrawn() {
+        let screen = Screen(columns: 20, rows: 4)
+        screen.write(Array((1...10).map { "line \($0)" }.joined(separator: "\r\n").utf8))
+        let live = items(screen).count
+        screen.scrollBack(by: 3)
+        // Four lines of text are drawn either way, so the same items come
+        // out; only the cursor is gone.
+        #expect(items(screen).count == live - 1)
+    }
+
+    @Test("The cursor is not drawn above the live screen")
+    func noCursorAboveTheLiveScreen() {
+        let screen = Screen(columns: 20, rows: 4)
+        screen.write(Array((1...10).map { "line \($0)" }.joined(separator: "\r\n").utf8))
+        func hasCursor(_ list: DisplayList) -> Bool {
+            list.contains { if case .path = $0 { true } else { false } }
+        }
+        #expect(hasCursor(items(screen)))
+        screen.scrollBack(by: 1)
+        #expect(!hasCursor(items(screen)))
+        screen.scrollToBottom()
+        #expect(hasCursor(items(screen)))
+    }
+}
+
 @Suite("The cell size")
 struct CellSizeTests {
     private let font = Font.monospaced(size: 15)
@@ -130,6 +158,22 @@ struct CellSizeTests {
         // Over a whole line the two must stay within one character of each
         // other. The old measurement was out by a pixel for each character.
         #expect(abs(drawn - grid) < cell.width)
+    }
+
+    @Test("A line of any length fits in its cells, so no line ends in an ellipsis")
+    func aLineFitsInItsCells() {
+        let cell = CellSize(font: font)
+        // A `Text` that is wider than its frame cuts itself and ends in
+        // "…". The grid gives a run of characters a frame of that many
+        // cells, so a cell that is even a fraction of a pixel too narrow
+        // eats the end of every line.
+        for columns in [1, 2, 14, 40, 80, 200] {
+            let line = String(repeating: "M", count: columns)
+            #expect(font.width(of: line) <= Double(columns) * cell.width)
+        }
+        // And a real prompt, which is not one character repeated.
+        let prompt = "[root@apus ~]#"
+        #expect(font.width(of: prompt) <= Double(prompt.count) * cell.width)
     }
 
     @Test("The cursor sits at the column that it marks")
