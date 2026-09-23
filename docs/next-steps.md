@@ -24,7 +24,12 @@ Apps have the pointer, and a window moves, changes its size and comes forward wi
 
 The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the pointer. A layout puts the windows on the canvas. Summon starts the apps of `/Applications`, and the terminal is one of them. See [toolkit.md](toolkit.md), [layouts.md](layouts.md) and [applications.md](applications.md). Next, in this sequence:
 
-1. More apps. `AppClient` and the system monitor are the pattern to follow. See [apps.md](apps.md). The design draws a file browser, a notes app and a power reading. Settings is there ([settings.md](settings.md)); it cannot join a wireless network, because Apus has no wireless daemon.
+1. More apps. `AppClient` and the system monitor are the pattern to follow. See [apps.md](apps.md). The design draws a file browser, a notes app and a power reading. All three are there now, with Settings. What they still need:
+
+   - Files ([files.md](files.md)) cannot open a file. An app cannot ask the compositor to start another app with a file, and a bundle does not say which files its app opens.
+   - Notes ([notes.md](notes.md)) has the smallest editor of text that the toolkit needed ([toolkit.md](toolkit.md#text-that-a-person-types)). A click cannot place its caret (item 3), there is no undo, and an app of `AppClient` has no clipboard.
+   - Power ([power.md](power.md)) only reads. A VM on a Mac has no battery, so only its no-battery state can show there.
+   - Settings ([settings.md](settings.md)) cannot join a wireless network, because Apus has no wireless daemon.
 2. An icon file in a bundle, and an image as a display item. Summon draws a colour mark now.
 3. A pointer position in a handler, and a drag.
 4. More of the second mode. The shadow, the blur and the gradient are in the display list now, and both renderers draw all three. See [toolkit.md](toolkit.md#the-two-modes). Three things remain:

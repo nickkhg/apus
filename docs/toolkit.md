@@ -131,6 +131,10 @@ ui/
 | `Toolkit` | The views, the layout, the text, `ViewRenderer`, and `playSound`. It makes display lists. It knows nothing about the screen or about Wayland. |
 | `Shell` | What Apus draws itself: the rail, Summon, the layouts, and `RootView`. |
 | `Terminal` | What the terminal app draws: the grid of characters, and the escape sequences that change it. The app around it is `ui/Sources/TerminalApp/`. See [applications.md](applications.md). |
+| `Settings` | The panes of Settings, its keys and the parsers of the files of the system. The app around it is `ui/Sources/SettingsApp/`. See [settings.md](settings.md). |
+| `Files` | The list of a folder, the places and the keys of Files. The app around it is `ui/Sources/FilesApp/`. See [files.md](files.md). |
+| `Notes` | The list of the notes, the editor pane and the keys of Notes. The app around it is `ui/Sources/NotesApp/`. See [notes.md](notes.md). |
+| `Power` | What the files of `/sys/class/power_supply` mean, and the views of Power. The app around it is `ui/Sources/PowerApp/`. See [power.md](power.md). |
 
 ### The root view
 
@@ -190,6 +194,7 @@ The only platform-dependent code is in `FontCache.swift`: which directory the fo
 | `VStack`, `HStack`, `ZStack` | Children in a column, in a row, or on top of each other |
 | `ForEach`, `Group`, `AnyView`, `EmptyView` | Containers |
 | `ScrollView` | A part of a taller view, which the wheel moves. See [Scrolling](#scrolling). |
+| `TextEditor` | A text of many lines, with a caret and a selection. See [Text that a person types](#text-that-a-person-types). |
 
 | Shape | Purpose |
 |---|---|
@@ -353,7 +358,14 @@ A view of the interface goes in `ui/Toolkit/Sources/Shell/`. A view that every U
 
 ## Tests
 
-`make test-ui` runs the unit tests on the Mac, and `make test-ui-linux` runs the same tests on apus. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, the shapes, the state, and the pointer. `ui/Toolkit/Tests/ShellTests/` tests the panel, the dock and the app area. `ui/Toolkit/Tests/TerminalTests/` tests the grid of the terminal and its escape sequences. `ui/Toolkit/Tests/SettingsTests/` tests the panes of Settings, its keys and the files that it reads, with a machine of its own.
+`make test-ui` runs the unit tests on the Mac, and `make test-ui-linux` runs the same tests on apus. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, the shapes, the state, and the pointer. `ui/Toolkit/Tests/ShellTests/` tests the panel, the dock and the app area. `ui/Toolkit/Tests/TerminalTests/` tests the grid of the terminal and its escape sequences. `ui/Toolkit/Tests/SettingsTests/` tests the panes of Settings, its keys and the files that it reads, with a machine of its own. `ui/Toolkit/Tests/FilesTests/` tests the list of Files and its keys, with a disk of its own. `ui/Toolkit/Tests/NotesTests/` tests Notes and what it writes, with a folder of its own, and `ToolkitTests/TextEditingTests.swift` tests the editor under it. `ui/Toolkit/Tests/PowerTests/` tests Power with the files of real batteries, and with none.
+
+The tests of an app also draw each size of it into pixels. With `APUS_PREVIEWS` set to a folder, they write those pictures there as PPM files, so that a person can look at an app without a VM:
+
+```sh
+mkdir -p /tmp/previews
+APUS_PREVIEWS=/tmp/previews make test-ui
+```
 
 A test lays out a view in a rectangle and looks at the display list. For example, this is the test of a spacer:
 
@@ -420,7 +432,7 @@ position of the mouse by the scale before it gives it to the host.
 
 ## Limits
 
-- `Text` does not wrap and does not cut a long line.
+- `Text` does not wrap and does not cut a long line. `TextEditor` wraps, in a monospaced font only.
 - There are no images, and a shape has no border: the renderer fills an
   outline, it does not draw a line along one. A stroke is the band between
   two outlines.
@@ -503,6 +515,37 @@ SummonView(state: state, actions: actions)
 The compositor gives each key to the shell first, and sends it to the app only when no view of the shell used it.
 
 `KeyRepeat` is the clock of a held key, for an app under the toolkit. Wayland leaves the repeat to the app. The app says which key went down and up and whether the keymap lets it repeat, its loop waits no longer than `wait(at:)`, and `due(at:)` gives the key when it goes again. It knows no Wayland, so the Mac tests it. `AppClient` and the terminal use it. The shell does not: the compositor reads its keys from libinput, and a held key in Summon does not repeat.
+
+## Text that a person types
+
+`Text` is one line, and the query of Summon and a field of Settings have their caret at the end. A notes app needs more, so the toolkit has the smallest editor that one needs, in two parts:
+
+| Part | What it is |
+|---|---|
+| `TextEditing` | A value: the characters, the caret, and the anchor of the selection. `apply(_:)` gives it a key and answers `.edited`, `.moved` or `.unused`. |
+| `TextEditor` | The view that draws one: the rows, the selection behind them and the caret. It wraps at the edge of its frame and scrolls with the wheel. |
+
+```swift
+var note = TextEditing("Shopping\nMilk")
+switch note.apply(key) {
+case .edited: save(note.text)
+case .moved: break
+case .unused: return false      // Escape, Tab, a chord it does not know
+}
+
+TextEditor(note, isFocused: focus == .editor)
+```
+
+The editor draws the value and keeps none of it, because the toolkit has no focus: the app knows which text the keys belong to, and it gives them there. The keys that it knows are the ones of every editor: the arrows, Home and End, Shift to select, Control or Alt with an arrow for a word, Control with Home or End for the whole text, Control+A, Backspace, Delete and Enter. Escape and Tab are left to the app.
+
+It is small on purpose:
+
+- The font is monospaced. A column is then one width, so the caret and the selection need no measure of each character, and a row breaks at a number of columns.
+- A line wraps after its last space that fits, or inside a word that is longer than the row.
+- Up and Down move by the lines of the text, and keep the column over a short line. They do not move by the rows that a wrap makes.
+- The editor scrolls itself so that the caret shows after it moves, and only the rows that show are drawn.
+- A handler of the toolkit gets no position, so a click cannot place the caret. That waits for item 3 of the list in [next-steps.md](next-steps.md#the-toolkit-and-the-shell).
+- There is no undo, no clipboard, and no input method: a key writes what xkbcommon says it writes.
 
 ## Notices
 
