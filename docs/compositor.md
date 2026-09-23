@@ -51,10 +51,34 @@ The `Wayland` library (`ui/Sources/Wayland/`) is the Wayland server and the main
 1. Something changes: an app commits a buffer, the pointer moves, or a window closes.
 2. The compositor calls `Screen.setNeedsFrame()`.
 3. If no page flip is pending, `Screen` draws a frame in the back buffer and asks DRM for a page flip at the next vertical blank. If a page flip is pending, `Screen` draws the frame after the flip.
-4. To draw, the compositor makes a display list: the background, each window, the shell, and the pointer. `SoftwareRenderer` draws the list.
-5. After the page flip, the compositor sends `wl_callback.done` to each window. The apps can then draw their next frame.
+4. To draw, the compositor makes a display list: the background, each window, the shell, and the pointer.
+5. The screen finds the part of the screen that changed (see [Damage](#damage)), and `SoftwareRenderer` draws the list inside that part only.
+6. After the page flip, the compositor sends `wl_callback.done` to each window. The apps can then draw their next frame.
 
 If the driver cannot do page flips, `Screen` uses a mode set for each frame.
+
+## Damage
+
+A frame draws only the part of the screen that changed. A line of the terminal, the minute of the clock, or a button that lights up under the pointer costs its own pixels, and not the screen. The code is in `ui/Toolkit/Sources/Render/Damage.swift`, and `ScreenDamage` in `Screen.swift` connects it to the buffers.
+
+Two things say what changed:
+
+| What | How |
+|---|---|
+| The display list | `DamageTracker` compares the list of this frame with the list of the last one. An item that is in both lists, in the same order and with the same clip, changed nothing. Every other item changed the pixels under it, in the old list and in the new one. The two lists are matched with the diff of Myers, so an item that went in or out changes its own pixels, and not those of every item after it. This covers the shell (the rail, Summon, the heads and the cards that `ViewHost` draws), a window that moved, and a window that opened or closed. |
+| The pixels of a window | An app says what it drew with `wl_surface.damage` or `wl_surface.damage_buffer`. A buffer of the same size goes into the same `Bitmap`, and the commit copies only the damaged part of it. `Bitmap.markChanged` keeps that part, so the item of the window is the same item and only the damaged part counts. The GPU renderer also sends only those rows to its texture. |
+
+The damage is a `Region`: up to 12 rectangles that do not overlap. The renderer draws the list once for each rectangle, with the rectangle as a clip under every clip of the list. The shape of an item does not depend on the clip, only which of its pixels are written, so a pixel comes out the same in part as in whole. `ui/Toolkit/Tests/RenderTests/DamageTests.swift` holds that, pixel for pixel, for every kind of item and for random edits of random lists.
+
+A screen draws into the buffer that the display does not show, and that buffer holds an older frame: two frames ago with two dumb buffers, and what EGL says with GBM (`EGL_EXT_buffer_age`). `DamageHistory` keeps the damage of the last 6 frames, and a buffer draws everything that changed since the frame it holds. A buffer with no frame, a new size of the screen, or an EGL without buffer age draws the whole screen.
+
+A blur reads the picture around it, 2 × `boxHalfWidth(radius)` pixels outside its shape. A change there changes the blur, and the blur must read pixels of this frame and not what the buffer held. `Region.grown(for:)` therefore makes every rectangle that touches what a blur reads hold all of it. A blur is then drawn once, whole, inside one rectangle. The GPU renderer copies the screen for a blur only when the damage touches it, so a frame that changes something far from Summon reads nothing back.
+
+Two app programs of Apus, `AppClient` and the terminal, keep their buffer between frames and use the same `DamageTracker`. They draw only what changed, and they send that part as `damage_buffer`. A frame that changed nothing sends no buffer.
+
+The pointer is not part of the damage when the display has a plane for it: moving it draws no frame at all.
+
+`APUS_DAMAGE=full` draws every frame whole, to compare the costs, or to rule damage out when a picture looks wrong. `APUS_FRAME_LOG` says what part of the screen the frames drew (see [testing.md](testing.md#the-vm)). `APUS_DAMAGE_CHECK=1` makes `GPUScreen` draw each frame that it drew in part a second time, whole, and say `DAMAGE-WRONG` when the two differ. `tests/gpu.exp` turns it on, because the picture of that screen is drawn whole and would not show a fault.
 
 ## The display list
 
@@ -140,7 +164,7 @@ A window that gets the focus gets `wl_keyboard.enter`, and the window that loses
 | `wl_display`, `wl_registry`, `wl_callback` | 1 | Complete. The `Wayland` library implements them. |
 | `wl_shm`, `wl_shm_pool`, `wl_buffer` | 2 | ARGB8888 and XRGB8888. The `Wayland` library implements them. |
 | `wl_compositor` | 6 | Surfaces and regions. Regions have no effect. |
-| `wl_surface` | 6 | `attach`, `commit`, `frame`. The other requests have no effect. |
+| `wl_surface` | 6 | `attach`, `commit`, `frame`, `damage`, `damage_buffer`, `set_buffer_scale`. The other requests have no effect. |
 | `xdg_wm_base` | 6 | `get_xdg_surface`, `create_positioner`, `pong` |
 | `xdg_surface` | 6 | `get_toplevel`, `ack_configure`. `get_popup` gives a protocol error. |
 | `xdg_toplevel` | 6 | `set_title`, `set_app_id`, `set_min_size`, `move`, `resize`. The configure carries the states `maximized`, `activated` and `resizing`. The other requests have no effect. |
@@ -148,7 +172,7 @@ A window that gets the focus gets `wl_keyboard.enter`, and the window that loses
 | `wl_pointer` | 7 | `enter`, `leave`, `motion`, `button`, `axis`, `axis_source`, `frame`. `set_cursor` has no effect: the compositor draws its own pointer. |
 | `wl_keyboard` | 7 | `keymap`, `enter`, `leave`, `key`, `modifiers`, `repeat_info` |
 
-When an app commits a buffer, the compositor copies the pixels and releases the buffer immediately. The first commit of a toplevel gets a configure event with the size of its cell, less the head, and the states `maximized` and `activated`. An app that answers with that size fills the area. A later configure comes when the size or the states change.
+When an app commits a buffer, the compositor copies the pixels and releases the buffer immediately. It copies only what the app damaged, over its copy of the last buffer, when the new buffer has the same size. A commit of a new buffer with no damage at all copies the whole buffer. The protocol says that nothing changed then, and a copy of the whole buffer is never wrong. The first commit of a toplevel gets a configure event with the size of its cell, less the head, and the states `maximized` and `activated`. An app that answers with that size fills the area. A later configure comes when the size or the states change.
 
 The compositor puts a window in the app area. A window of another size goes in the middle of the area. See [applications.md](applications.md).
 
@@ -208,7 +232,6 @@ These rules apply:
 - A second compositor cannot start at once after the first one stops. `COMPOSITOR-EXIT` goes on the console before the process ends, and the screen and the DRM device go back after that. A compositor that starts inside that window fails to become DRM master, with `drmModeSetCrtc: Permission denied`. Wait for the process to end, not for the line.
 - A person can move a window or change its size only through the app, with `xdg_toplevel.move` and `xdg_toplevel.resize`. The head that the shell draws has no bar to drag and no edge to pull.
 - A move shows no mark on the cell that the window will take. The window follows the pointer, and the drop decides.
-- The compositor draws the full screen for each frame. It ignores damage.
 - Apps can use only `wl_shm` buffers, not GPU buffers (`linux-dmabuf`).
 - There is no `wl_output`, no popups, and no window decorations.
 - The compositor uses only the first connected output.

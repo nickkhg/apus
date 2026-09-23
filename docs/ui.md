@@ -217,6 +217,8 @@ A `path` becomes a texture because the GPU has no rule for filling an outline. T
 
 A `blur` copies the part of the screen that it covers into a texture. Two passes with a framebuffer of its own make that copy soft. The item then puts the copy back inside the coverage of the path. It therefore reads what the list drew before it, and nothing after it.
 
+Both renderers draw only the damage of a frame: the CPU renderer clips to each rectangle of it, and the GPU renderer cuts its scissor to each one. `GPUScreen` asks EGL how old the buffer it lends is (`EGL_EXT_buffer_age`), and draws what changed since that frame. A mask and a texture do not depend on the damage, so `TextureCache` keeps them as before, and a window that changed in place sends only its changed rows. See [compositor.md](compositor.md#damage).
+
 The tests use the CPU renderer. Its pixels are the same on every run, and the tests check exact colours. `tests/gpu.exp` draws one screen with each renderer and compares the two pictures. They agree to 3 of 255 in a colour channel. The difference is rounding: the CPU divides by 256, and the GPU divides by 255.
 
 `tests/gpu.exp` then draws the same screen again in the second mode of the shell. That mode asks for a shadow, a gradient and a blur. The two renderers must agree there as well, with a wider allowance. The blur of the GPU is 17 steps in each direction, and the blur of the CPU is an exact box. The test also holds that the two modes draw different screens. A mode is not the other mode with the effects turned off.

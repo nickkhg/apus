@@ -26,6 +26,42 @@ public final class Bitmap {
         precondition(pixels.count == width * height)
         (self.width, self.height, self.isOpaque, self.pixels) = (width, height, isOpaque, pixels)
     }
+
+    // MARK: - Pixels that change in place
+
+    /// How many times the pixels changed in place. A window keeps one bitmap
+    /// while its size stays, and copies into it only what the app damaged.
+    /// The screen then draws only that part again, and the GPU uploads only
+    /// that part. See DamageTracker.
+    public private(set) var generation = 0
+    /// What each change touched, in the bitmap's own pixels.
+    private var log: [(generation: Int, rect: Rect)] = []
+    /// `changes(since:)` can answer for this generation and every later one.
+    private var logStart = 0
+    /// Changes kept. A screen asks about the last few frames only.
+    private static let logLength = 32
+
+    /// Says that the pixels inside `rects` changed. Call it after the change.
+    public func markChanged(_ rects: [Rect]) {
+        generation += 1
+        let whole = Rect(x: 0, y: 0, width: width, height: height)
+        for rect in rects {
+            let part = SoftwareRenderer.intersection(rect, whole)
+            if part.width > 0, part.height > 0 { log.append((generation, part)) }
+        }
+        if log.count > Bitmap.logLength {
+            let dropped = log.count - Bitmap.logLength
+            logStart = log[dropped - 1].generation
+            log.removeFirst(dropped)
+        }
+    }
+
+    /// The parts that changed after `generation`. Nil when the bitmap no
+    /// longer knows, and then all of it may have changed.
+    public func changes(since generation: Int) -> [Rect]? {
+        guard generation >= logStart, generation <= self.generation else { return nil }
+        return log.filter { $0.generation > generation }.map(\.rect)
+    }
 }
 
 /// How much of each pixel a filled path covers: 0 is none, 255 is all.
@@ -87,7 +123,26 @@ public struct Canvas {
 /// Draws display lists with the CPU.
 public enum SoftwareRenderer {
     public static func render(_ list: DisplayList, into canvas: Canvas) {
-        let whole = Rect(x: 0, y: 0, width: canvas.width, height: canvas.height)
+        render(list, into: canvas,
+               within: Rect(x: 0, y: 0, width: canvas.width, height: canvas.height))
+    }
+
+    /// Draws only the pixels inside `region`, and leaves every other pixel
+    /// as it was. The canvas must hold the last picture there, and then the
+    /// result is the same as drawing the whole list.
+    ///
+    /// Each rectangle is a clip under every clip of the list. The shape of
+    /// an item does not depend on the clip, only which of its pixels are
+    /// written, so a pixel comes out the same in part as in whole. A blur
+    /// reads the pixels around it; `Region.grown(for:)` makes sure that all
+    /// of them are inside the rectangle it is drawn in.
+    public static func render(_ list: DisplayList, into canvas: Canvas, region: Region) {
+        for rect in region.rects { render(list, into: canvas, within: rect) }
+    }
+
+    static func render(_ list: DisplayList, into canvas: Canvas, within bounds: Rect) {
+        let whole = intersection(bounds, Rect(x: 0, y: 0, width: canvas.width, height: canvas.height))
+        guard whole.width > 0, whole.height > 0 else { return }
         // Every item is cut to `clip`. A pushClip keeps the clip that it
         // replaces, so that the popClip can put it back.
         var clip = whole

@@ -19,6 +19,12 @@ import Render
 ///
 /// In a VM there is no GPU, so Mesa renders with the CPU (llvmpipe). The
 /// code path is the same, which is why the tests can run it.
+///
+/// A frame draws only what changed. GBM has two or three buffers, and EGL
+/// says how old the one it lends is (EGL_EXT_buffer_age): the frame of one,
+/// two or three swaps ago. The frame then draws everything that changed
+/// since that one, with the scissor, and leaves the rest. An EGL without
+/// the extension, or a buffer with no age, draws the whole screen.
 final class GPUScreen: Screen, PageFlipHandler {
     let usesGPU = true
     let device: DRMDevice
@@ -61,6 +67,10 @@ final class GPUScreen: Screen, PageFlipHandler {
     private var pointer = ScreenPointer()
     private var timer = FrameTimer(name: "gpu")
     private var displayMayHaveChanged = false
+    private let damage = ScreenDamage()
+    /// Whether EGL says how old a buffer is. Without it every frame is
+    /// drawn whole, because nothing says what the buffer holds.
+    private let knowsBufferAge: Bool
 
     init(device: DRMDevice) throws {
         guard let output = try device.connectedOutputs().first else { throw DRMError.noDevice }
@@ -73,6 +83,7 @@ final class GPUScreen: Screen, PageFlipHandler {
         self.gbm = gbm
 
         (display, config, context) = try GPUScreen.startEGL(gbm: gbm)
+        knowsBufferAge = GPUScreen.hasExtension("EGL_EXT_buffer_age", display: display)
         // The surface comes before the renderer: compiling a shader needs a
         // current context, and a context becomes current on a surface.
         (surface, eglSurface) = try GPUScreen.createSurface(
@@ -85,6 +96,7 @@ final class GPUScreen: Screen, PageFlipHandler {
         restore = try device.show(first.framebuffer, on: output)
         shown = first
         log("GPU-RENDERER \(GPUScreen.describe())")
+        if !knowsBufferAge { log("screen: EGL has no buffer age; every frame is drawn whole") }
     }
 
     deinit {
@@ -207,6 +219,25 @@ final class GPUScreen: Screen, PageFlipHandler {
             width: width, height: height)
     }
 
+    private static func hasExtension(_ name: String, display: EGLDisplay) -> Bool {
+        guard let list = eglQueryString(display, EGL_EXTENSIONS) else { return false }
+        return String(cString: list).split(separator: " ").contains { $0 == name }
+    }
+
+    /// EGL_BUFFER_AGE_EXT, from EGL_EXT_buffer_age.
+    private static let bufferAge: EGLint = 0x313D
+
+    /// How many swaps ago the buffer that EGL lends now was drawn, or 0 when
+    /// EGL does not know. It is asked before anything is drawn into it.
+    private func ageOfBackBuffer() -> Int {
+        guard knowsBufferAge, let eglSurface else { return 0 }
+        var age: EGLint = 0
+        guard eglQuerySurface(display, eglSurface, GPUScreen.bufferAge, &age) == EGL_TRUE else {
+            return 0
+        }
+        return Int(age)
+    }
+
     private static func describe() -> String {
         func text(_ name: GLenum) -> String {
             glGetString(name).map { String(cString: $0) } ?? "?"
@@ -236,7 +267,15 @@ final class GPUScreen: Screen, PageFlipHandler {
 
     /// Draws the list and takes the finished buffer from GBM.
     private func drawIntoBuffer() throws -> (bo: OpaquePointer, framebuffer: ImportedFramebuffer) {
-        renderer.render(displayList(), width: width, height: height)
+        let list = displayList()
+        // Each swap is one frame, so a buffer of age n holds the frame n
+        // before this one.
+        let age = ageOfBackBuffer()
+        let frame = damage.newFrame(list, width: width, height: height)
+        let region = damage.region(forBufferHolding: age > 0 ? frame - age : 0, list: list)
+        damage.drew(region)
+        renderer.render(list, width: width, height: height, region: region)
+        if GPUScreen.checksDamage { checkDamage(list, region: region) }
         guard eglSwapBuffers(display, eglSurface) == EGL_TRUE else {
             throw GLFailure.display("eglSwapBuffers failed")
         }
@@ -260,8 +299,11 @@ final class GPUScreen: Screen, PageFlipHandler {
             next = try drawIntoBuffer()
         } catch {
             log("screen: \(error)")
+            // Nothing says which frame each buffer holds now.
+            damage.forgetBuffers()
             return
         }
+        timer.drew(pixels: damage.takeDrawnPixels())
 
         if canPageFlip {
             do {
@@ -316,6 +358,7 @@ final class GPUScreen: Screen, PageFlipHandler {
             // nothing of the old size is left for the display to read.
             releaseBuffers()
             try replaceSurface(width: latest.mode.width, height: latest.mode.height)
+            damage.forgetBuffers()
             let first = try drawIntoBuffer()
             try device.setFramebuffer(first.framebuffer, on: output)
             shown = first
@@ -338,6 +381,24 @@ final class GPUScreen: Screen, PageFlipHandler {
     /// Drawing is the same each time for the same list, so these pixels are
     /// the pixels on the screen.
     func writePicture(to path: String) throws {
+        // The display puts the pointer over the frame, so the list that the
+        // display gets holds no pointer. The picture is what a person sees,
+        // so it goes back in.
+        var list = displayList()
+        if let (bitmap, x, y) = pointer.picture { list.append(.bitmap(bitmap, x: x, y: y)) }
+        let pixels = try drawAside(list)
+        // glReadPixels counts rows from the bottom; a PPM counts from the top.
+        try PPM.write(width: width, height: height, to: path) { x, y in
+            let index = ((height - 1 - y) * width + x) * 4
+            return (UInt32(pixels[index]) << 16)
+                | (UInt32(pixels[index + 1]) << 8)
+                | UInt32(pixels[index + 2])
+        }
+    }
+
+    /// Draws a list whole into a framebuffer of its own, and reads it back
+    /// as RGBA, from the bottom row up. The display's buffers do not change.
+    private func drawAside(_ list: DisplayList) throws -> [UInt8] {
         var texture: GLuint = 0
         var framebuffer: GLuint = 0
         glGenTextures(1, &texture)
@@ -359,24 +420,53 @@ final class GPUScreen: Screen, PageFlipHandler {
                 == GLenum(GL_FRAMEBUFFER_COMPLETE) else {
             throw GLFailure.display("cannot make a framebuffer to read back")
         }
-
-        // The display puts the pointer over the frame, so the list that the
-        // display gets holds no pointer. The picture is what a person sees,
-        // so it goes back in.
-        var list = displayList()
-        if let (bitmap, x, y) = pointer.picture { list.append(.bitmap(bitmap, x: x, y: y)) }
         renderer.render(list, width: width, height: height)
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         pixels.withUnsafeMutableBytes { bytes in
             glReadPixels(0, 0, GLsizei(width), GLsizei(height),
                          GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), bytes.baseAddress)
         }
-        // glReadPixels counts rows from the bottom; a PPM counts from the top.
-        try PPM.write(width: width, height: height, to: path) { x, y in
-            let index = ((height - 1 - y) * width + x) * 4
-            return (UInt32(pixels[index]) << 16)
-                | (UInt32(pixels[index + 1]) << 8)
-                | UInt32(pixels[index + 2])
+        return pixels
+    }
+
+    // MARK: - Checking the damage
+
+    /// `APUS_DAMAGE_CHECK=1` compares each frame that was drawn in part with
+    /// the same frame drawn whole, and logs `DAMAGE-WRONG` when they differ.
+    ///
+    /// The picture that a test takes of this screen is drawn whole, because
+    /// the display's buffer cannot be read (see writePicture). So a fault in
+    /// the damage, or in the age that EGL gave, would never show in one.
+    /// This reads the buffer before it goes to the display, where it still
+    /// can be read. It costs two frames and a read for each frame, so it is
+    /// for tests.
+    private static let checksDamage =
+        getenv("APUS_DAMAGE_CHECK").map { String(cString: $0) } == "1"
+
+    private func checkDamage(_ list: DisplayList, region: Region) {
+        guard region.rects != [Rect(x: 0, y: 0, width: width, height: height)] else { return }
+        var drawn = [UInt8](repeating: 0, count: width * height * 4)
+        drawn.withUnsafeMutableBytes { bytes in
+            glReadPixels(0, 0, GLsizei(width), GLsizei(height),
+                         GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), bytes.baseAddress)
+        }
+        guard let whole = try? drawAside(list) else { return }
+        var wrong = 0
+        var first: (x: Int, y: Int)?
+        for index in stride(from: 0, to: drawn.count, by: 4)
+        where drawn[index] != whole[index] || drawn[index + 1] != whole[index + 1]
+            || drawn[index + 2] != whole[index + 2] {
+            wrong += 1
+            if first == nil {
+                let pixel = index / 4
+                first = (pixel % width, height - 1 - pixel / width)
+            }
+        }
+        if let first {
+            log("DAMAGE-WRONG frame \(damage.latest): \(wrong) pixels, the first at "
+                + "\(first.x),\(first.y); drew \(region.rects)")
+        } else {
+            log("DAMAGE-RIGHT frame \(damage.latest): \(region.area) pixels drawn")
         }
     }
 

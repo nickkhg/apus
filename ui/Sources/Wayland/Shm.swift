@@ -167,4 +167,23 @@ public final class ShmBuffer {
         }
         return intact ? pixels : nil
     }
+
+    /// Copies only some rectangles of the pixels into `pixels`, which holds
+    /// width × height pixels already: what the app damaged, over the copy
+    /// of its last buffer. Each rectangle is (x, y, width, height) and must
+    /// be inside the buffer. Returns false if the client damaged the pool
+    /// during the copy.
+    public func copyPixels(_ rects: [(x: Int, y: Int, width: Int, height: Int)],
+                           into pixels: UnsafeMutableBufferPointer<UInt32>) -> Bool {
+        precondition(pixels.count == width * height)
+        return pool.access { memory in
+            for rect in rects {
+                for row in rect.y..<(rect.y + rect.height) {
+                    let source = (memory + offset + row * stride + rect.x * 4)
+                        .assumingMemoryBound(to: UInt32.self)
+                    (pixels.baseAddress! + row * width + rect.x).update(from: source, count: rect.width)
+                }
+            }
+        }
+    }
 }

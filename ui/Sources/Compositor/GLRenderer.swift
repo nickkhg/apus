@@ -17,6 +17,9 @@ import Render
 /// | `blur` | the screen copied to a texture, then two passes |
 /// | `pushClip`, `popClip` | glScissor |
 ///
+/// A frame draws only its damage: every scissor is cut to the rectangle of
+/// the damage that the items are drawn in (see `render(_:width:height:region:)`).
+///
 /// Colours are premultiplied, so the blend is `src + dst × (1 − αsrc)`, the
 /// same rule that the CPU renderer follows.
 ///
@@ -88,48 +91,85 @@ final class GLRenderer {
         glPixelStorei(GLenum(GL_UNPACK_ALIGNMENT), 1)
     }
 
-    /// Draws a list into the framebuffer that is bound, `width` × `height`.
-    func render(_ list: DisplayList, width: Int, height: Int) {
-        glViewport(0, 0, GLsizei(width), GLsizei(height))
-        glDisable(GLenum(GL_SCISSOR_TEST))
-        glClearColor(0, 0, 0, 1)
-        glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
+    /// The rectangle of the damage that the items are drawn in now. The
+    /// scissor of every item is its clip cut to this. Nil draws everywhere.
+    private var damageRect: Rect?
 
+    /// Draws a list into the framebuffer that is bound, `width` × `height`.
+    ///
+    /// With a region, only the pixels inside it are drawn, and the rest keep
+    /// what the framebuffer held. Each item is drawn once for each rectangle
+    /// of the region, with the scissor cut to that rectangle. The shape of
+    /// an item, its mask and its texture do not depend on the region, so a
+    /// mask that the cache holds stays the same from frame to frame.
+    func render(_ list: DisplayList, width: Int, height: Int, region: Region? = nil) {
         let whole = Rect(x: 0, y: 0, width: width, height: height)
+        let parts = region?.rects ?? [whole]
+        glViewport(0, 0, GLsizei(width), GLsizei(height))
+        glClearColor(0, 0, 0, 1)
+        damageRect = nil
+        if region == nil {
+            glDisable(GLenum(GL_SCISSOR_TEST))
+            glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
+        } else {
+            for part in parts {
+                scissor(part, screen: (width, height))
+                glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
+            }
+        }
+
         var clip = whole
         var stack: [Rect] = []
         textures.startFrame()
+        defer { damageRect = nil }
 
         for item in list {
             switch item {
-            case .fill(let rect, let color):
-                fill(rect, color: color, clip: clip, screen: (width, height))
-            case .bitmap(let bitmap, let x, let y):
-                draw(bitmap, x: x, y: y, clip: clip, screen: (width, height))
-            case .path(let path, let color):
-                fill(path, color: color, clip: clip, screen: (width, height))
-            case .shadow(let path, let shadow):
-                draw(shadow, of: path, clip: clip, screen: (width, height))
-            case .gradient(let path, let colours):
-                fill(path, gradient: colours, clip: clip, screen: (width, height))
-            case .blur(let path, let radius):
-                blur(under: path, radius: radius, clip: clip, screen: (width, height))
             case .pushClip(let rect):
                 stack.append(clip)
                 clip = intersection(clip, rect)
+                continue
             case .popClip:
                 clip = stack.popLast() ?? whole
+                continue
+            default:
+                break
+            }
+            for part in parts {
+                let visible = intersection(clip, part)
+                guard visible.width > 0, visible.height > 0 else { continue }
+                damageRect = region == nil ? nil : part
+                draw(item, clip: clip, screen: (width, height))
             }
         }
         textures.endFrame()
         glDisable(GLenum(GL_SCISSOR_TEST))
     }
 
+    private func draw(_ item: DisplayItem, clip: Rect, screen: (width: Int, height: Int)) {
+        switch item {
+        case .fill(let rect, let color):
+            fill(rect, color: color, clip: clip, screen: screen)
+        case .bitmap(let bitmap, let x, let y):
+            draw(bitmap, x: x, y: y, clip: clip, screen: screen)
+        case .path(let path, let color):
+            fill(path, color: color, clip: clip, screen: screen)
+        case .shadow(let path, let shadow):
+            draw(shadow, of: path, clip: clip, screen: screen)
+        case .gradient(let path, let colours):
+            fill(path, gradient: colours, clip: clip, screen: screen)
+        case .blur(let path, let radius):
+            blur(under: path, radius: radius, clip: clip, screen: screen)
+        case .pushClip, .popClip:
+            break
+        }
+    }
+
     // MARK: - Items
 
     private func fill(_ rect: Rect, color: UInt32, clip: Rect, screen: (width: Int, height: Int)) {
         let box = intersection(rect, clip)
-        guard box.width > 0, box.height > 0, color >> 24 != 0 else { return }
+        guard box.width > 0, box.height > 0, color >> 24 != 0, touchesDamage(box) else { return }
         use(solid, screen: screen)
         set(color: color, on: solid)
         scissor(clip, screen: screen)
@@ -139,9 +179,8 @@ final class GLRenderer {
     private func draw(_ bitmap: Bitmap, x: Int, y: Int, clip: Rect,
                       screen: (width: Int, height: Int)) {
         let target = Rect(x: x, y: y, width: bitmap.width, height: bitmap.height)
-        guard intersection(target, clip).width > 0, intersection(target, clip).height > 0 else {
-            return
-        }
+        let visible = intersection(target, clip)
+        guard visible.width > 0, visible.height > 0, touchesDamage(visible) else { return }
         let name = textures.texture(for: bitmap)
         use(textured, screen: screen)
         glUniform1f(textured.sampleAlphaOnly, 0)
@@ -306,6 +345,10 @@ final class GLRenderer {
                                        width: target.width + 2 * spread,
                                        height: target.height + 2 * spread), whole)
         guard source.width > 0, source.height > 0 else { return }
+        // Only the rectangle of the damage that the blur is inside draws
+        // it. Region.grown(for:) put everything the blur reads in that one
+        // rectangle, so a copy of the screen here holds this frame's pixels.
+        guard touchesDamage(target) else { return }
 
         // What the list is drawing into. A screenshot renders into a
         // framebuffer of its own, so this is not always the display.
@@ -442,7 +485,8 @@ final class GLRenderer {
 
     /// The scissor is in GL coordinates, which count from the bottom.
     private func scissor(_ clip: Rect, screen: (width: Int, height: Int)) {
-        let box = intersection(clip, Rect(x: 0, y: 0, width: screen.width, height: screen.height))
+        var box = intersection(clip, Rect(x: 0, y: 0, width: screen.width, height: screen.height))
+        if let damageRect { box = intersection(box, damageRect) }
         glEnable(GLenum(GL_SCISSOR_TEST))
         glScissor(GLint(box.x), GLint(screen.height - box.y - box.height),
                   GLsizei(max(0, box.width)), GLsizei(max(0, box.height)))
@@ -471,6 +515,14 @@ final class GLRenderer {
         glVertexAttribPointer(GLuint(program.texturePoint), 2, GLenum(GL_FLOAT), GLboolean(GL_FALSE),
                               stride, UnsafeRawPointer(bitPattern: MemoryLayout<GLfloat>.size * 2))
         glDrawArrays(GLenum(GL_TRIANGLE_STRIP), 0, 4)
+    }
+
+    /// Whether a part of the screen is inside the damage rectangle that the
+    /// items are drawn in now.
+    private func touchesDamage(_ rect: Rect) -> Bool {
+        guard let damageRect else { return true }
+        let common = intersection(rect, damageRect)
+        return common.width > 0 && common.height > 0
     }
 
     private func intersection(_ a: Rect, _ b: Rect) -> Rect {

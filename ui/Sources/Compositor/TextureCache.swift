@@ -7,9 +7,9 @@ import Render
 /// Two kinds of thing go into a texture, and both are kept between frames:
 ///
 /// - A Bitmap: the pixels of a window, a run of text, or the pointer. The
-///   key is the object. A window makes a new Bitmap for each commit, so a
-///   new object means new pixels, and an object that stays is uploaded one
-///   time.
+///   key is the object. A window keeps its Bitmap while its size stays, and
+///   copies into it what the app damaged (see Bitmap.markChanged). The
+///   texture then takes the rows that changed, and not the whole window.
 /// - The coverage of a Path. The key is the path and the part of the screen
 ///   it was cut to. The shapes of a shell (the dock, the round corners of an
 ///   icon) do not change from frame to frame, so they are rasterized one
@@ -27,6 +27,8 @@ final class TextureCache {
         /// Holds the object, so that its address stays its own.
         let bitmap: Bitmap
         var lastUsed: Int
+        /// The generation of the pixels that the texture holds.
+        var generation: Int
     }
 
     private struct MaskKey: Hashable {
@@ -68,11 +70,16 @@ final class TextureCache {
         }
     }
 
-    /// The texture of a bitmap, uploaded if it is new.
+    /// The texture of a bitmap, uploaded if it is new, and brought up to
+    /// date if its pixels changed in place.
     func texture(for bitmap: Bitmap) -> GLuint {
         let key = ObjectIdentifier(bitmap)
         if var entry = bitmaps[key] {
             entry.lastUsed = frame
+            if entry.generation != bitmap.generation {
+                update(entry.texture, from: bitmap, since: entry.generation)
+                entry.generation = bitmap.generation
+            }
             bitmaps[key] = entry
             return entry.texture
         }
@@ -82,8 +89,50 @@ final class TextureCache {
                          GLsizei(bitmap.width), GLsizei(bitmap.height), 0,
                          GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), bytes.baseAddress)
         }
-        bitmaps[key] = BitmapEntry(texture: texture, bitmap: bitmap, lastUsed: frame)
+        bitmaps[key] = BitmapEntry(texture: texture, bitmap: bitmap, lastUsed: frame,
+                                   generation: bitmap.generation)
         return texture
+    }
+
+    /// Sends the rows of a bitmap that changed after `generation`.
+    ///
+    /// OpenGL ES 2 has no row length for an upload, so a part of a bitmap
+    /// cannot go up on its own unless it is whole rows: whole rows are one
+    /// run of memory. A band of rows is still a small part of a window when
+    /// a line of text changed in it.
+    private func update(_ texture: GLuint, from bitmap: Bitmap, since generation: Int) {
+        let bands: [(top: Int, count: Int)]
+        if let changes = bitmap.changes(since: generation) {
+            bands = TextureCache.rows(of: changes)
+        } else {
+            bands = [(0, bitmap.height)]
+        }
+        guard !bands.isEmpty else { return }
+        glBindTexture(GLenum(GL_TEXTURE_2D), texture)
+        bitmap.pixels.withUnsafeBytes { bytes in
+            for band in bands {
+                glTexSubImage2D(GLenum(GL_TEXTURE_2D), 0, 0, GLint(band.top),
+                                GLsizei(bitmap.width), GLsizei(band.count),
+                                GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE),
+                                bytes.baseAddress! + band.top * bitmap.width * 4)
+            }
+        }
+    }
+
+    /// The bands of rows that some rectangles cover, with bands that meet
+    /// made into one.
+    static func rows(of rects: [Rect]) -> [(top: Int, count: Int)] {
+        let sorted = rects.filter { $0.height > 0 }.sorted { $0.y < $1.y }
+        var bands: [(top: Int, count: Int)] = []
+        for rect in sorted {
+            if let last = bands.last, rect.y <= last.top + last.count {
+                let bottom = max(last.top + last.count, rect.y + rect.height)
+                bands[bands.count - 1].count = bottom - last.top
+            } else {
+                bands.append((rect.y, rect.height))
+            }
+        }
+        return bands
     }
 
     /// The coverage of a path, in a texture. Nil when the path covers no
