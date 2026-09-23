@@ -157,6 +157,8 @@ One fault in this program is worth writing down. virglrenderer keeps the pointer
 
    The GPU draws the frame and the compositor then reads it back. That read copies the whole screen, whatever the frame holds. An empty desktop is little work to draw, so the copy is most of the time. Item 1 takes the copy away.
 
+   The GPU now draws only the damage of a frame, and the compositor copies only the damage from the frame it read into the buffer of the display (see [compositor.md](compositor.md#damage)). The read from the GPU is still the whole frame. This was not measured on Venus: on 23 September the renderer of the host could not map a blob (`resource has no memory to map`), and Zink stopped at `vkCreateInstance` before the compositor drew a frame.
+
 ## The other way
 
 libkrun already does all of this, with the same virglrenderer, Venus and MoltenVK. It uses Hypervisor.framework, not Virtualization, so it gives up the Xcode build and debug of `apus-vm`. It is the shorter way to a guest with a GPU, and the longer way keeps one program in Swift.

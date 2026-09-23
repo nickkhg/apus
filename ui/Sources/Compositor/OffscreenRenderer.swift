@@ -33,6 +33,11 @@ final class OffscreenRasterizer: FrameRasterizer {
     /// meets anything.
     private var framebuffers: [GLuint] = [0, 0]
     private var textures: [GLuint] = [0, 0]
+    /// The frame that each of the two textures holds, 0 for none. A frame
+    /// draws only what changed since then (see ScreenDamage).
+    private var drawn = [0, 0]
+    /// The frame that each pack buffer holds.
+    private var packed = [0, 0]
     private var width = 0
     private var height = 0
     /// What glReadPixels gives. With GL_BGRA_EXT the bytes arrive in the
@@ -333,6 +338,8 @@ final class OffscreenRasterizer: FrameRasterizer {
 
             self.width = width
             self.height = height
+            drawn = [0, 0]
+            packed = [0, 0]
             log("screen: the GPU draws into "
                 + (format == GLenum(GL_BGRA_EXT) ? "BGRA" : "RGBA")
                 + " and reads back "
@@ -400,29 +407,43 @@ enum Split {
 
 // MARK: - Frames
 
+    /// Draws the damage of the newest frame into one of the two textures,
+    /// asks for the whole texture to come back, and copies into the buffer
+    /// of the display only the part of the frame that the buffer lacks.
+    ///
+    /// The texture holds an older frame, so it draws everything that
+    /// changed since that one. The frame that comes back is the one before
+    /// this (see below), so the copy is what changed between the frame the
+    /// buffer holds and that one.
     func render(_ list: DisplayList, into pixels: UnsafeMutablePointer<UInt32>,
-                width: Int, height: Int, stride: Int) {
-        guard prepare(width: width, height: height) else { return }
+                width: Int, height: Int, stride: Int,
+                damage: ScreenDamage, held: Int) -> Int {
+        guard prepare(width: width, height: height) else { return held }
         let t0 = Split.now()
+        let frame = damage.latest
         glBindFramebuffer(GLenum(GL_FRAMEBUFFER), framebuffers[packIndex])
-        renderer.render(list, width: width, height: height)
+        let region = damage.region(forBufferHolding: drawn[packIndex], list: list)
+        damage.drew(region)
+        renderer.render(list, width: width, height: height, region: region)
+        drawn[packIndex] = frame
         let t1 = Split.now()
         glPixelStorei(GLenum(GL_PACK_ALIGNMENT), 4)
 
         guard let mapBufferRange, let unmapBuffer, packBuffers[0] != 0 else {
             // No buffer to read into: ask for the pixels and wait for them.
-            guard let staging else { return }
+            guard let staging else { return held }
             glFinish()
             let t2 = Split.now()
             glReadPixels(0, 0, GLsizei(width), GLsizei(height),
                          readFormat, GLenum(GL_UNSIGNED_BYTE), staging)
             let t3 = Split.now()
             if let error = firstError() { log("screen: the GPU reported \(error)") }
-            copy(from: staging.assumingMemoryBound(to: UInt32.self), into: pixels,
+            copy(damage.changes(after: held, through: frame),
+                 from: staging.assumingMemoryBound(to: UInt32.self), into: pixels,
                  width: width, height: height, stride: stride)
             Split.add(submit: t1 - t0, flush: 0, draw: t2 - t1, read: t3 - t2,
                       copy: Split.now() - t3, width: width, height: height)
-            return
+            return frame
         }
 
         // Ask for this frame and do not wait: a read into a pixel buffer
@@ -431,6 +452,7 @@ enum Split {
         glBindBuffer(CGLES_PIXEL_PACK_BUFFER, packBuffers[writing])
         glReadPixels(0, 0, GLsizei(width), GLsizei(height),
                      readFormat, GLenum(GL_UNSIGNED_BYTE), nil)
+        packed[writing] = frame
         glFlush()
         let tFlush = Split.now()
 
@@ -444,10 +466,13 @@ enum Split {
         let mapped = mapBufferRange(CGLES_PIXEL_PACK_BUFFER, 0, GLsizeiptr(packBytes),
                                     CGLES_MAP_READ_BIT)
         let t3 = Split.now()
+        var shown = held
         if let mapped {
-            copy(from: mapped.assumingMemoryBound(to: UInt32.self), into: pixels,
+            copy(damage.changes(after: held, through: packed[ready]),
+                 from: mapped.assumingMemoryBound(to: UInt32.self), into: pixels,
                  width: width, height: height, stride: stride)
             _ = unmapBuffer(CGLES_PIXEL_PACK_BUFFER)
+            shown = packed[ready]
         } else {
             log("screen: the GPU gave no pixels back")
         }
@@ -462,29 +487,33 @@ enum Split {
         Split.add(submit: t1 - t0, flush: tFlush - t1, draw: t2 - tFlush,
                   read: t3 - t2, copy: Split.now() - t3,
                   width: width, height: height)
+        return shown
     }
 
-    /// Puts a frame the GPU gave back into the buffer of the display.
+    /// Puts the part `region` of a frame the GPU gave back into the buffer
+    /// of the display. The rest of the buffer holds those pixels already.
     ///
     /// GL counts rows from the bottom of the picture and the display counts
     /// them from the top, so the rows change place. With GL_RGBA red and
     /// blue change place as well.
-    private func copy(from source: UnsafeMutablePointer<UInt32>,
+    private func copy(_ region: Region, from source: UnsafeMutablePointer<UInt32>,
                       into pixels: UnsafeMutablePointer<UInt32>,
                       width: Int, height: Int, stride: Int) {
         let swapsRedAndBlue = readFormat == GLenum(GL_RGBA)
-        for y in 0..<height {
-            let from = source.advanced(by: (height - 1 - y) * width)
-            let to = pixels.advanced(by: y * stride)
-            if swapsRedAndBlue {
-                for x in 0..<width {
-                    let value = from[x]      // 0xAABBGGRR
-                    to[x] = (value & 0xFF00_FF00)
-                        | ((value & 0x00FF_0000) >> 16)
-                        | ((value & 0x0000_00FF) << 16)
+        for rect in region.rects {
+            for y in rect.y..<(rect.y + rect.height) {
+                let from = source.advanced(by: (height - 1 - y) * width + rect.x)
+                let to = pixels.advanced(by: y * stride + rect.x)
+                if swapsRedAndBlue {
+                    for x in 0..<rect.width {
+                        let value = from[x]      // 0xAABBGGRR
+                        to[x] = (value & 0xFF00_FF00)
+                            | ((value & 0x00FF_0000) >> 16)
+                            | ((value & 0x0000_00FF) << 16)
+                    }
+                } else {
+                    to.update(from: from, count: rect.width)
                 }
-            } else {
-                to.update(from: from, count: width)
             }
         }
     }

@@ -381,8 +381,23 @@ On a Mac (M-series, 1280 × 800):
 | A complete frame | 0.49 ms |
 
 The compositor draws a frame only when something changes, so this is the cost
-of a change, not of a second. In the VM the same work is slower, because Mesa
-draws with the CPU.
+of a change, not of a second. It also draws only the part of the screen that
+changed (see [compositor.md](compositor.md#damage)), so a frame that lights
+up one button costs that button. In the VM the same work is slower, because
+Mesa draws with the CPU.
+
+`make bench` also draws a few changes whole and then as their damage, on the
+Mac, at 1280 × 800:
+
+| Change | Damage | Whole | In part |
+| --- | --- | --- | --- |
+| The minute of the clock | 0.03 % of the screen | 0.25 ms | 0.03 ms |
+| One key in a window of the terminal | 0.02 % | 0.39 ms | 0.03 ms |
+| A letter typed into Summon, in GPU mode | 40 % | 19.3 ms | 17.5 ms |
+
+The last one is Summon over its blur: the list changed on the blur, so the
+damage holds everything the blur reads. Finding the damage costs 0.01 to
+0.03 ms.
 
 Use `make bench` after a change that touches the layout or the renderer. A
 frame that becomes 10 times slower is usually a layout error: a view that
@@ -532,6 +547,7 @@ A whole frame of the shell takes 0.5 ms. One blurred surface therefore costs mor
 
 - A view asks for them with `.shadow(_:cornerRadius:)`, `Blur(radius:cornerRadius:)` and `LinearGradient(from:to:direction:)`. A shape takes a gradient as well: `RoundedRectangle(cornerRadius: 8).fill(gradient)`.
 - A blur reads the items before it and none of the items after it. The order of the list is therefore the order of the depth.
+- A blur reads the picture around it too, so a change near a blur draws the whole blur again. A frame that changes something far from it draws none of it (see [compositor.md](compositor.md#damage)).
 - A gradient whose two ends are one colour becomes a plain fill. CPU mode asks for gradients of one colour, so it pays for none of this.
 - The soft mask of a shadow comes from the same rasterizer in both renderers, so a shadow is the same picture on both. `TextureCache` keeps it: a shadow under a cell changes no more often than the cell does.
 - The blur of the GPU is 17 steps in each direction, and the blur of the CPU is an exact box. The two are near, not equal. `tests/gpu.exp` compares the renderers with a wider allowance in this mode for that reason.

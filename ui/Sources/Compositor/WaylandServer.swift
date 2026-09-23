@@ -35,15 +35,28 @@ final class Surface {
     }
     fileprivate var pendingBuffer = PendingBuffer.unchanged
     fileprivate var pendingFrameCallbacks: [Resource<WlCallback>] = []
+    /// What the app said changed since its last commit: wl_surface.damage
+    /// in points, and wl_surface.damage_buffer in the pixels of the buffer.
+    /// The commit copies only this part of the buffer.
+    fileprivate var pendingDamage: [Rect] = []
+    fileprivate var pendingBufferDamage: [Rect] = []
     private var frameCallbacks: [Resource<WlCallback>] = []
 
     /// Makes the pending state current (wl_surface.commit).
     fileprivate func applyPendingState() {
+        // Damage in points becomes damage in pixels of the buffer. An app
+        // that draws at twice the scale damages twice the pixels.
+        let damage = pendingBufferDamage + pendingDamage.map {
+            Rect(x: $0.x * bufferScale, y: $0.y * bufferScale,
+                 width: $0.width * bufferScale, height: $0.height * bufferScale)
+        }
+        pendingDamage.removeAll()
+        pendingBufferDamage.removeAll()
         if case .attached(let buffer) = pendingBuffer {
             pendingBuffer = .unchanged
             // A buffer destroyed before the commit counts as no buffer.
             if let buffer, !buffer.isDestroyed {
-                copyContent(of: buffer)
+                copyContent(of: buffer, damage: damage)
             } else {
                 content = nil   // no buffer hides the surface
             }
@@ -53,15 +66,52 @@ final class Surface {
     }
 
     /// Copies the buffer's pixels, then gives the buffer back to the app.
-    private func copyContent(of buffer: Resource<WlBuffer>) {
+    ///
+    /// A buffer of the same size and kind as the last one goes into the same
+    /// Bitmap, and only the part that the app damaged is copied. The Bitmap
+    /// then says which part changed (Bitmap.markChanged), so the screen
+    /// draws only that part again, and the GPU uploads only those rows. A
+    /// new size makes a new Bitmap, which is new everywhere.
+    ///
+    /// A commit of a new buffer with no damage at all is taken as damage
+    /// everywhere. The protocol says that nothing changed then, and a
+    /// compositor may keep the old picture. A copy of the whole buffer is
+    /// never wrong, and an app that forgot its damage still shows.
+    private func copyContent(of buffer: Resource<WlBuffer>, damage: [Rect]) {
         guard let shm = buffer.data as? ShmBuffer else {
             return buffer.postError(code: DisplayErrorCode.invalidObject, "only wl_shm buffers are supported")
+        }
+        let whole = Rect(x: 0, y: 0, width: shm.width, height: shm.height)
+        if let content, content.width == shm.width, content.height == shm.height,
+           content.isOpaque == !shm.hasAlpha {
+            var parts = Region()
+            for rect in damage { parts.add(Surface.intersection(rect, whole)) }
+            if damage.isEmpty { parts = Region(whole) }
+            let rects = parts.rects
+            let intact = content.pixels.withUnsafeMutableBufferPointer { pixels in
+                shm.copyPixels(rects.map { ($0.x, $0.y, $0.width, $0.height) }, into: pixels)
+            }
+            guard intact else {
+                return buffer.postError(code: WlShm.ErrorCode.invalidFd.rawValue, "the shm pool became smaller")
+            }
+            buffer.sendRelease()
+            content.markChanged(rects)
+            return
         }
         guard let pixels = shm.copyPixels() else {
             return buffer.postError(code: WlShm.ErrorCode.invalidFd.rawValue, "the shm pool became smaller")
         }
         buffer.sendRelease()
         content = Bitmap(width: shm.width, height: shm.height, isOpaque: !shm.hasAlpha, pixels: pixels)
+    }
+
+    /// The part of `a` inside `b`. Damage of Int32.max, which apps send for
+    /// "all of it", ends at the edge of the buffer.
+    private static func intersection(_ a: Rect, _ b: Rect) -> Rect {
+        guard a.width > 0, a.height > 0 else { return Rect(x: 0, y: 0, width: 0, height: 0) }
+        let x0 = max(a.x, b.x), y0 = max(a.y, b.y)
+        let x1 = min(a.x + a.width, b.x + b.width), y1 = min(a.y + a.height, b.y + b.height)
+        return Rect(x: x0, y: y0, width: max(0, x1 - x0), height: max(0, y1 - y0))
     }
 
     /// Tells the app a frame with its content was shown: time to draw the next.
@@ -478,9 +528,14 @@ final class WaylandServer {
         case .setBufferScale(let scale):
             // The app says how many pixels of its buffer make one point.
             surface.bufferScale = max(1, Int(scale))
-        case .destroy, .damage, .damageBuffer, .setOpaqueRegion, .setInputRegion,
-             .setBufferTransform, .offset:
-            break   // every frame is drawn in full
+        case .damage(let x, let y, let width, let height):
+            surface.pendingDamage.append(Rect(x: Int(x), y: Int(y),
+                                              width: Int(width), height: Int(height)))
+        case .damageBuffer(let x, let y, let width, let height):
+            surface.pendingBufferDamage.append(Rect(x: Int(x), y: Int(y),
+                                                    width: Int(width), height: Int(height)))
+        case .destroy, .setOpaqueRegion, .setInputRegion, .setBufferTransform, .offset:
+            break
         }
     }
 

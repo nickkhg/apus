@@ -2,16 +2,15 @@
 
 ## Next steps for the compositor
 
-Apps have the pointer, and a window moves, changes its size and comes forward with a click. See [compositor.md](compositor.md#window-management) and [layouts.md](layouts.md#moving-and-resizing). Next, in this sequence:
+Apps have the pointer, and a window moves, changes its size and comes forward with a click. A frame draws only what changed. See [compositor.md](compositor.md#window-management), [compositor.md](compositor.md#damage) and [layouts.md](layouts.md#moving-and-resizing). Next, in this sequence:
 
-1. Damage tracking. Draw only the parts of the screen that changed.
-2. Stop drawing when libseat disables the seat (for example on a VT switch), and start again when libseat enables it.
-3. A GPU renderer. Use GBM, EGL, and OpenGL ES to draw the display list. Keep `SoftwareRenderer` as a fallback.
-4. `linux-dmabuf`, so that apps can give GPU buffers.
-5. Popups (`xdg_popup` and `xdg_positioner`).
-6. Test with real Wayland apps, for example `foot` or `weston-terminal`. The clients that test the Swift Wayland server now are `apus-hello-client` and `apus-terminal`. A real app is also the first test of a move and a resize from a title bar that someone else drew.
-7. `wl_registry.global_remove`, for globals that go away (for example a disconnected output).
-8. What window management does not have yet:
+1. Stop drawing when libseat disables the seat (for example on a VT switch), and start again when libseat enables it.
+2. A GPU renderer. Use GBM, EGL, and OpenGL ES to draw the display list. Keep `SoftwareRenderer` as a fallback.
+3. `linux-dmabuf`, so that apps can give GPU buffers.
+4. Popups (`xdg_popup` and `xdg_positioner`).
+5. Test with real Wayland apps, for example `foot` or `weston-terminal`. The clients that test the Swift Wayland server now are `apus-hello-client` and `apus-terminal`. A real app is also the first test of a move and a resize from a title bar that someone else drew.
+6. `wl_registry.global_remove`, for globals that go away (for example a disconnected output).
+7. What window management does not have yet:
 
    - The head that the shell draws has no bar to drag and no edge to pull. An app that draws no title bar of its own, such as the terminal, can therefore not be moved with the pointer. The head could start the same move and the same resize.
    - A move shows no mark on the cell that the window will take.
@@ -19,6 +18,7 @@ Apps have the pointer, and a window moves, changes its size and comes forward wi
    - The `tiled_left` to `tiled_bottom` states (version 2). A cell is a tile more than it is a maximized window, and an app draws square corners and no shadow for a tiled edge.
    - `wl_pointer.set_cursor`. The compositor always draws its own arrow, also over an edge that resizes.
    - The VM test resizes the edge between two windows side by side, and not the length of a tile. The unit tests hold the rule for a tile.
+8. Give the display the damage too. A frame draws only what changed (see [compositor.md](compositor.md#damage)), but the page flip hands the display the whole buffer, and a virtual display copies all of it to the host. `FB_DAMAGE_CLIPS` on an atomic commit, or `drmModeDirtyFB`, says which part changed. The offscreen renderer still reads the whole frame back from the GPU, and copies only the damage into the buffer of the display.
 
 ## The toolkit and the shell
 
@@ -29,7 +29,7 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
 3. A pointer position in a handler, and a drag.
 4. More of the second mode. The shadow, the blur and the gradient are in the display list now, and both renderers draw all three. See [toolkit.md](toolkit.md#the-two-modes). Three things remain:
 
-   - A blur reads the screen back. With damage tracking (item 1 of the compositor list) it could read only the part that changed.
+   - A blur reads the screen back only when the damage touches it, and then it reads all that it covers. A change under Summon therefore draws the whole blur again. A blur that kept its soft picture could put back only the part that changed, as long as nothing under it changed.
    - The GPU blur is 17 steps in each direction. A smaller copy of the screen would give the same picture for less work.
    - The compositor does not tell an app which mode the screen is in. An app therefore reads `cpu` from `\.renderMode` and asks for no blur of its own. A `wl_output` value or a value in the bundle could carry it.
    - CPU mode asks for none of the three. A slow machine in GPU mode has no way to say "the shadows only", and `Appearance` has no middle mode.
@@ -81,7 +81,7 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
   | A virtio-gpu device of our own | `VZCustomVirtioDevice`, on macOS 27 or later. We must then write a Venus decoder on MoltenVK. |
 
 - The GPU renderer draws a `path` from a coverage texture. The CPU makes that texture. `TextureCache` keeps it, so a shape that stays costs nothing after the first frame. A shape that moves or changes size goes to the CPU again. To fill an outline on the GPU, use a stencil pass and then a cover pass, with more than one sample for the smooth edges.
-- The GPU renderer sends the pixels of a window to the GPU at each commit. The GPU can read a buffer of the app directly, with `EGL_WL_bind_wayland_display` or with dma-buf. That removes the copy.
+- The GPU renderer sends the rows of a window that the app damaged to the GPU at each commit. The GPU can read a buffer of the app directly, with `EGL_WL_bind_wayland_display` or with dma-buf. That removes the copy.
 - The GPU renderer draws one quad for each item. Items with the same texture and colour could go into one draw.
 - `make gui` and `make demo` open a window. The automated tests do not test them. `tests/display.exp` and `tests/compositor.exp` test the same display with no window. In a window, the keyboard and the pointer are USB devices of the framework. The tests do not use those devices. They make their own with uinput.
 - `make build` builds every package in `packages/` again, every time: `build.sh` removes the repository and runs `makepkg --cleanbuild --force` for each one. Two of them are Mesa (`apus-zink`, `vulkan-virtio`), which is most of the minutes of an image build. A package whose PKGBUILD and sources did not change could come from the repository of the last build.

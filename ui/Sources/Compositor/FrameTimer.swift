@@ -23,9 +23,13 @@ import Glibc
 /// draws nothing, so an idle time between two frames lowers the rate of the
 /// line that holds it, and `worst gap` says how long that idle time was.
 ///
-/// The compositor draws the whole screen for each frame, so the cost rises
-/// with the number of pixels. A window on a Mac with small pixels gives the
-/// guest four times the pixels of the same window in points.
+/// `drew` is the part of the screen that the frames drew, on average. The
+/// compositor draws only what changed (see ScreenDamage), so a frame that
+/// changed a line of text costs that line and not the screen. A frame that
+/// is drawn whole, such as the first, costs the number of pixels, and a
+/// window on a Mac with small pixels gives the guest four times the pixels
+/// of the same window in points. `APUS_DAMAGE=full` draws every frame whole,
+/// to compare the two.
 struct FrameTimer {
     /// How many frames go into one line, or 0 for no line at all.
     private static let every: Int = {
@@ -46,6 +50,8 @@ struct FrameTimer {
     /// been between two starts.
     private var lastStart = 0.0
     private var longestGap = 0.0
+    /// The pixels that the frames of this line drew.
+    private var drawn = 0
 
     init(name: String) { self.name = name }
 
@@ -59,6 +65,12 @@ struct FrameTimer {
         }
         lastStart = now
         start = now
+    }
+
+    /// Counts the pixels that a frame drew.
+    mutating func drew(pixels: Int) {
+        guard FrameTimer.every > 0 else { return }
+        drawn += pixels
     }
 
     mutating func ended(width: Int, height: Int) {
@@ -78,7 +90,9 @@ struct FrameTimer {
             + " average \(FrameTimer.milliseconds(average))ms"
             + " longest \(FrameTimer.milliseconds(longest))ms"
             + " worst gap \(FrameTimer.milliseconds(longestGap))ms"
-            + " (\(FrameTimer.count(rate)) frames a second)")
+            + " (\(FrameTimer.count(rate)) frames a second)"
+            + " drew \(FrameTimer.share(drawn, of: frames * width * height))%")
+        drawn = 0
         total = 0
         longest = 0
         longestGap = 0
@@ -94,6 +108,11 @@ struct FrameTimer {
     /// point, because 0 says less than 4.6 does.
     private static func count(_ rate: Double) -> String {
         rate >= 10 ? "\(Int(rate.rounded()))" : "\((rate * 10).rounded() / 10)"
+    }
+
+    /// A part of a whole, in per cent, to one place after the point.
+    private static func share(_ part: Int, of whole: Int) -> Double {
+        whole > 0 ? (Double(part) / Double(whole) * 1000).rounded() / 10 : 0
     }
 
     private static func now() -> Double {

@@ -37,8 +37,8 @@ SDK_STAMP        := $(SWIFT_SDKS)/$(SWIFT_SDK).artifactbundle/info.json
 # APUS_CROSS tells ui/Toolkit/Package.swift not to run pkg-config: the
 # Swift SDK has the include directories, and pkg-config would answer with the
 # macOS libraries of Homebrew.
-# The compositor draws every pixel of every frame, and a debug build of it
-# is several times slower than the one the image carries, which makepkg
+# A frame that changes the whole screen is drawn whole, and a debug build of
+# the compositor is several times slower than the one the image carries, which makepkg
 # builds with -c release. `make demo-dev` would then look slow for a reason
 # that has nothing to do with the machine. UI_CONFIG=debug asks for the
 # other one.

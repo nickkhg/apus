@@ -38,7 +38,11 @@ if {[info exists env(APUS_UI_DIR)]} {
 proc drawWith {renderer name {mode cpu} {summon 0}} {
     global bin uienv
     set timeout $::slow
-    send "LIBSEAT_BACKEND=noop APUS_RENDERER=$renderer APUS_SHELL_MODE=$mode APUS_SCREENSHOT_SOCKET=/run/apus-screenshot.sock ${uienv}${bin}apus-compositor &\r"
+    # APUS_DAMAGE_CHECK draws each frame that the GPU drew in part a second
+    # time, whole, and says DAMAGE-WRONG when the two differ. The picture
+    # of the GPU screen is drawn whole (see GPUScreen.writePicture), so this
+    # is what holds that the damage and the age of the buffers are right.
+    send "LIBSEAT_BACKEND=noop APUS_RENDERER=$renderer APUS_SHELL_MODE=$mode APUS_DAMAGE_CHECK=1 APUS_SCREENSHOT_SOCKET=/run/apus-screenshot.sock ${uienv}${bin}apus-compositor &\r"
     if {$renderer eq "gpu"} {
         # The renderer says which GL it got. In a VM that is llvmpipe.
         expect {
@@ -107,6 +111,11 @@ proc differs {first second what} {
 
 spawn env VM_GPU=headless $env(APUS_VM) installed
 login
+
+# A frame that the GPU drew in part and that is not the frame drawn whole.
+expect_before {
+    -re {DAMAGE-WRONG [^\r\n]*} { fail "the damage: $expect_out(0,string)" }
+}
 
 # The first mode: flat colours. The two renderers must agree pixel by pixel.
 drawWith cpu renderer-cpu

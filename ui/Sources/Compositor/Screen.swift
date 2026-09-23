@@ -64,8 +64,13 @@ protocol FrameRasterizer: AnyObject {
     /// For the frame times of APUS_FRAME_LOG.
     var name: String { get }
 
+    /// Brings the buffer at `pixels` up to the newest frame of `damage`.
+    /// The buffer holds frame `held`, and only what changed since then is
+    /// drawn. Gives the number of the frame that the buffer holds after
+    /// this, which is the newest one unless the rasterizer is a frame behind.
     func render(_ list: DisplayList, into pixels: UnsafeMutablePointer<UInt32>,
-                width: Int, height: Int, stride: Int)
+                width: Int, height: Int, stride: Int,
+                damage: ScreenDamage, held: Int) -> Int
 }
 
 /// Draws with the CPU. Its pixels are the same on every run, which is what
@@ -75,9 +80,79 @@ final class CPURasterizer: FrameRasterizer {
     let name = "cpu"
 
     func render(_ list: DisplayList, into pixels: UnsafeMutablePointer<UInt32>,
-                width: Int, height: Int, stride: Int) {
+                width: Int, height: Int, stride: Int,
+                damage: ScreenDamage, held: Int) -> Int {
+        let region = damage.region(forBufferHolding: held, list: list)
+        damage.drew(region)
         SoftwareRenderer.render(list, into: Canvas(pixels: pixels, width: width,
-                                                  height: height, stride: stride))
+                                                  height: height, stride: stride),
+                                region: region)
+        return damage.latest
+    }
+}
+
+/// What each frame changed, and what a buffer must draw to catch up.
+///
+/// A screen has two or three buffers and draws into the one that the
+/// display is not showing. That buffer holds an older frame, so what it must
+/// draw is everything that changed since that frame: the damage of each
+/// frame in between (see DamageHistory). Everything else in it is right
+/// already.
+///
+/// `APUS_DAMAGE=full` draws every frame whole, as the compositor did before
+/// it tracked damage. It is there to compare the two, and to rule damage out
+/// when a picture looks wrong.
+final class ScreenDamage {
+    static let isOff: Bool = getenv("APUS_DAMAGE").map { String(cString: $0) } == "full"
+
+    private let tracker = DamageTracker()
+    private var history = DamageHistory()
+    private(set) var screen = Rect(x: 0, y: 0, width: 0, height: 0)
+    /// The pixels drawn since the frame log last asked, for APUS_FRAME_LOG.
+    private(set) var drawnPixels = 0
+
+    var latest: Int { history.latest }
+
+    /// Compares a new frame with the last one and keeps what it changed.
+    /// Gives the number of the new frame.
+    @discardableResult
+    func newFrame(_ list: DisplayList, width: Int, height: Int) -> Int {
+        let size = Rect(x: 0, y: 0, width: width, height: height)
+        if size != screen {
+            screen = size
+            forgetBuffers()
+        }
+        return history.record(tracker.damage(for: list, screen: screen))
+    }
+
+    /// What a buffer that holds frame `held` must draw to show the newest
+    /// frame. A buffer that holds no frame, or one older than the history,
+    /// draws the whole screen.
+    func region(forBufferHolding held: Int, list: DisplayList) -> Region {
+        guard !ScreenDamage.isOff else { return Region(screen) }
+        return history.changes(after: held, screen: screen).grown(for: list, screen: screen)
+    }
+
+    /// What changed after frame `held`, up to frame `through`, with no
+    /// drawing: a rasterizer that copies a finished frame copies this much.
+    func changes(after held: Int, through: Int) -> Region {
+        guard !ScreenDamage.isOff else { return Region(screen) }
+        return history.changes(after: held, through: through, screen: screen)
+    }
+
+    /// No buffer holds a picture that can be used: the buffers are new.
+    func forgetBuffers() {
+        tracker.reset()
+        history.reset()
+    }
+
+    /// Counts what a frame drew, for the frame log.
+    func drew(_ region: Region) { drawnPixels += region.area }
+
+    /// The pixels drawn since the last call.
+    func takeDrawnPixels() -> Int {
+        defer { drawnPixels = 0 }
+        return drawnPixels
     }
 }
 
@@ -143,6 +218,9 @@ final class SoftwareScreen: Screen, PageFlipHandler {
     var sizeChanged: () -> Void = {}
 
     private var buffers: [DumbFramebuffer]
+    /// The frame that each buffer holds, 0 for none. See ScreenDamage.
+    private var held = [0, 0]
+    private let damage = ScreenDamage()
     private var back = 1
     private var flipPending = false
     private var needsFrame = false
@@ -198,6 +276,8 @@ final class SoftwareScreen: Screen, PageFlipHandler {
         log("SCREEN-MODE \(latest.mode)")
         output = latest
         buffers = [first, second]
+        held = [0, 0]
+        damage.forgetBuffers()
         back = 1
         try? device.setFramebuffer(buffers[0], on: output)
         sizeChanged()
@@ -257,10 +337,12 @@ final class SoftwareScreen: Screen, PageFlipHandler {
         needsFrame = false
         let buffer = buffers[back]
         let list = displayList()
-        buffer.withPixels { pixels, stride in
+        damage.newFrame(list, width: width, height: height)
+        held[back] = buffer.withPixels { pixels, stride in
             rasterizer.render(list, into: pixels, width: width, height: height,
-                              stride: stride)
+                              stride: stride, damage: damage, held: held[back])
         }
+        timer.drew(pixels: damage.takeDrawnPixels())
         if canPageFlip {
             do {
                 try device.schedulePageFlip(buffer, on: output, handler: self)
