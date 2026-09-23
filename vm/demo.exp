@@ -55,7 +55,13 @@ if {$frameLog ne "0"} {
 # on that one, and the window shows what it draws.
 spawn env VM_GPU=window VM_CUSTOM_GPU=1 $env(APUS_VM) installed
 login
-send "LIBSEAT_BACKEND=noop ${uienv}apus-gpu ${bin}apus-compositor &\r"
+# The sound server starts with apus-shell.service, and the demo starts the
+# compositor by hand, so it starts the server itself. It waits for the
+# speakers, so that the login sound at the first frame has somewhere to
+# go. The tests do not do this, so they make no sound on the Mac.
+send "systemctl start apus-pipewire.service; for i in \$(seq 25); do wpctl inspect @DEFAULT_AUDIO_SINK@ >/dev/null 2>&1 && break; sleep 0.2; done\r"
+mark "the sound server"
+send "LIBSEAT_BACKEND=noop PIPEWIRE_RUNTIME_DIR=/run/pipewire ${uienv}apus-gpu ${bin}apus-compositor &\r"
 expect {
     "COMPOSITOR-READY"     {}
     "apus-compositor:" { fail "compositor reported an error" }

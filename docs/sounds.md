@@ -218,7 +218,7 @@ The role `Notification` lets WirePlumber give event sounds a volume of their own
 | `message-new-instant` | Settings, as the sample of the Sound pane. Apps have no way to post a notice yet. | `Settings/Store.swift` |
 | `screen-capture` | Nobody yet: Apus has no screenshot for a person. | |
 
-The compositor writes `SOUND <name>` in its log for each sound it asks for, and `SOUND <name> silent` when nothing played. `tests/compositor.exp` checks `SOUND desktop-login`. In that test no sound server runs, so nothing is heard on the Mac.
+The compositor writes `SOUND <name>` in its log for each sound it asks for, and `SOUND <name> silent` when nothing played. `tests/compositor.exp` checks `SOUND desktop-login`. In that test no sound server runs, so nothing is heard on the Mac. The sound server starts with `apus-shell.service`. `make demo` and `make demo-dev` start the compositor by hand, so `vm/demo.exp` starts the server first; the demo is where a person hears the sounds.
 
 The Power app reads the supplies only while it runs, so the charger and the low battery make a sound only while Power is open. A small service of the session that reads them would make the sound in any case.
 
