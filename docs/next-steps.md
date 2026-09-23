@@ -37,10 +37,8 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
 
 ## The terminal
 
-1. Text that a user can select, and copy and paste.
-2. The lines that scrolled away, and a way to go back to them.
-3. Key repeat. The compositor sends `repeat_info`, and the app does nothing with it.
-4. More than one window, or more than one shell in one window.
+1. Key repeat. The compositor sends `repeat_info`, and the app does nothing with it.
+2. More than one window, or more than one shell in one window.
 
 ## The system
 
