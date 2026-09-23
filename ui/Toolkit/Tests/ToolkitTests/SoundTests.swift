@@ -83,4 +83,50 @@ struct SoundTests {
         let themes = Themes(["apus/stereo/bell.oga"])
         #expect(SoundTheme.file(for: SystemSound(rawValue: "window-new"), in: [themes.root]) == nil)
     }
+
+    @Test("The player plays the file, and quieter when the settings say so")
+    func player() {
+        let themes = Themes(["apus/stereo/bell.oga"])
+        let file = "\(themes.root)/apus/stereo/bell.oga"
+        #expect(SoundTheme.player(for: .bell, settings: SoundSettings(), in: [themes.root])
+            == ["pw-play", "--media-role=Notification", file])
+        #expect(SoundTheme.player(for: .bell, settings: SoundSettings(volume: 0.5), in: [themes.root])
+            == ["pw-play", "--media-role=Notification", "--volume=0.5", file])
+    }
+
+    @Test("Sounds that are off, or at no volume, have no player")
+    func off() {
+        let themes = Themes(["apus/stereo/bell.oga"])
+        #expect(SoundTheme.player(for: .bell, settings: SoundSettings(enabled: false), in: [themes.root]) == nil)
+        #expect(SoundTheme.player(for: .bell, settings: SoundSettings(volume: 0), in: [themes.root]) == nil)
+    }
+
+    @Test("A word with a quote in it reaches the shell as it is")
+    func quoting() {
+        #expect(SoundTheme.quoted("/a b/it's.oga") == "'/a b/it'\\''s.oga'")
+    }
+}
+
+@Suite("What a person chose for the sounds")
+struct SoundSettingsTests {
+    @Test("No file is sounds on, at full volume")
+    func defaults() {
+        #expect(SoundSettings.load(from: "/nonexistent/sounds.conf") == SoundSettings())
+        #expect(SoundSettings(parsing: "") == SoundSettings(enabled: true, volume: 1))
+    }
+
+    @Test("The file says whether sounds play, and how loud")
+    func parsing() {
+        #expect(SoundSettings(parsing: "enabled=no\nvolume=0.25\n") == SoundSettings(enabled: false, volume: 0.25))
+        #expect(SoundSettings(parsing: " enabled = off ") == SoundSettings(enabled: false))
+        #expect(SoundSettings(parsing: "volume=7") == SoundSettings(volume: 1))
+        #expect(SoundSettings(parsing: "volume=loud\ncolour=red") == SoundSettings())
+    }
+
+    @Test("The text of the settings reads back as the same settings")
+    func roundTrip() {
+        for settings in [SoundSettings(), SoundSettings(enabled: false, volume: 0.5), SoundSettings(volume: 0.75)] {
+            #expect(SoundSettings(parsing: settings.text) == settings)
+        }
+    }
 }

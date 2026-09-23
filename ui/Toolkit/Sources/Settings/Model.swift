@@ -10,7 +10,7 @@ import Toolkit
 
 /// One part of Settings: a line in the sidebar and the pane that it opens.
 public enum Pane: String, CaseIterable, Sendable {
-    case about, time, password, display, keyboard, network, apps, power
+    case about, time, password, display, keyboard, network, sound, apps, power
 
     public var title: String {
         switch self {
@@ -20,6 +20,7 @@ public enum Pane: String, CaseIterable, Sendable {
         case .display: "Display"
         case .keyboard: "Keyboard"
         case .network: "Network"
+        case .sound: "Sound"
         case .apps: "Apps"
         case .power: "Power"
         }
@@ -34,6 +35,7 @@ public enum Pane: String, CaseIterable, Sendable {
         case .display: "How the shell draws the screen"
         case .keyboard: "What each key writes"
         case .network: "The connections of this machine"
+        case .sound: "The sounds of the system, and how loud they are"
         case .apps: "What Summon lists"
         case .power: "Start the shell or the machine again, or stop it"
         }
@@ -43,7 +45,7 @@ public enum Pane: String, CaseIterable, Sendable {
     var group: String {
         switch self {
         case .about, .time, .password: "System"
-        case .display, .keyboard, .network: "Devices"
+        case .display, .keyboard, .network, .sound: "Devices"
         case .apps: "Software"
         case .power: ""
         }
@@ -58,6 +60,7 @@ public enum Pane: String, CaseIterable, Sendable {
         case .display: Color(hex: 0x7C6CF0)
         case .keyboard: Color(hex: 0xE0A458)
         case .network: Color(hex: 0x49C7C7)
+        case .sound: Color(hex: 0xE06C9F)
         case .apps: Color(hex: 0x3070F0)
         case .power: Color(hex: 0xA9E34B)
         }
@@ -80,6 +83,8 @@ public struct Snapshot: Sendable {
     public var interfaces: [NetworkInterface] = []
     public var nameServers: [String] = []
     public var apps: [AppInfo] = []
+    /// What the sounds of the system do. See SoundSettings.
+    public var sounds = SoundSettings()
     public var load: [Double] = []
 
     public init() {}
@@ -324,6 +329,10 @@ public protocol SettingsSystem: AnyObject {
     func saveShellSettings(_ settings: ShellSettings) -> Outcome
     func renew(_ interface: String) -> Outcome
     func setShown(_ app: AppInfo, _ shown: Bool) -> Outcome
+    /// Writes what the sounds do. Every program reads it at its next sound.
+    func saveSounds(_ settings: SoundSettings) -> Outcome
+    /// Plays a sound as the saved settings say.
+    func play(_ sound: SystemSound)
     func restartShell() -> Outcome
     func restartMachine() -> Outcome
     func powerOff() -> Outcome

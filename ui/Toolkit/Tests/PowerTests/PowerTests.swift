@@ -94,6 +94,42 @@ struct PowerTests {
         #expect(store.reading.source == .nothingReported, "a battery that goes away goes")
     }
 
+    @Test("The charger and a low battery make a sound, and a low battery only once")
+    func sounds() {
+        /// The battery of the samples at a charge, in percent of its 52.6 Wh.
+        func battery(_ percent: Double) -> String {
+            Sample.energyBattery.replacing("POWER_SUPPLY_ENERGY_NOW=41200000",
+                                           with: "POWER_SUPPLY_ENERGY_NOW=\(Int(percent * 526_000))")
+        }
+        let supplies = Supplies([("AC", Sample.unplugged), ("BAT0", battery(15))])
+        let store = PowerStore(source: supplies)
+        var played: [String] = []
+        store.play = { played.append($0.rawValue) }
+        var now = 0.0
+        func read(_ files: [(name: String, uevent: String)]) {
+            supplies.files = files
+            now += 2
+            store.tick(now: now)
+        }
+
+        read([("AC", Sample.unplugged), ("BAT0", battery(11))])
+        #expect(played.isEmpty)
+        read([("AC", Sample.unplugged), ("BAT0", battery(9))])
+        read([("AC", Sample.unplugged), ("BAT0", battery(8))])
+        #expect(played == ["battery-low"], "once, not at each reading")
+        read([("AC", Sample.adapter), ("BAT0", battery(8))])
+        #expect(played == ["battery-low", "power-plug"])
+        read([("AC", Sample.unplugged), ("BAT0", battery(8))])
+        #expect(played == ["battery-low", "power-plug", "power-unplug", "battery-low"],
+                "the charger made the low sound ready again")
+        read([("AC", Sample.unplugged), ("BAT0", battery(11))])
+        read([("AC", Sample.unplugged), ("BAT0", battery(9))])
+        #expect(played.count == 4, "11 % is under the level that makes it ready again")
+        read([])
+        read([("AC", Sample.adapter), ("BAT0", battery(9))])
+        #expect(played.count == 4, "a driver that comes and goes is no charger")
+    }
+
     @Test("A duration and a power in the words of a person")
     func words() {
         #expect(Words.duration(20) == "under a minute")

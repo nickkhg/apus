@@ -68,4 +68,4 @@ A machine with an adapter and no battery, as most desktops are, says "On AC powe
 
 - A VM on a Mac has no battery, so only the no-battery state can show there. The states with a battery are tested with the text of real machines, on the Mac and in the builder container.
 - Power reads; it changes nothing. There is no power profile, no limit of the charge, and no sleep: Apus has no daemon for them.
-- It does not warn when the battery is low. A notice of the shell could, once an app can send one.
+- A low battery (under 10 %) plays `battery-low` once, and the charger plays `power-plug` and `power-unplug`. There is no notice on the screen yet, because an app cannot send one to the shell. The sounds play only while Power is open. See [sounds.md](sounds.md#who-plays-what).

@@ -24,8 +24,9 @@ The panes read a `Snapshot`, and they ask for a change through the `SettingsSyst
 | Display | `/sys/class/drm/*/status` and `modes`, the environment of the app, the drop-in | The drop-in, then `systemctl daemon-reload` |
 | Keyboard | The environment of the app, the drop-in | The drop-in, then `systemctl daemon-reload` |
 | Network | `/sys/class/net`, `getifaddrs`, `/proc/net/route`, `/run/systemd/resolve/resolv.conf` | `networkctl reconfigure` for Renew |
+| Sound | `~/.config/apus/sounds.conf` | The same file, at once, and then a sound at the new loudness. No file is the default. See [sounds.md](sounds.md#the-switch). |
 | Apps | `/Applications/*.app/app.conf`, and the desktop entries in the directories that the compositor reads | A desktop entry of your own that hides the app |
-| Power | `/proc/uptime`, `/proc/loadavg` | `systemctl --no-block restart apus-shell.service`, `systemctl reboot`, `systemctl poweroff` |
+| Power | `/proc/uptime`, `/proc/loadavg` | `systemctl --no-block restart apus-shell.service`, `systemctl reboot`, `systemctl poweroff`, each after the logout sound has played |
 
 A write goes to a file beside the target, and then the file takes the name of the target. A program that reads the file sees the old file or the new file, never a part of one. `/etc/localtime` is a link, and Settings makes the new link in the same way.
 
@@ -106,6 +107,7 @@ In a field, Enter keeps the text and Escape does not. In Password, Tab moves bet
 
 ## Limits
 
+- At the smallest size, a choice of three or more (Surfaces and Scale in Display, Loudness in Sound) is wider than its row, and its labels shrink to "…". The row gives the choice the room that is left after the title, and the choice cannot wrap.
 - Settings runs as root, as every app on Apus does. When Apus has user accounts, the changes to `/etc` need a program of the system that does them for the user, such as `hostnamed` and `timedated`.
 - The Network pane shows the wired and wireless interfaces, but it cannot join a wireless network. Apus has no wireless daemon.
 - The layout list has the layouts that most people use. xkeyboard-config has many more. To use another one, write its name in the drop-in yourself.

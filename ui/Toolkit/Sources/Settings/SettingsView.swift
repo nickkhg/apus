@@ -242,6 +242,7 @@ struct PaneView: View {
         case .password: PasswordPane(store: store)
         case .display: DisplayPane(store: store)
         case .network: NetworkPane(store: store)
+        case .sound: SoundPane(store: store)
         case .power: PowerPane(store: store)
         case .time, .keyboard, .apps: EmptyView()
         }

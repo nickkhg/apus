@@ -112,6 +112,13 @@ final class Machine: SettingsSystem {
         return record("shown \(app.id) \(shown)")
     }
 
+    func saveSounds(_ settings: SoundSettings) -> Outcome {
+        if case .done = outcome { snapshot.sounds = settings }
+        return record("sounds \(settings.enabled) \(settings.volume)")
+    }
+
+    func play(_ sound: SystemSound) { calls.append("play \(sound.rawValue)") }
+
     func restartShell() -> Outcome { record("restart shell") }
     func restartMachine() -> Outcome { record("reboot") }
     func powerOff() -> Outcome { record("poweroff") }

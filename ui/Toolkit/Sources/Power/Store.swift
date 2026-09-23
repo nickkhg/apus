@@ -14,6 +14,18 @@ public final class PowerStore {
     public var machine: MachineKind { source.machine }
 
     private var lastRead = -Double.infinity
+    /// The low sound played in this run down of the battery. The charger,
+    /// or a charge back over the level, makes it ready again.
+    private var saidLow = false
+
+    /// Plays a sound of the system. The tests hear it instead.
+    public var play: (SystemSound) -> Void = { playSound($0) }
+
+    /// The charge, in percent, under which the battery is low and says so.
+    static let lowLevel = 10.0
+    /// The charge that makes the low sound ready again. It is over the level,
+    /// so a charge that wavers at the level does not sound twice.
+    static let lowAgain = 12.0
 
     /// How often the supplies are read: a battery changes slowly, and the
     /// power that goes out of it changes with the work.
@@ -33,7 +45,30 @@ public final class PowerStore {
         lastRead = now
         let before = reading
         read()
+        sound(from: before, to: reading)
         if reading != before || reading.watts != nil { changed() }
+    }
+
+    /// The charger went in or out, or the battery became low.
+    func sound(from before: PowerReading, to after: PowerReading) {
+        func plugged(_ source: PowerReading.Source) -> Bool {
+            source == .mains || source == .batteryOnMains
+        }
+        // A machine that names nothing, before or after, did not change:
+        // its driver came or went.
+        if before.source != .nothingReported, after.source != .nothingReported,
+           plugged(before.source) != plugged(after.source) {
+            play(plugged(after.source) ? .powerPlug : .powerUnplug)
+        }
+        guard let charge = after.capacity, after.source == .battery else {
+            saidLow = false
+            return
+        }
+        if charge >= PowerStore.lowAgain { saidLow = false }
+        if charge < PowerStore.lowLevel, !saidLow {
+            saidLow = true
+            play(.batteryLow)
+        }
     }
 
     private func read() {

@@ -108,6 +108,15 @@ struct ScreenTests {
         let screen = Screen(columns: 20, rows: 2)
         write(screen, "\u{1B}]0;a title\u{7}text")
         #expect(line(screen, 0) == "text")
+        #expect(screen.bells == 0)
+    }
+
+    @Test("A bell prints nothing, and the screen counts it")
+    func bell() {
+        let screen = Screen(columns: 20, rows: 2)
+        write(screen, "a\u{7}b\u{7}\u{7}")
+        #expect(line(screen, 0) == "ab")
+        #expect(screen.bells == 3)
     }
 
     @Test("A sequence that the terminal does not know prints nothing")

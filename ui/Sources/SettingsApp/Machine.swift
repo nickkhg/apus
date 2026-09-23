@@ -40,6 +40,7 @@ final class Machine: SettingsSystem {
         snapshot.nameServers = Parse.nameServers(
             Files.read("/run/systemd/resolve/resolv.conf") ?? Files.read("/etc/resolv.conf") ?? "")
         snapshot.apps = apps()
+        snapshot.sounds = SoundSettings.load()
         snapshot.load = (Files.line("/proc/loadavg") ?? "")
             .split(separator: " ").prefix(3).compactMap { Double($0) }
         return snapshot
@@ -370,10 +371,33 @@ final class Machine: SettingsSystem {
         return .done("Summon does not list \(app.name). \(own) says so.")
     }
 
+    func saveSounds(_ settings: SoundSettings) -> Outcome {
+        let path = SoundSettings.path()
+        if settings == SoundSettings() {
+            // No file is the default.
+            if let problem = Files.remove(path) { return .failed(problem) }
+        } else {
+            let directory = String(path[..<(path.lastIndex(of: "/") ?? path.endIndex)])
+            if let problem = Files.makeDirectories(directory) { return .failed(problem) }
+            if let problem = Files.write(path, settings.text) { return .failed(problem) }
+        }
+        return .done(settings.enabled ? "Saved" : "The system makes no sounds now")
+    }
+
+    func play(_ sound: SystemSound) { playSound(sound) }
+
+    /// The sound of the end of a session, before the session ends. systemd
+    /// stops the player with the shell, so the change waits for the sound
+    /// to play out: it is 0.6 s long.
+    private func sayGoodbye() {
+        if playSound(.desktopLogout) { usleep(650_000) }
+    }
+
     func restartShell() -> Outcome {
         guard shellIsService() else {
             return .failed("This shell was started by hand, so systemd cannot start it again")
         }
+        sayGoodbye()
         // --no-block: the shell that stops takes this app with it, so
         // nothing would be left to hear the answer.
         let result = Command.run(["systemctl", "--no-block", "restart", "apus-shell.service"])
@@ -381,11 +405,13 @@ final class Machine: SettingsSystem {
     }
 
     func restartMachine() -> Outcome {
+        sayGoodbye()
         let result = Command.run(["systemctl", "reboot"])
         return result.succeeded ? .done("The machine starts again") : .failed("systemctl: \(result.reason)")
     }
 
     func powerOff() -> Outcome {
+        sayGoodbye()
         let result = Command.run(["systemctl", "poweroff"])
         return result.succeeded ? .done("The machine stops") : .failed("systemctl: \(result.reason)")
     }
