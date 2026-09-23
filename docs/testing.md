@@ -32,7 +32,7 @@ The serial console is always in the terminal. To stop the VM, push Ctrl-A in the
 
 A window follows its own size when a person changes it, and it counts pixels, not points. A Mac with small pixels therefore gives the guest two times the pixels in each direction, which is four times the work for each frame. `VM_RESIZE=off` keeps the size that `VM_SCREEN` gave.
 
-`APUS_FRAME_LOG` times the frames. `APUS_FRAME_LOG=20` writes one line for each 20 frames: the cost of a frame, the longest gap between two frames, the rate, and the size of the screen. These are the costs of the shell with nothing open, in a VM, where Mesa renders with the CPU:
+`APUS_FRAME_LOG` times the frames. `APUS_FRAME_LOG=20` writes one line for each 20 frames: the cost of a frame, the longest gap between two frames, the rate, the size of the screen, and the part of the screen that the frames drew. These are the costs of the shell with nothing open, drawn whole, in a VM, where Mesa renders with the CPU:
 
 | Renderer | Size | Average | Longest |
 |---|---|---|---|
@@ -42,7 +42,20 @@ A window follows its own size when a person changes it, and it counts pixels, no
 
 The average and the longest are the cost of the drawing alone. The rate in the line is a different measurement: it counts the frames against the clock, so the waiting for a page flip, for input, and for an app is in it. A frame that costs 6 ms does not make 163 frames a second if the compositor then waits 20 ms for the next thing to do. `worst gap`, beside the rate, is the longest the screen went without a new frame, and a stutter is in that number and not in the average.
 
-The GPU renderer is the slower one in a VM, because the VM has no GPU. Mesa renders with the CPU (llvmpipe). The GPU path then adds work of its own: a texture for each window, and a new framebuffer for each frame. On hardware with a GPU the numbers are not these. The compositor draws the whole screen for each frame, so the size of the screen is what counts most.
+The GPU renderer is the slower one in a VM, because the VM has no GPU. Mesa renders with the CPU (llvmpipe). The GPU path then adds work of its own: a texture for each window, and a new framebuffer for each frame. On hardware with a GPU the numbers are not these. A frame drawn whole costs the size of the screen, so the size is what counts most then.
+
+The compositor draws only the part of the screen that changed (see [compositor.md](compositor.md#damage)), and `APUS_DAMAGE=full` draws every frame whole. These are the two, in a VM at 1280x800, with the terminal open: 60 keys typed into it, then 60 lines of output, then Summon opened and closed. Each number is the average of the lines of `APUS_FRAME_LOG=20` for that part (23 September):
+
+| Renderer | What changes | Whole | Only the damage | Drew |
+|---|---|---|---|---|
+| `cpu` | a key in the terminal | 2.5 ms | 0.5 ms | 1 % |
+| `cpu` | a line of output | 2.5 ms | 0.5 ms | 1 % |
+| `cpu` | Summon | 2.2 to 4.8 ms | 1.0 to 2.0 ms | 8 % |
+| `gpu` (GBM, llvmpipe, GPU mode) | a key in the terminal | 10.1 ms | 1.9 ms | 1 % |
+| `gpu` (GBM, llvmpipe, GPU mode) | a line of output | 10.7 ms | 1.9 ms | 1 % |
+| `gpu` (GBM, llvmpipe, GPU mode) | Summon, over its blur | 10.2 ms | 3.7 to 10.0 ms | 8 % |
+
+The rate stays near 19 frames a second in every row, because the apps and the input set it, not the drawing. What the damage gives back is time for everything else, and room for a larger screen.
 
 If `out/vm/target.img` does not exist, the program makes an 8 GB disk. To start with an empty disk, remove the file. To change the size, set `TARGET_SIZE`, for example `TARGET_SIZE=16G`. The disk is a raw file, because the framework reads raw disk images only. The file is sparse: it uses only the blocks that the guest writes.
 
