@@ -1,0 +1,70 @@
+# The sound card of the virtual machine: the virtio_snd driver of Linux,
+# built for the kernel of Arch Linux ARM.
+#
+# linux-aarch64 has sound, but it leaves this one driver out
+# (CONFIG_SND_VIRTIO is not set). Apple's Virtualization framework gives the
+# guest a virtio sound device and nothing else, so without the driver the
+# guest has no sound card at all. This package builds the driver from the
+# files of the kernel release, against linux-aarch64-headers, and puts it
+# beside the modules of that kernel. udev loads it when it finds the device.
+#
+# The module fits one kernel. A new linux-aarch64 needs a new build of this
+# package (`make build`), and a machine that updates its kernel with pacman
+# has no sound until then. See docs/audio.md.
+pkgname=virtio-snd
+# The kernel release that the source files come from.
+pkgver=7.2.6
+pkgrel=1
+pkgdesc='virtio_snd, the sound driver for a virtual machine, for linux-aarch64'
+arch=('aarch64')
+url='https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/sound/virtio'
+license=('GPL-2.0-or-later')
+depends=('linux-aarch64')
+makedepends=('linux-aarch64-headers')
+
+_files=(Makefile virtio_card.c virtio_card.h virtio_chmap.c virtio_ctl_msg.c
+        virtio_ctl_msg.h virtio_jack.c virtio_kctl.c virtio_pcm.c virtio_pcm.h
+        virtio_pcm_msg.c virtio_pcm_ops.c)
+_base="https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain/sound/virtio"
+source=()
+for _file in "${_files[@]}"; do
+    source+=("$_file::$_base/$_file?h=v$pkgver")
+done
+sha256sums=('9379a64396372c4e523a71613faeabf211e7ad8a9087101819daeed8d659180a'
+            'c131ced36b07c087383a9f0526f7dad4833f233b0546595751d4e12927aaca26'
+            '79eb9974ae93ced665d6bffa8d766ff0cb9a779618112e7c21e37191955274cc'
+            '2c6ae3de0f67ee85842296a5205c276421678dcde0d7189e232dbaf0e53ee128'
+            '74c21a7a505f37c36ec970fa75447c0ab32671a24bd94873517234f477ab3222'
+            'a2e195d6a483df6ceea164e43f4f274a2eab4779c16408fee7f4d8475c885e9f'
+            '58776791a4fdf2b216346d93b12be6833be7a159fa4acae3448e357b44612a8a'
+            'dc50cff4758fd5111b2616dcc7df85a70e37a739a944472ae8218f68c2ec67e0'
+            '6da0817073a496345d00538b4d1e291cd4996249678881b72c3838dba61e9a1a'
+            '24de4b5cdbc1f225befebbc2a43fb46f6d966171e8789ec5ca27a3083620ed02'
+            'b8f7ecb55c00ba1ab0cf41c656644729f4b73f337932b26fc38e6cab9d5174b5'
+            'ad567fefbfa0f51b30f7951aa61f24169a3025256e888268c218da7f0c2117b8')
+
+# The kernel that the headers are for, for example 7.2.6-1-aarch64-ARCH.
+_kernel() {
+    local dirs=(/usr/lib/modules/*/build)
+    basename "$(dirname "${dirs[0]}")"
+}
+
+prepare() {
+    local kernel
+    kernel=$(_kernel)
+    # The files come from one release and the headers can be of a newer one.
+    # The driver changes little, so the build goes on, but it says so: the
+    # right fix is to move pkgver to the new release and its checksums.
+    if [[ $kernel != "$pkgver"-* ]]; then
+        warning "the headers are for $kernel; the driver is from $pkgver"
+    fi
+}
+
+build() {
+    make -C "/usr/lib/modules/$(_kernel)/build" M="$srcdir" CONFIG_SND_VIRTIO=m modules
+}
+
+package() {
+    install -Dm644 "$srcdir/virtio_snd.ko" \
+        "$pkgdir/usr/lib/modules/$(_kernel)/extramodules/virtio_snd.ko"
+}

@@ -52,6 +52,13 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
 - The toolkit is one dynamic library, and the machine carries one copy of it (see [ui.md](ui.md#one-library-for-the-machine)). It has no stable ABI: the library and the programs must come from one build. `-enable-library-evolution` on the toolkit would make a new library work with the programs that are there already. Put `@frozen` on the types of the hot path with it: `Frame`, `Size`, `Color`, `Rect` and `Proposal`. Measure `make bench` after it: a resilient type reaches its fields through a function.
 - The shell runs as root. A shell of a person wants a session of that person. logind gives the seat, and the files that the apps open are that person's files.
 - The live system does not start the installer automatically.
+- Sound (see [audio.md](audio.md)):
+  - Ask Arch Linux ARM for `CONFIG_SND_VIRTIO=m` in `linux-aarch64`. Then `packages/virtio-snd` can go. Until then, each new kernel needs a new `pkgver` and new sums in that PKGBUILD, and a machine that updates its kernel with pacman has no sound until it gets a new package. DKMS would build the module on the machine, but it needs the compiler and the headers there.
+  - The system sounds. The theme goes in `/usr/share/sounds/apus/`, and the shell plays a file with `pw-play`.
+  - A volume control in the panel or in Settings. `wpctl set-volume @DEFAULT_AUDIO_SINK@ 50%` does it now.
+  - The sound server runs as root, beside the shell. When the shell runs in the session of a person, use the `systemd --user` units of the packages.
+  - The microphone is off by default (`VM_AUDIO=mic` turns it on), and no automated test uses it. The question of macOS for the microphone, on a Mac where nobody has answered it, is not tested.
+  - The live system has no sound server, because it does not start the shell.
 
 ## Packages and the repository
 

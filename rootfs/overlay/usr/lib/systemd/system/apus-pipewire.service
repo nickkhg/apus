@@ -1,0 +1,23 @@
+# The sound server: PipeWire, for the session that the shell runs in.
+#
+# The shell runs as root, as a service of the system, and has no login
+# session. The units that PipeWire ships are for the session of a person,
+# and they refuse root (ConditionUser=!root). So the machine runs one sound
+# server as a service of its own, beside the shell, and the shell and its
+# apps find it in /run/pipewire. A login on the console or over SSH finds it
+# there too, because /etc/environment names the directory. See
+# docs/audio.md.
+#
+# apus-shell.service asks for this unit, and this unit asks for WirePlumber
+# and the PulseAudio server, because PipeWire without them plays nothing.
+[Unit]
+Description=PipeWire, the sound server of the Apus session
+Wants=apus-wireplumber.service apus-pipewire-pulse.service
+
+[Service]
+ExecStart=/usr/bin/pipewire
+# pipewire-0 goes here, and pulse/native of pipewire-pulse.
+RuntimeDirectory=pipewire
+Environment=XDG_RUNTIME_DIR=/run/pipewire
+Environment=PIPEWIRE_RUNTIME_DIR=/run/pipewire
+Restart=on-failure

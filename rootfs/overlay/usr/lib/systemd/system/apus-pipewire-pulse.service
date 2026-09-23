@@ -1,0 +1,13 @@
+# The PulseAudio server of PipeWire, for programs that speak PulseAudio
+# (pactl, paplay, libcanberra, most browsers). It listens on
+# /run/pipewire/pulse/native. See apus-pipewire.service.
+[Unit]
+Description=The PulseAudio server of the Apus sound server
+BindsTo=apus-pipewire.service
+After=apus-pipewire.service apus-wireplumber.service
+
+[Service]
+ExecStart=/usr/bin/pipewire-pulse
+Environment=XDG_RUNTIME_DIR=/run/pipewire
+Environment=PIPEWIRE_RUNTIME_DIR=/run/pipewire
+Restart=on-failure

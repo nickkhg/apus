@@ -9,6 +9,16 @@ struct Options {
         case installed
     }
 
+    enum Audio: String {
+        /// No sound device.
+        case off
+        /// The speakers of the Mac. This is the default.
+        case on
+        /// The speakers and the microphone of the Mac. macOS asks the
+        /// person first, so it is never the default.
+        case mic
+    }
+
     enum Display {
         /// No graphics device. The serial console is the only interface.
         case none
@@ -30,6 +40,8 @@ struct Options {
     /// Whether to add a virtio-gpu device of our own, beside the one the
     /// framework gives. See VirtioGPUDevice.
     var customGPU: Bool
+    /// The sound device, and whether it has the microphone too.
+    var audio: Audio
 
     static let usage = """
         usage: apus-vm live|installed
@@ -47,6 +59,9 @@ struct Options {
         VM_CUSTOM_GPU=1 adds a virtio-gpu device that this program is the
         implementation of, beside the one the framework gives. It is the way
         to a guest that has a GPU; the framework's own device has none.
+        VM_AUDIO selects the sound: on (the default: the speakers of the Mac),
+        off (no sound device), or mic (the speakers and the microphone;
+        macOS asks for permission to use the microphone).
         """
 
     static func parse(
@@ -79,8 +94,12 @@ struct Options {
         let followsWindow = (environment["VM_RESIZE"] ?? "on") != "off"
         let customGPU = environment["VM_CUSTOM_GPU"] == "1"
 
+        let wantedAudio = environment["VM_AUDIO"] ?? "on"
+        guard let audio = Audio(rawValue: wantedAudio) else { throw .badAudio(wantedAudio) }
+
         return Options(mode: mode, display: display, targetSize: targetSize,
-                       screen: screen, followsWindow: followsWindow, customGPU: customGPU)
+                       screen: screen, followsWindow: followsWindow, customGPU: customGPU,
+                       audio: audio)
     }
 
     /// A size as WIDTHxHEIGHT.
@@ -96,6 +115,7 @@ struct Options {
         case badDisplay
         case badSize(String)
         case badScreen(String)
+        case badAudio(String)
 
         var description: String {
             switch self {
@@ -104,6 +124,7 @@ struct Options {
             case .badSize(let text): "TARGET_SIZE is not a size: \(text)"
             case .badScreen(let text):
                 "VM_SCREEN must be WIDTHxHEIGHT, at least 640x480: \(text)"
+            case .badAudio(let text): "VM_AUDIO must be 'on', 'off' or 'mic': \(text)"
             }
         }
     }

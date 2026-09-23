@@ -60,6 +60,7 @@ func makeConfiguration(_ options: Options, _ layout: Layout) throws -> VZVirtual
     configuration.socketDevices = [VZVirtioSocketDeviceConfiguration()]
     configuration.memoryBalloonDevices = [VZVirtioTraditionalMemoryBalloonDeviceConfiguration()]
     configuration.directorySharingDevices = try shares(layout)
+    configuration.audioDevices = sound(options.audio)
 
     if options.display != .none {
         let graphics = VZVirtioGraphicsDeviceConfiguration()
@@ -147,6 +148,29 @@ private func network() -> VZNetworkDeviceConfiguration {
     let device = VZVirtioNetworkDeviceConfiguration()
     device.attachment = VZNATNetworkDeviceAttachment()
     return device
+}
+
+/// The sound card of the guest: a virtio sound device, with the speakers of
+/// the Mac as its output. The guest needs the virtio_snd driver for it (see
+/// packages/virtio-snd).
+///
+/// The microphone is there only when a person asks for it (VM_AUDIO=mic).
+/// macOS asks the person before a program may hear the microphone, and the
+/// question goes to the app that started the program, for example Terminal
+/// or Xcode. A test with no person there would stop at that question, and
+/// a guest that could always hear the room is not a default to give.
+private func sound(_ audio: Options.Audio) -> [VZAudioDeviceConfiguration] {
+    guard audio != .off else { return [] }
+    let device = VZVirtioSoundDeviceConfiguration()
+    let output = VZVirtioSoundDeviceOutputStreamConfiguration()
+    output.sink = VZHostAudioOutputStreamSink()
+    device.streams = [output]
+    if audio == .mic {
+        let input = VZVirtioSoundDeviceInputStreamConfiguration()
+        input.source = VZHostAudioInputStreamSource()
+        device.streams.append(input)
+    }
+    return [device]
 }
 
 /// The shared directories, over virtiofs.
