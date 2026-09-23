@@ -150,7 +150,7 @@ The window with the keys gets the `activated` state in its configure, and the ot
 A key goes to that window in three steps:
 
 1. `Input` reads the key from libinput. It gives the code of the kernel, the keysym from the keymap, and the modifiers.
-2. Ctrl+Alt+Backspace stops the compositor. Every other key goes to the app.
+2. Ctrl+Alt+Backspace stops the compositor. The volume keys change the volume of the machine with `wpctl` and play `audio-volume-change` (see [sounds.md](sounds.md#who-plays-what)). Super opens Summon. Every other key goes to the shell, and then to the app.
 3. `WaylandServer.send(key:)` sends `wl_keyboard.key` to the window with the focus, with `wl_keyboard.modifiers` before it when the modifiers changed.
 
 The seat says that it has a keyboard and a pointer, and no touch. A `wl_keyboard` object gets the keymap first: the compositor writes the xkb keymap of `Input` into shared memory and sends the file descriptor. The app compiles the same keymap, so the app reads the keys in the same way as the system.

@@ -167,6 +167,31 @@ struct StoreTests {
         #expect(machine.calls == ["poweroff"])
     }
 
+    @Test("A change to the sounds is saved at once, and plays at the new loudness")
+    func sounds() {
+        let machine = Machine()
+        let store = SettingsStore(system: machine)
+        store.setSounds { $0.volume = 0.5 }
+        #expect(machine.calls == ["sounds true 0.5", "play message-new-instant"])
+        #expect(store.snapshot.sounds == SoundSettings(volume: 0.5))
+        machine.calls = []
+        store.setSounds { $0.volume = 0.5 }
+        #expect(machine.calls.isEmpty)
+        store.setSounds { $0.enabled = false }
+        #expect(machine.calls == ["sounds false 0.5"])
+    }
+
+    @Test("Sounds that could not be saved say so, and play nothing")
+    func soundsFail() {
+        let machine = Machine()
+        machine.outcome = .failed("/root/.config cannot be written")
+        let store = SettingsStore(system: machine)
+        store.setSounds { $0.enabled = false }
+        #expect(machine.calls == ["sounds false 1.0"])
+        #expect(store.notice(for: .sound)?.kind == .failure)
+        #expect(store.snapshot.sounds.enabled)
+    }
+
     @Test("A failure is said on the pane, in words")
     func failure() {
         let machine = Machine()

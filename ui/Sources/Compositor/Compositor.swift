@@ -141,6 +141,14 @@ public final class Compositor {
     private var shellActions = ShellActions()
     /// The messages that wait to be read.
     private var notices: [Notice] = []
+    /// Watches for a device that a person plugs in, or nil when udev has no
+    /// monitor to give.
+    private var devices: DeviceMonitor?
+    /// When a device last made a sound. A hub that comes and goes in a burst
+    /// is one sound.
+    private var lastDeviceSound: UInt32 = 0
+    /// The first frame reached the screen, and the session said hello.
+    private var greeted = false
     /// The apps between the moment a person chose them and the moment their
     /// window appears. A launch holds a cell, so that a person sees the app
     /// in the place where it will be.
@@ -207,6 +215,11 @@ public final class Compositor {
         loop.watch(fd: seat.fd) { [unowned self] in seat.dispatch() }
         loop.watch(fd: drm.fd) { [unowned self] in drm.handleEvents() }
         loop.watch(fd: input.fd) { [unowned self] in input.dispatch() }
+        devices = DeviceMonitor()
+        if let devices, devices.fd >= 0 {
+            devices.changed = { [unowned self] change, name in deviceChanged(change, name) }
+            loop.watch(fd: devices.fd) { [unowned self] in devices.dispatch() }
+        }
         if let display, display.fd >= 0 {
             display.changed = { [unowned self] in screen.displayChanged() }
             loop.watch(fd: display.fd) { [unowned self] in display.dispatch() }
@@ -218,6 +231,12 @@ public final class Compositor {
         screen.sizeChanged = { [unowned self] in screenSizeChanged() }
         screen.frameShown = { [unowned self] in
             let now = monotonicMilliseconds()
+            // The first picture on the screen is where the session starts,
+            // and where a person first hears it.
+            if !greeted {
+                greeted = true
+                sound(.desktopLogin)
+            }
             for window in windows { window.surface.sendFrameDone(time: now) }
         }
         input.handler = { [unowned self] event in handle(event) }
@@ -833,10 +852,36 @@ public final class Compositor {
     /// replaces the first one, so a button that fails does not fill the
     /// screen with cards.
     private func post(_ notice: Notice) {
+        // A notice that replaces one that is on the screen already says
+        // nothing new, so it makes no second sound.
+        let isNew = !notices.contains { $0.id == notice.id }
         notices.removeAll { $0.id == notice.id }
         notices.append(notice)
         log("NOTICE \(notice.kind) \"\(notice.title)\"")
+        if isNew {
+            switch notice.kind {
+            case .information: sound(.dialogInformation)
+            case .warning: sound(.dialogWarning)
+            case .failure: sound(.dialogError)
+            }
+        }
         screen.setNeedsFrame()
+    }
+
+    /// Plays a sound of the system, and writes it in the log, where the
+    /// tests read it. `silent` means that nothing played: sounds are off,
+    /// or the machine has no player.
+    private func sound(_ sound: SystemSound) {
+        log("SOUND \(sound.rawValue)\(playSound(sound) ? "" : " silent")")
+    }
+
+    /// A person plugged a device in or took one out.
+    private func deviceChanged(_ change: DeviceMonitor.Change, _ name: String) {
+        log("DEVICE-\(change == .added ? "ADDED" : "REMOVED") \"\(name)\"")
+        let now = monotonicMilliseconds()
+        guard now &- lastDeviceSound >= 500 else { return }
+        lastDeviceSound = now
+        sound(change == .added ? .deviceAdded : .deviceRemoved)
     }
 
     /// Asks one window to close. The app decides what it does with that.
@@ -923,6 +968,19 @@ public final class Compositor {
             // Ctrl+Alt+Backspace (XKB_KEY_BackSpace = 0xff08) quits.
             if key.pressed, key.control, key.alt, key.keysym == 0xFF08 {
                 running = false
+                return
+            }
+            // The volume keys belong to the machine, not to the app in front.
+            // Each one changes the volume and then plays a sound at it.
+            if key.keysym == Keysym.raiseVolume || key.keysym == Keysym.lowerVolume
+                || key.keysym == Keysym.mute {
+                guard key.pressed else { return }
+                switch key.keysym {
+                case Keysym.raiseVolume: SystemVolume.raise()
+                case Keysym.lowerVolume: SystemVolume.lower()
+                default: SystemVolume.toggleMute()
+                }
+                log("VOLUME \(key.keysym == Keysym.raiseVolume ? "up" : key.keysym == Keysym.lowerVolume ? "down" : "mute")")
                 return
             }
             // The Super key opens Summon and closes it again.

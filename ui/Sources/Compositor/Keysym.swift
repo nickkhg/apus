@@ -10,6 +10,9 @@
 enum Keysym {
     static let superLeft: UInt32 = 0xFFEB
     static let superRight: UInt32 = 0xFFEC
+    static let lowerVolume: UInt32 = 0x1008FF11      // XF86AudioLowerVolume
+    static let mute: UInt32 = 0x1008FF12             // XF86AudioMute
+    static let raiseVolume: UInt32 = 0x1008FF13      // XF86AudioRaiseVolume
 
     /// The character that a key writes, or nil when it writes none.
     ///

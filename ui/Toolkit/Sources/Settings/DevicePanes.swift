@@ -311,3 +311,33 @@ struct AppsPane: View {
         .clipped()
     }
 }
+
+struct SoundPane: View {
+    let store: SettingsStore
+
+    private var sounds: SoundSettings { store.snapshot.sounds }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Metrics.cardSpacing) {
+            Card {
+                SettingRow("System sounds",
+                           detail: "A short sound for a message, an error, the charger and the bell") {
+                    Switch(isOn: sounds.enabled) { store.setSounds { $0.enabled.toggle() } }
+                }
+                RowDivider()
+                SettingRow("Loudness", detail: "Against the volume of the machine, which the volume keys set") {
+                    Choice(options: [(0.25, "25%"), (0.5, "50%"), (0.75, "75%"), (1.0, "100%")],
+                           selected: sounds.volume) { value in store.setSounds { $0.volume = value } }
+                }
+                RowDivider()
+                SettingRow("Try it", detail: "The sound of a message") {
+                    PushButton("Play", isEnabled: sounds.enabled) { store.playSample() }
+                }
+            }
+            Text("A change counts at once, in every app.")
+                .font(Font(size: 11))
+                .foregroundColor(Ink.faintText)
+                .padding(.leading, 4)
+        }
+    }
+}

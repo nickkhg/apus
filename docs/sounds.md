@@ -175,11 +175,12 @@ playSound(.bellTerminal)          // the theme answers with bell.oga
 playSound(SystemSound(rawValue: "window-new"))   // no file: nothing plays
 ```
 
-`playSound` returns at once. It does these steps:
+`playSound` returns at once, and answers whether a player started. It does these steps:
 
 1. It finds the file as the spec says: `$XDG_DATA_HOME/sounds` (or `~/.local/share/sounds`), then the `sounds` directory in each directory of `$XDG_DATA_DIRS`; the theme `apus`, then `freedesktop`; the full name, then the name without its last part (`bell-terminal`, then `bell`); `.oga`, `.ogg`, `.wav`. A file `<name>.disabled` stops the lookup with silence. So a person can replace a sound, or turn one off, in the home directory.
-2. It starts `pw-play --media-role=Notification <file>`, with the standard input and output on `/dev/null` and the signals at their defaults (the compositor blocks some, and they do not belong to the player).
-3. It does not wait. The next call collects the players that ended. A program that ignores SIGCHLD, as the compositor does, has none to collect.
+2. It reads the settings of the person (see [The switch](#the-switch)). Sounds that are off, or at no volume, stop here with silence.
+3. It starts `pw-play --media-role=Notification [--volume=<v>] <file>`, with the standard input and output on `/dev/null` and the signals at their defaults (the compositor blocks some, and they do not belong to the player).
+4. It does not wait. The next call collects the players that ended. A program that ignores SIGCHLD, as the compositor does, has none to collect.
 
 The toolkit links no audio library, so it builds on the Mac and in the builder with none. A machine with no `pw-play` plays nothing, and nothing fails. `ui/Toolkit/Tests/ToolkitTests/SoundTests.swift` tests the lookup on the Mac and on Linux.
 
@@ -202,17 +203,43 @@ The role `Notification` lets WirePlumber give event sounds a volume of their own
 - Play `audio-volume-change` after the volume changed, so that it plays at the new volume.
 - Do not play a sound for what a test does. `apus-screen shot` is a test tool, and a test makes no sound.
 
+## Who plays what
+
+| Event | Who plays it | Where |
+|---|---|---|
+| `desktop-login` | The compositor, when its first frame reaches the screen | `Compositor.swift`, `frameShown` |
+| `desktop-logout` | Settings, before it restarts the shell or the machine, or powers off. It waits 0.65 s for the sound, because systemd stops the player with the shell. | `SettingsApp/Machine.swift`, `sayGoodbye` |
+| `dialog-information`, `dialog-warning`, `dialog-error` | The compositor, for a new notice of that kind. A notice that replaces one on the screen makes no second sound. | `Compositor.swift`, `post` |
+| `bell` | The terminal, for BEL, at most once in 100 ms. The screen counts the bells, and the app plays them. | `TerminalApp/main.swift` |
+| `audio-volume-change` | The compositor, for a volume key. `wpctl` changes the volume first, in the same shell, so the sound plays at the new volume. Mute plays it only when the sound comes back. | `SystemVolume` in `Sound.swift` |
+| `device-added`, `device-removed` | The compositor, for a USB device that arrives or goes after the session started. One sound for a burst, at most one in 0.5 s. | `DeviceMonitor.swift` |
+| `power-plug`, `power-unplug` | The Power app, when a reading goes from the battery to the charger, or back. A driver that comes or goes is no charger. | `Power/Store.swift` |
+| `battery-low` | The Power app, once, when the charge on battery goes under 10 %. The charger, or a charge back over 12 %, makes it ready again. | `Power/Store.swift` |
+| `message-new-instant` | Settings, as the sample of the Sound pane. Apps have no way to post a notice yet. | `Settings/Store.swift` |
+| `screen-capture` | Nobody yet: Apus has no screenshot for a person. | |
+
+The compositor writes `SOUND <name>` in its log for each sound it asks for, and `SOUND <name> silent` when nothing played. `tests/compositor.exp` checks `SOUND desktop-login`. In that test no sound server runs, so nothing is heard on the Mac.
+
+The Power app reads the supplies only while it runs, so the charger and the low battery make a sound only while Power is open. A small service of the session that reads them would make the sound in any case.
+
+## The switch
+
+The Sound pane of Settings has sounds on or off, and a loudness for them (a quarter, a half, three quarters, full). It writes `$XDG_CONFIG_HOME/apus/sounds.conf` (or `~/.config/apus/sounds.conf`):
+
+```
+enabled=yes
+volume=0.5
+```
+
+No file is the default: on, at full loudness. Every program that plays a sound reads the file at each sound, so a change counts at once and in every app. The loudness scales the stream of the player; the volume of the machine still sets the loudest sound. The volume keys set that, with `wpctl`.
+
 ## What is still to do
 
 These items are also in [next-steps.md](next-steps.md).
 
-1. **The audio stack in the image.** PipeWire, WirePlumber and `pipewire-audio` (for `pw-play`), and virtio-sound to the Mac. This is separate work. Until it is in the image, `playSound` plays nothing.
-2. **The compositor.** Play `desktop-login` at the first frame of the session. Play a sound for a notice: `message-new-instant` for a notice of an app, and `dialog-information`, `dialog-warning` or `dialog-error` for a notice of the system, by `Notice.Kind`.
-3. **The terminal.** It drops BEL now (`ui/Toolkit/Sources/Terminal/Screen.swift`). The screen can count the bells, and the app can play `bellTerminal` at most once in 100 ms.
-4. **The volume keys.** The compositor reads `XF86AudioRaiseVolume`, `XF86AudioLowerVolume` and `XF86AudioMute`, changes the volume with `wpctl`, and then plays `audio-volume-change`. This needs the audio stack.
-5. **A screenshot key.** Apus has none. When it has one, the key plays `screen-capture`. `apus-screen shot` does not.
-6. **Devices.** A udev monitor in the compositor for devices that a person plugs in: `device-added` and `device-removed`. Not for the devices that are there at boot.
-7. **Power.** The Power app (separate work) reads `/sys/class/power_supply`. It plays `power-plug` and `power-unplug` when `online` changes, and `battery-low` once when the charge crosses the low level while it discharges.
-8. **The logout.** Settings powers off with `systemctl poweroff`, and systemd stops the player with the shell. The compositor must play `desktop-logout` and wait for its length (0.6 s) before it asks systemd to stop.
-9. **A switch in Settings.** Sounds on or off, and a volume for event sounds. The lookup honours a `.disabled` file already, so a switch for one sound can write one in `~/.local/share/sounds/apus/stereo`. A switch for all sounds needs a value that `playSound` reads.
-10. **The cost of a sound.** Each sound starts a process, which takes a few milliseconds. That is enough for events. A player in the process (a PipeWire stream) would start faster, but then the toolkit links libpipewire.
+1. **A screenshot key.** Apus has none for a person. When it has one, the key plays `screen-capture`. `apus-screen shot` does not.
+2. **Notices of apps.** An app has no way to post a notice to the shell. When it has one, the shell plays `message-new-instant` for it.
+3. **A held volume key.** The compositor reads its keys from libinput, which does not repeat them, so a held key changes the volume by one step.
+4. **The charger and the battery without Power.** See above.
+5. **Nobody has listened to the sounds on the machine yet.** The check measures them; it cannot hear them.
+6. **The cost of a sound.** Each sound starts a process, which takes a few milliseconds. The volume keys start a shell too. That is enough for events. A player in the process (a PipeWire stream) would start faster, but then the toolkit links libpipewire.

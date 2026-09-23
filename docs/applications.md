@@ -244,6 +244,10 @@ Drag with the left button to select, `Ctrl+Shift+C` to copy, `Ctrl+Shift+V`
 to paste. What is copied goes on the clipboard of the system and on the
 clipboard of the Mac. See [clipboard.md](clipboard.md).
 
+### The bell
+
+BEL plays the bell of the system theme, at most once in 100 ms, so a program that rings it in a loop is not a buzz. The Sound pane of Settings turns it off with the other sounds. See [sounds.md](sounds.md).
+
 ### Limits of the terminal
 
 - A selection is by character. There is no selecting a word or a line, and no

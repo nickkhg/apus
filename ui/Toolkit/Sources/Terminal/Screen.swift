@@ -14,6 +14,7 @@
 //   CSI ? h l               DEC settings; only "cursor visible" changes
 //   ESC 7 8 M D E           save and restore the cursor, and move lines
 //   OSC ... BEL/ST          the title and other text; read and dropped
+//   BEL                     counted in `bells`; the app plays the sound
 //
 // Anything else is read and dropped, so that it does not become text on the
 // screen.
@@ -117,6 +118,9 @@ public final class Screen {
     /// sets it to the directory and the command (OSC 0 or OSC 2). The tile
     /// of the terminal shows it.
     public private(set) var title = ""
+    /// How many times the program rang the bell (BEL outside an OSC). The
+    /// app plays the sound and sets it back to 0.
+    public var bells = 0
     private var pendingBytes: [UInt8] = []
 
     public init(columns: Int, rows: Int) {
@@ -296,7 +300,7 @@ public final class Screen {
             state = .escape
             parameters = ""
         case 0x07:
-            break                       // the bell has no sound here
+            bells += 1
         case 0x08:
             cursor.column = max(0, cursor.column - 1)
         case 0x09:

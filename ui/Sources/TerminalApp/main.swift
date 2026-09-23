@@ -67,6 +67,9 @@ final class App {
 
     /// The compositor is drawing the last buffer: wait for the frame event.
     var framePending = false
+    /// When the bell last made a sound. A program that rings it in a loop
+    /// gets one sound in 100 ms, not a buzz.
+    var lastBell = -Double.infinity
     var running = true
 
     var command = "/bin/bash"
@@ -560,6 +563,14 @@ while app.running {
             break
         }
         if !bytes.isEmpty { app.screen.write(bytes) }
+        if app.screen.bells > 0 {
+            app.screen.bells = 0
+            let now = monotonic()
+            if now - app.lastBell >= 0.1 {
+                app.lastBell = now
+                playSound(.bellTerminal)
+            }
+        }
     }
     if let key = app.keyRepeat.due(at: monotonic()),
        !press(app, key: key, data: appPointer) {

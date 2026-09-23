@@ -43,9 +43,123 @@ public struct SystemSound: RawRepresentable, Hashable, Sendable {
     public static let batteryLow = SystemSound(rawValue: "battery-low")
 }
 
-/// Plays the sound of an event, and returns at once.
-public func playSound(_ sound: SystemSound) {
+/// Plays the sound of an event, and returns at once. It answers whether a
+/// player started: false when sounds are off, when the event has no file,
+/// or when the machine has no `pw-play`.
+@discardableResult
+public func playSound(_ sound: SystemSound) -> Bool {
     SoundTheme.play(sound)
+}
+
+/// What a person chose for the sounds of the system. Settings writes it, and
+/// every program that plays a sound reads it again at each sound, so a
+/// change counts at once and nothing has to start again.
+///
+/// It is a file of the person, `$XDG_CONFIG_HOME/apus/sounds.conf` (or
+/// `~/.config/apus/sounds.conf`), with lines such as `enabled=no` and
+/// `volume=0.5`. No file is the default: sounds on, at full volume.
+public struct SoundSettings: Sendable, Equatable {
+    public var enabled = true
+    /// How loud an event sound is, from 0 to 1. It scales the stream of the
+    /// player, so the volume of the machine still sets the loudest sound.
+    public var volume = 1.0
+
+    public init(enabled: Bool = true, volume: Double = 1) {
+        self.enabled = enabled
+        self.volume = min(1, max(0, volume))
+    }
+
+    /// Where the file is.
+    public static func path() -> String {
+        if let home = environment("XDG_CONFIG_HOME") { return "\(home)/apus/sounds.conf" }
+        return "\(environment("HOME") ?? "/root")/.config/apus/sounds.conf"
+    }
+
+    /// The settings of a file. A line that it does not know, or a value that
+    /// does not parse, keeps the default.
+    public init(parsing text: String) {
+        self.init()
+        for line in text.split(whereSeparator: \.isNewline) {
+            let parts = line.split(separator: "=", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            let key = parts[0].trimmingSpaces, value = parts[1].trimmingSpaces
+            switch key {
+            case "enabled":
+                if ["no", "false", "off", "0"].contains(value) { enabled = false }
+                if ["yes", "true", "on", "1"].contains(value) { enabled = true }
+            case "volume":
+                if let number = Double(value) { volume = min(1, max(0, number)) }
+            default: break
+            }
+        }
+    }
+
+    /// The text of the file.
+    public var text: String {
+        "enabled=\(enabled ? "yes" : "no")\nvolume=\(volume)\n"
+    }
+
+    /// The settings of the file, or the default when there is none.
+    public static func load(from path: String = SoundSettings.path()) -> SoundSettings {
+        guard let file = fopen(path, "r") else { return SoundSettings() }
+        defer { fclose(file) }
+        var bytes: [UInt8] = []
+        var buffer = [UInt8](repeating: 0, count: 512)
+        while bytes.count < 4096 {
+            let count = fread(&buffer, 1, buffer.count, file)
+            guard count > 0 else { break }
+            bytes += buffer[..<count]
+        }
+        return SoundSettings(parsing: String(decoding: bytes, as: UTF8.self))
+    }
+}
+
+/// The volume of the machine: the default output of PipeWire, through
+/// `wpctl`. The volume keys ask for it. Each change plays
+/// `audio-volume-change` after it, at the new volume, so a person hears how
+/// loud the machine is now.
+public enum SystemVolume {
+    /// One press of a volume key.
+    public static let step = 5
+
+    public static func raise() {
+        // -l 1.0: a key never goes past 100%, where sound starts to clip.
+        change("wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ \(step)%+")
+    }
+
+    public static func lower() {
+        change("wpctl set-volume @DEFAULT_AUDIO_SINK@ \(step)%-")
+    }
+
+    /// Mutes the output, or gives it its sound back. Only the second makes
+    /// a sound: a muted output has nothing to play it on.
+    public static func toggleMute() {
+        change("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+               then: "wpctl get-volume @DEFAULT_AUDIO_SINK@ | grep -qv MUTED")
+    }
+
+    /// Runs the change and then the sound in one shell, so the sound comes
+    /// after the change and the caller does not wait for either.
+    private static func change(_ command: String, then condition: String? = nil) {
+        var script = command
+        if let player = SoundTheme.player(for: .audioVolumeChange) {
+            let play = player.map(SoundTheme.quoted).joined(separator: " ")
+            script += " && " + (condition.map { "\($0) && " } ?? "") + play
+        }
+        SoundTheme.spawn(["sh", "-c", script])
+    }
+}
+
+private func environment(_ name: String) -> String? {
+    guard let raw = getenv(name) else { return nil }
+    let text = String(cString: raw)
+    return text.isEmpty ? nil : text
+}
+
+private extension Substring {
+    var trimmingSpaces: String {
+        String(drop { $0 == " " || $0 == "\t" }.reversed().drop { $0 == " " || $0 == "\t" }.reversed())
+    }
 }
 
 /// How the toolkit finds and plays a sound of a theme.
@@ -60,11 +174,7 @@ public enum SoundTheme {
     /// Where themes are: `$XDG_DATA_HOME/sounds` (or `~/.local/share/sounds`),
     /// then `sounds` in each directory of `$XDG_DATA_DIRS`.
     public static func directories() -> [String] {
-        func value(_ name: String) -> String? {
-            guard let raw = getenv(name) else { return nil }
-            let text = String(cString: raw)
-            return text.isEmpty ? nil : text
-        }
+        let value = environment
         var result: [String] = []
         if let home = value("XDG_DATA_HOME") {
             result.append("\(home)/sounds")
@@ -111,16 +221,40 @@ public enum SoundTheme {
     /// ignores SIGCHLD, as the compositor does, has none to wait for.
     private static let players = Mutex<[pid_t]>([])
 
+    /// The command that plays the sound of an event as the settings say, or
+    /// nil when it is silence.
+    public static func player(for sound: SystemSound,
+                              settings: SoundSettings = SoundSettings.load(),
+                              in directories: [String] = SoundTheme.directories()) -> [String]? {
+        guard settings.enabled, settings.volume > 0,
+              let path = file(for: sound, in: directories) else { return nil }
+        var arguments = ["pw-play", "--media-role=Notification"]
+        if settings.volume < 1 { arguments.append("--volume=\(settings.volume)") }
+        arguments.append(path)
+        return arguments
+    }
+
     /// Starts `pw-play` with the file of the event, and does not wait for it.
-    public static func play(_ sound: SystemSound) {
+    @discardableResult
+    public static func play(_ sound: SystemSound) -> Bool {
+        guard let arguments = player(for: sound) else { return false }
+        return spawn(arguments)
+    }
+
+    /// A word that the shell reads as it is.
+    static func quoted(_ word: String) -> String {
+        "'" + word.replacing("'", with: "'\\''") + "'"
+    }
+
+    /// Starts a program and does not wait for it.
+    @discardableResult
+    static func spawn(_ arguments: [String]) -> Bool {
         players.withLock { pids in
             pids.removeAll { pid in
                 var status: Int32 = 0
                 return waitpid(pid, &status, WNOHANG) != 0
             }
         }
-        guard let path = file(for: sound) else { return }
-        let arguments = ["pw-play", "--media-role=Notification", path]
         var argv: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) }
         argv.append(nil)
         defer { argv.forEach { free($0) } }
@@ -159,8 +293,10 @@ public enum SoundTheme {
         }
 
         var pid: pid_t = 0
-        if posix_spawnp(&pid, "pw-play", &actions, &attributes, argv, environ) == 0 {
-            players.withLock { $0.append(pid) }
+        guard posix_spawnp(&pid, arguments[0], &actions, &attributes, argv, environ) == 0 else {
+            return false
         }
+        players.withLock { $0.append(pid) }
+        return true
     }
 }

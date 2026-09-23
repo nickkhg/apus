@@ -528,6 +528,26 @@ public final class SettingsStore {
         report(system.setShown(app, !app.isShown), on: .apps)
     }
 
+    /// A change to the sounds counts at once: there is nothing to start
+    /// again. A sound then plays at the new loudness, so a person hears
+    /// what they chose.
+    public func setSounds(_ change: (inout SoundSettings) -> Void) {
+        var settings = snapshot.sounds
+        change(&settings)
+        guard settings != snapshot.sounds else { return }
+        let outcome = system.saveSounds(settings)
+        guard case .done = outcome else { return report(outcome, on: .sound) }
+        notices[.sound] = nil
+        reload()
+        if settings.enabled { system.play(.messageNewInstant) }
+        changed()
+    }
+
+    /// Plays a sound, to hear how loud the sounds are.
+    public func playSample() {
+        system.play(.messageNewInstant)
+    }
+
     /// The first press arms the change, and a second one within five
     /// seconds makes it. The machine does not stop on a stray click.
     public func press(_ action: PowerAction) {

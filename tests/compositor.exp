@@ -123,6 +123,15 @@ expect {
     timeout                { fail "compositor didn't start" }
 }
 
+# The first frame on the screen starts the session, with its sound. The
+# compositor finds the file of the theme and starts the player. Here no
+# sound server runs (it starts with apus-shell.service), so nothing is heard.
+expect {
+    "SOUND desktop-login silent" { fail "the login sound has no file, or the machine no player" }
+    -re {SOUND desktop-login\r} {}
+    timeout                      { fail "the session made no login sound" }
+}
+
 # The desktop, the rail on the left edge, and the Summon button at the top
 # of it. The pointer is in the middle of the screen.
 screen start 128,80=07080A 36,400=12161A 22,44=1D2A12 \
