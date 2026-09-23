@@ -49,6 +49,7 @@ let package = Package(
         .executable(name: "apus-settings", targets: ["SettingsApp"]),
         .executable(name: "apus-files", targets: ["FilesApp"]),
         .executable(name: "apus-notes", targets: ["NotesApp"]),
+        .executable(name: "apus-power", targets: ["PowerApp"]),
         .executable(name: "apus-display-probe", targets: ["DisplayProbe"]),
         .executable(name: "apus-ui-check", targets: ["UICheck"]),
         .executable(name: "apus-screen", targets: ["ScreenTool"]),
@@ -162,6 +163,15 @@ let package = Package(
         // Mac tests; this is the window and the folder. The bundle in
         // Apps/Notes.app puts it in /Applications.
         .executableTarget(name: "NotesApp", dependencies: [
+            "AppClient",
+            .product(name: "ApusUI", package: "Toolkit"),
+            ]),
+
+        // Power: the battery and the adapter, from /sys/class/power_supply.
+        // The views and the parsing are the Power module of the toolkit,
+        // which the Mac tests; this is the window and the files. The bundle
+        // in Apps/Power.app puts it in /Applications.
+        .executableTarget(name: "PowerApp", dependencies: [
             "AppClient",
             .product(name: "ApusUI", package: "Toolkit"),
             ]),

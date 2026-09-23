@@ -134,6 +134,7 @@ ui/
 | `Settings` | The panes of Settings, its keys and the parsers of the files of the system. The app around it is `ui/Sources/SettingsApp/`. See [settings.md](settings.md). |
 | `Files` | The list of a folder, the places and the keys of Files. The app around it is `ui/Sources/FilesApp/`. See [files.md](files.md). |
 | `Notes` | The list of the notes, the editor pane and the keys of Notes. The app around it is `ui/Sources/NotesApp/`. See [notes.md](notes.md). |
+| `Power` | What the files of `/sys/class/power_supply` mean, and the views of Power. The app around it is `ui/Sources/PowerApp/`. See [power.md](power.md). |
 
 ### The root view
 
@@ -357,7 +358,7 @@ A view of the interface goes in `ui/Toolkit/Sources/Shell/`. A view that every U
 
 ## Tests
 
-`make test-ui` runs the unit tests on the Mac, and `make test-ui-linux` runs the same tests on apus. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, the shapes, the state, and the pointer. `ui/Toolkit/Tests/ShellTests/` tests the panel, the dock and the app area. `ui/Toolkit/Tests/TerminalTests/` tests the grid of the terminal and its escape sequences. `ui/Toolkit/Tests/SettingsTests/` tests the panes of Settings, its keys and the files that it reads, with a machine of its own. `ui/Toolkit/Tests/FilesTests/` tests the list of Files and its keys, with a disk of its own. `ui/Toolkit/Tests/NotesTests/` tests Notes and what it writes, with a folder of its own, and `ToolkitTests/TextEditingTests.swift` tests the editor under it.
+`make test-ui` runs the unit tests on the Mac, and `make test-ui-linux` runs the same tests on apus. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, the shapes, the state, and the pointer. `ui/Toolkit/Tests/ShellTests/` tests the panel, the dock and the app area. `ui/Toolkit/Tests/TerminalTests/` tests the grid of the terminal and its escape sequences. `ui/Toolkit/Tests/SettingsTests/` tests the panes of Settings, its keys and the files that it reads, with a machine of its own. `ui/Toolkit/Tests/FilesTests/` tests the list of Files and its keys, with a disk of its own. `ui/Toolkit/Tests/NotesTests/` tests Notes and what it writes, with a folder of its own, and `ToolkitTests/TextEditingTests.swift` tests the editor under it. `ui/Toolkit/Tests/PowerTests/` tests Power with the files of real batteries, and with none.
 
 The tests of an app also draw each size of it into pixels. With `APUS_PREVIEWS` set to a folder, they write those pictures there as PPM files, so that a person can look at an app without a VM:
 
