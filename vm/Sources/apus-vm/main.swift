@@ -16,6 +16,9 @@
 // VM_SCREEN sets the size of the screen, for example 1920x1200. The default
 // is 1280x800, which is the size that the pixel tests read.
 //
+// VM_AUDIO selects the sound: on (the default, the speakers of the Mac), off,
+// or mic (the speakers and the microphone). See docs/audio.md.
+//
 // The serial console is always on stdin and stdout. Ctrl-A X stops the
 // machine. out/ on the Mac is shared read-only with the guest at /mnt/host.
 

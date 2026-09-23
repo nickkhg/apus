@@ -1,0 +1,14 @@
+# WirePlumber, the session manager of PipeWire. It finds the sound card,
+# makes a sink and a source for it, and links each new stream to them.
+# Without it a stream has nowhere to go. See apus-pipewire.service.
+[Unit]
+Description=WirePlumber, the session manager of the Apus sound server
+BindsTo=apus-pipewire.service
+After=apus-pipewire.service
+
+[Service]
+ExecStart=/usr/bin/wireplumber
+Environment=XDG_RUNTIME_DIR=/run/pipewire
+Environment=PIPEWIRE_RUNTIME_DIR=/run/pipewire
+Environment=GIO_USE_VFS=local
+Restart=on-failure

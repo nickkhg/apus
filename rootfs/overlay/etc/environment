@@ -1,0 +1,10 @@
+#
+# /etc/environment
+#
+# pam_env reads this for each login: the console, SSH and su.
+#
+# The sound server of the machine is in /run/pipewire, and not in the
+# runtime directory of a login. These two lines take a program of a login to
+# it. See /usr/lib/systemd/system/apus-pipewire.service and docs/audio.md.
+PIPEWIRE_RUNTIME_DIR=/run/pipewire
+PULSE_SERVER=unix:/run/pipewire/pulse/native

@@ -1,0 +1,82 @@
+#!/usr/bin/expect -f
+# Audio test: boot the installed disk with a sound device, and check that
+# the guest has a sound card, that PipeWire has a sink on it, and that a
+# stream runs on that card. Run after tests/install.exp.
+#
+# The stream plays at volume 0, so the test makes no sound on the Mac. The
+# test cannot hear the Mac: Apple's Virtualization framework says nothing
+# about what reaches the speakers. What it can read is the card in the guest,
+# which runs only while the device on the Mac takes the samples. See
+# docs/audio.md for the check with the ears.
+
+log_user 1
+source [file dirname [info script]]/lib.exp
+set timeout $slow
+
+spawn env VM_GPU=headless VM_AUDIO=on $env(APUS_VM) installed
+login
+
+# The driver. linux-aarch64 has none, so packages/virtio-snd is where it
+# comes from, and udev loads it when it finds the device.
+send "aplay -l | grep -q 'VirtIO SoundCard' && printf 'CARD-%s\\n' OK || printf 'CARD-%s\\n' NONE\r"
+expect {
+    "CARD-OK"   {}
+    "CARD-NONE" {
+        send "lsmod | grep -i snd; dmesg | grep -i -e virtio -e snd | tail -20\r"
+        mark "why there is no card"
+        fail "the guest has no VirtIO sound card"
+    }
+    timeout     { fail "aplay did not answer" }
+}
+mark "the card"
+
+# The sound server. The shell asked for it at boot, and it stays when the
+# test stops the shell. WirePlumber makes the sink a moment after it starts,
+# so this asks again for a few seconds.
+send "for i in \$(seq 50); do wpctl inspect @DEFAULT_AUDIO_SINK@ 2>/dev/null | grep -q 'VirtIO SoundCard' && break; sleep 0.2; done;"
+send " wpctl inspect @DEFAULT_AUDIO_SINK@ > /tmp/sink 2>&1;"
+# The sink is the one of the profiles of Apus (apus-virtio.conf), which
+# names it `speakers`, and not the fallback of the default profiles.
+send " grep -q 'VirtIO SoundCard' /tmp/sink && grep -q 'node.name = \"alsa_output.*speakers\"' /tmp/sink"
+send " && printf 'SINK-%s\\n' OK || printf 'SINK-%s\\n' NONE\r"
+expect {
+    "SINK-OK"   {}
+    "SINK-NONE" {
+        send "wpctl status; systemctl status apus-pipewire apus-wireplumber --no-pager | tail -20\r"
+        mark "why there is no sink"
+        fail "PipeWire has no sink on the VirtIO card"
+    }
+    timeout     { fail "wpctl did not answer" }
+}
+send "wpctl status | sed -n '/^Audio/,/^Video/p'\r"
+mark "the status of PipeWire"
+
+# The PulseAudio server, for programs that speak PulseAudio.
+send "pactl info | grep -q 'PipeWire' && printf 'PULSE-%s\\n' OK || printf 'PULSE-%s\\n' NONE\r"
+expect {
+    "PULSE-OK"   {}
+    "PULSE-NONE" { fail "pipewire-pulse does not answer on /run/pipewire/pulse/native" }
+    timeout      { fail "pactl did not answer" }
+}
+mark "the PulseAudio server"
+
+# A stream, through PipeWire and ALSA, to the device. While it plays the
+# card says RUNNING, and it runs only while the Mac takes the samples.
+send "pw-play --volume 0 /usr/share/sounds/freedesktop/stereo/complete.oga & sleep 0.5;"
+send " grep -q RUNNING /proc/asound/card0/pcm0p/sub0/status && printf 'PLAY-%s\\n' OK || printf 'PLAY-%s\\n' STOPPED; wait\r"
+expect {
+    "PLAY-OK"      {}
+    "PLAY-STOPPED" {
+        send "cat /proc/asound/card0/pcm0p/sub0/status\r"
+        mark "the state of the card"
+        fail "the card did not run while pw-play played"
+    }
+    timeout        { fail "pw-play did not finish" }
+}
+mark "the stream"
+
+send "poweroff\r"
+expect eof
+wait
+
+send_user "\n\nAUDIO TEST PASSED\n"

@@ -1,0 +1,5 @@
+# The sound card of the virtual machine gets the profiles of
+# /usr/share/alsa-card-profile/mixer/profile-sets/apus-virtio.conf, so that
+# the microphone of the Mac is a source when apus-vm gives the guest one.
+# PipeWire reads ACP_PROFILE_SET from the card. See docs/audio.md.
+SUBSYSTEM=="sound", KERNEL=="card*", DRIVERS=="virtio_snd", ENV{ACP_PROFILE_SET}="apus-virtio.conf"

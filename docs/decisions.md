@@ -162,6 +162,32 @@ libwayland-client stays for the test client, because most apps use it.
 
 Embedded Swift is a subset of Swift for microcontrollers and kernels. It does not remove the need for C libraries such as libinput or Mesa. It removes runtime metadata, reflection, and most existential types. The programs already link the Swift runtime statically. The only gain is smaller programs. A fully static program (with the Swift Static Linux SDK and musl) needs static builds of libinput, libudev, and Mesa. Arch Linux does not supply these, and Mesa loads its GPU drivers at run time.
 
+## PipeWire for sound, as a service of the system (23 September)
+
+The guest plays sound on the speakers of the Mac. PipeWire is the sound
+server, with WirePlumber, `pipewire-pulse` and `pipewire-alsa`. See
+[audio.md](audio.md).
+
+| Choice | Result |
+|---|---|
+| ALSA only | One program at a time has the card. A system sound then stops while an app plays, or the app stops. No mixing, and no volume for each stream. |
+| PulseAudio | It mixes, but Arch Linux has replaced it with PipeWire. PipeWire speaks its protocol, so its programs work without it. |
+| PipeWire | The default of Arch Linux. It mixes, it has a volume for each stream, and it speaks PulseAudio, ALSA and JACK to programs. |
+
+PipeWire runs as three services of the system (`apus-pipewire`,
+`apus-wireplumber`, `apus-pipewire-pulse`), not under `systemd --user`. The
+shell runs as root, as a service of the system, with no login session, and
+the units of the packages refuse root. The shell starts the sound server,
+and the server is in `/run/pipewire`, where the shell, its apps and a login
+on the console all find it. When the shell runs in the session of a person,
+the units of the packages can take this work back.
+
+The Arch Linux ARM kernel has no `virtio_snd`, which is the only sound
+device of Apple's Virtualization framework. `packages/virtio-snd` builds
+that one module from the kernel release, against `linux-aarch64-headers`.
+A kernel of our own was the other way. It is a long build, and a package to
+keep up with, for one module.
+
 ## Documentation style
 
 The documentation uses ASD-STE100 Simplified Technical English, in the STE-flavored mode.

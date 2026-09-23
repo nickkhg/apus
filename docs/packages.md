@@ -63,6 +63,13 @@ To change the name or the colours, edit `packages/apus-release/os-release` and i
 - The package installs each `apus-*` program in the SwiftPM output to `/usr/bin`.
 - Its dependencies put Mesa, libinput, xkbcommon, libseat, Wayland, FreeType, HarfBuzz, fontconfig, and the DejaVu fonts on the target system.
 
+## virtio-snd
+
+`virtio-snd` is the sound driver of the VM (`virtio_snd.ko`), which the Arch
+Linux ARM kernel does not have. It fits one kernel release, so a new
+`linux-aarch64` needs a new `pkgver` and new sums. See
+[audio.md](audio.md#the-driver).
+
 ## Add a package
 
 To add an Arch Linux ARM package to the image:

@@ -33,3 +33,17 @@ vulkan-tools
 # compositor reaches the GPU of the Mac. The compositor asks for it by name.
 apus-zink
 
+
+# Sound. virtio-snd (packages/virtio-snd) is the driver of the sound card of
+# the VM, which linux-aarch64 leaves out. PipeWire is the sound server, with
+# WirePlumber to manage it, and pipewire-pulse and pipewire-alsa so that
+# programs written for PulseAudio or for ALSA reach it too. alsa-utils has
+# aplay and speaker-test, and the freedesktop sound theme gives the
+# names of the system sounds and a set of them. See docs/audio.md.
+virtio-snd
+pipewire
+wireplumber
+pipewire-pulse
+pipewire-alsa
+alsa-utils
+sound-theme-freedesktop

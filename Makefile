@@ -130,7 +130,7 @@ help:
 	@echo "make ui         quick Swift build of ui/ on the Mac into out/ui (shared at /mnt/host/ui in the VM)"
 	@echo "make ui-container  the same build in the build container"
 	@echo "make sdk        the macOS Swift toolchain and the Apus Swift SDK (make ui does this)"
-	@echo "make test       install, display, compositor and GPU tests"
+	@echo "make test       install, display, compositor, GPU and audio tests"
 	@echo "make ssh        a shell on the running guest over SSH"
 	@echo "make test-ui    unit tests of the toolkit and the shell, on the Mac (seconds)"
 	@echo "make test-venus  the guest finds the GPU of the Mac (needs the renderer)"
@@ -336,6 +336,7 @@ test: vm
 	tests/display.exp
 	tests/compositor.exp
 	tests/gpu.exp
+	tests/audio.exp
 
 # The guest finds the GPU of the Mac. This one needs the renderer, which
 # build/make-virglrenderer.sh builds, so `make test` leaves it out. Needs the

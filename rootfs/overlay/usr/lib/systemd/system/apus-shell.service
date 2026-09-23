@@ -13,6 +13,10 @@ StartLimitIntervalSec=300
 StartLimitBurst=3
 Requires=seatd.service
 After=seatd.service systemd-user-sessions.service
+# The sound server of the session. The shell starts without it when it
+# fails, and it stays when the shell stops. See docs/audio.md.
+Wants=apus-pipewire.service
+After=apus-pipewire.service
 # One program owns a screen. The shell owns tty1, so the login on it goes.
 Conflicts=getty@tty1.service
 After=getty@tty1.service
@@ -36,6 +40,10 @@ ExecStart=/usr/bin/apus-compositor
 # has no session, so systemd makes the directory and the shell names it.
 RuntimeDirectory=apus
 Environment=XDG_RUNTIME_DIR=/run/apus
+# The sound server is not in that directory: it has one of its own, which
+# outlives the shell. Every app that the shell starts gets these too.
+Environment=PIPEWIRE_RUNTIME_DIR=/run/pipewire
+Environment=PULSE_SERVER=unix:/run/pipewire/pulse/native
 Restart=on-failure
 RestartSec=2
 TimeoutStartSec=20

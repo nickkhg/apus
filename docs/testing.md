@@ -8,6 +8,7 @@
 - The EFI firmware of the framework. The firmware variables are new for each boot, so the firmware starts `EFI/BOOT/BOOTAA64.EFI` like a new machine.
 - Network: network address translation. The VM gets an address with DHCP.
 - Two shared directories, over virtiofs. `out/` of the Mac is at `/mnt/host`, read-only. `out/vm/screens` is at `/mnt/screens`, and the VM can write to it.
+- A virtio sound device, with the speakers of the Mac as its output. `VM_AUDIO=mic` adds the microphone, and `VM_AUDIO=off` removes the device. See [audio.md](audio.md).
 
 `make vm` builds the program and signs it. The signature carries the entitlement `com.apple.security.virtualization`. Without that entitlement, the framework refuses to make a VM. A local (ad hoc) signature is sufficient.
 
@@ -90,6 +91,7 @@ An installed system starts the shell when it finishes booting, so it owns the sc
 | `tests/install.exp` | Removes the target disk. Boots the live image and runs `apus-install -y /dev/vdb`. Boots the installed disk and checks it (see below). |
 | `tests/display.exp` | Boots the installed disk with `VM_GPU=headless`. Checks `/mnt/host`. Runs `apus-ui-check` and `apus-display-probe`. Checks a screenshot. |
 | `tests/compositor.exp` | Boots the installed disk with `VM_GPU=headless`. Starts `apus-compositor`. Opens the apps with Summon, types in the terminal, and checks screenshots. Stops the compositor with SIGTERM. |
+| `tests/audio.exp` | Boots the installed disk with the sound device. Checks the ALSA card, the PipeWire sink and the PulseAudio server, and that the card runs while `pw-play` plays. See [audio.md](audio.md#the-test). |
 
 `tests/display.exp` and `tests/compositor.exp` use the disk that `tests/install.exp` made. Run the tests in this sequence. `make test` does this.
 
