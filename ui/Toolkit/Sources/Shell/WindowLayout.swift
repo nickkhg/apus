@@ -29,6 +29,9 @@ public enum WindowMetrics {
     public static let longestTile: Double = 384
     /// The large cell never goes below this, so the band stops growing.
     public static let principalMinimum: Double = 720
+    /// Neither of two windows side by side gets less than this across, so
+    /// that a resize of the edge between them never makes one a widget.
+    public static let sideMinimum: Double = 360
     /// The most windows that the grid layout shows.
     public static let gridMaximum = 9
     /// The length of a tile for the length that a window answered. A window
@@ -67,10 +70,14 @@ public enum WindowLayoutKind: String, CaseIterable, Sendable {
         }
     }
 
-    public var layout: AnyLayout {
+    public var layout: AnyLayout { layout(split: SideBySide.even) }
+
+    /// The layout, with the edge between two windows side by side where a
+    /// person put it. The other layouts have no such edge.
+    public func layout(split: Double) -> AnyLayout {
         switch self {
         case .principal: AnyLayout(PrincipalAndWidgets())
-        case .sideBySide: AnyLayout(SideBySide())
+        case .sideBySide: AnyLayout(SideBySide(split: split))
         case .grid: AnyLayout(GridLayout())
         case .full: AnyLayout(FullScreen())
         }
@@ -177,21 +184,52 @@ public struct PrincipalAndWidgets: Layout {
 
 // MARK: - Side by side
 
-/// Two windows, each with half of the canvas. Every other window waits in
-/// the rail.
+/// Two windows, each with a part of the canvas: half each, until a person
+/// moves the edge between them. Every other window waits in the rail.
 public struct SideBySide: Layout {
-    public init() {}
+    /// Half each.
+    public static let even = 0.5
+    /// The part of the canvas, less the gap, that the first window takes. A
+    /// resize of the edge between the two windows moves it.
+    public var split: Double
+
+    public init(split: Double = SideBySide.even) {
+        self.split = split
+    }
 
     public func sizeThatFits(proposal: Proposal, subviews: LayoutSubviews) -> Size {
         Size(width: proposal.width ?? 0, height: proposal.height ?? 0)
     }
 
+    /// How wide the first window is, for a split of a canvas this wide. Each
+    /// window keeps `WindowMetrics.sideMinimum`, so neither side becomes a
+    /// widget. A canvas with no room for two of those is split in half.
+    public static func firstWidth(split: Double, in width: Double) -> Double {
+        let room = width - WindowMetrics.gap
+        guard room >= 2 * WindowMetrics.sideMinimum else { return room / 2 }
+        let wanted = (split.isFinite ? split : even) * room
+        return min(max(wanted, WindowMetrics.sideMinimum), room - WindowMetrics.sideMinimum)
+            .rounded()
+    }
+
+    /// The split that gives the first window this width.
+    public static func split(firstWidth: Double, in width: Double) -> Double {
+        let room = width - WindowMetrics.gap
+        guard room > 0 else { return even }
+        return SideBySide.firstWidth(split: firstWidth / room, in: width) / room
+    }
+
     public func placeSubviews(in bounds: Frame, proposal: Proposal, subviews: LayoutSubviews) {
-        let half = (bounds.width - WindowMetrics.gap) / 2
-        guard half > 0 else { return }
-        for (index, window) in subviews.prefix(2).enumerated() {
-            window.place(in: Frame(x: bounds.x + Double(index) * (half + WindowMetrics.gap),
-                                   y: bounds.y, width: half, height: bounds.height))
+        let first = SideBySide.firstWidth(split: split, in: bounds.width)
+        let second = bounds.width - WindowMetrics.gap - first
+        guard first > 0, second > 0 else { return }
+        let windows = Array(subviews.prefix(2))
+        if let left = windows.first {
+            left.place(in: Frame(x: bounds.x, y: bounds.y, width: first, height: bounds.height))
+        }
+        if windows.count > 1 {
+            windows[1].place(in: Frame(x: bounds.x + first + WindowMetrics.gap, y: bounds.y,
+                                       width: second, height: bounds.height))
         }
     }
 }

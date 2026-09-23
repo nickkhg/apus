@@ -8,6 +8,8 @@
 // Options of `input`, in the order that they happen:
 //   --pointer X,Y   put the pointer on this pixel
 //   --click         press the left button and release it
+//   --press         press the left button and hold it
+//   --release       release the left button
 //   --type TEXT     type the text ("\n" is the Enter key)
 //
 // Virtualization has no screenshot and no way to send input to a guest, as
@@ -194,9 +196,20 @@ final class Devices {
     }
 
     func click() {
+        press()
+        release()
+    }
+
+    /// Holds the left button down. A --pointer after it drags.
+    func press() {
         send(pointer, apus_ev_key, apus_btn_left, 1)
         report(pointer)
+        // The app reads the press and can answer it, with a move or a
+        // resize, before the pointer goes anywhere.
         usleep(300_000)
+    }
+
+    func release() {
         send(pointer, apus_ev_key, apus_btn_left, 0)
         report(pointer)
         usleep(1_000_000)
@@ -237,7 +250,8 @@ var arguments = Array(CommandLine.arguments.dropFirst())
 guard let command = arguments.first else {
     fail("""
         usage: apus-screen shot PATH | size
-               apus-screen input [--pointer X,Y] [--click] [--type TEXT] [--key NAME]
+               apus-screen input [--pointer X,Y] [--click] [--press] [--release]
+                                 [--type TEXT] [--key NAME]
         """)
 }
 arguments.removeFirst()
@@ -257,6 +271,8 @@ case "input":
     enum Action {
         case point(Int, Int)
         case click
+        case hold
+        case release
         case type(String)
         case press(String)
     }
@@ -273,6 +289,10 @@ case "input":
             actions.append(.point(x, y))
         case "--click":
             actions.append(.click)
+        case "--press":
+            actions.append(.hold)
+        case "--release":
+            actions.append(.release)
         case "--type":
             guard !arguments.isEmpty else { fail("--type needs text") }
             actions.append(.type(unescape(arguments.removeFirst())))
@@ -293,6 +313,12 @@ case "input":
         case .click:
             devices.click()
             print("clicked")
+        case .hold:
+            devices.press()
+            print("pressed the button")
+        case .release:
+            devices.release()
+            print("released the button")
         case .type(let text):
             devices.type(text)
             print("typed \(text.debugDescription)")

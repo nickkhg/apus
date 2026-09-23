@@ -26,7 +26,7 @@ The text does not go through the compositor. The two apps share a pipe, so a
 selection of any size, and of any type, costs the compositor nothing.
 
 The clipboard follows the keyboard, as the protocol says: only the app whose
-window is in front is told what is on it.
+window has the keys is told what is on it.
 
 ## With the Mac
 

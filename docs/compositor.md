@@ -33,11 +33,11 @@ Then press Super to open Summon, and type a name to open an app. `make demo` doe
 | `Seat.swift` | `Seat` | Device access through libseat. It opens and closes the DRM device and the input devices. |
 | `Screen.swift` | `Screen` | One output. It has two framebuffers and changes them at vertical blank. It draws a frame only when something changes. |
 | `Input.swift` | `Input` | libinput and xkbcommon. It gives pointer motion, pointer position, buttons, and keys. |
-| `WaylandServer.swift` | `WaylandServer`, `Surface`, `Toplevel` | The Wayland globals and objects that apps use: `wl_compositor`, `wl_surface`, `xdg_wm_base`, and `wl_seat` with the keyboard. |
+| `WaylandServer.swift` | `WaylandServer`, `Surface`, `Toplevel` | The Wayland globals and objects that apps use: `wl_compositor`, `wl_surface`, `xdg_wm_base`, and `wl_seat` with the keyboard and the pointer. |
 | `AppCatalog.swift` | `AppCatalog`, `AppBundle` | The app bundles in `/Applications`, and how a bundle starts. See [applications.md](applications.md). |
 
 | `Cursor.swift` | `Cursor` | The pointer image. |
-| `Compositor.swift` | `Compositor` | Connects the parts. It keeps the window list and the focus, starts the apps, draws the shell, and makes the display list for each frame. |
+| `Compositor.swift` | `Compositor` | Connects the parts. It keeps the window list and the focus, holds the pointer during a press, a move and a resize, starts the apps, draws the shell, and makes the display list for each frame. |
 | `Support.swift` | | Logging, the monotonic clock, and `permanent(_:)` for C handler tables. |
 
 The display list, the views and the shell UI are in the package `ui/Toolkit/`: the libraries `Render`, `Toolkit` and `Shell`. See [toolkit.md](toolkit.md).
@@ -83,13 +83,11 @@ The shell asks the compositor for two things (`ShellActions`):
 | Action | What the compositor does |
 |---|---|
 | `openApp(id)` | Starts the app of that bundle, or brings its window to the front. See [applications.md](applications.md). |
-| `closeFrontWindow` | Sends `xdg_toplevel.close` to the window in front. The app decides what it does with that. |
+| `closeFrontWindow` | Sends `xdg_toplevel.close` to the window that has the keys. The app decides what it does with that. |
 
-The compositor sends the first pointer button (`BTN_LEFT`) to the shell only. An app gets the keyboard, but no pointer events.
+A press on the chrome goes to the shell, and a press on a window goes to the app (see [The pointer](#the-pointer)).
 
 The shell is a view, so its tests need no screen. See [toolkit.md](toolkit.md).
-
-## The keyboard and the focus
 
 ## The pointer
 
@@ -99,15 +97,39 @@ The seat has a pointer as well as a keyboard. Where the pointer is decides who r
 2. A pointer inside the window of an app goes to that app, in the coordinates of its surface. The shell hears that the pointer left it.
 3. Everything else is the chrome of the shell: the rail, the head of a window, a card, a notice. The shell reads it.
 
-A press on a window that is not in front brings it forward first, and the app reads the same press.
+The first press decides who holds the pointer until the last button comes up. A press on a window keeps the pointer with that app, also when the pointer leaves the window, so a drag that goes past the edge still reaches it. Wayland calls this the implicit grab. A press on the chrome keeps it with the shell.
 
-The window in front has the focus, and it gets the keys. Three things change which window is in front. An app opens a window. Summon or the rail brings a window forward. A window closes.
+## Window management
+
+A move and a resize are requests of the app, after a press on its own title bar or its own edge. The shell draws no edge that a person can drag. The layout owns every frame, so a move takes a window to another cell and a resize moves only an edge that the layout lets a person move. [layouts.md](layouts.md#moving-and-resizing) has the rules for each layout.
+
+1. The app gets the press in `wl_pointer.button`, with a serial.
+2. It sends `xdg_toplevel.move`, or `xdg_toplevel.resize` with the edges. `WaylandServer` checks that the serial is the serial of the last press on that surface. `Compositor` checks that the button of that press is still down. A request that fails either check is ignored, and the log says `WINDOW-MOVE-IGNORED` or `WINDOW-RESIZE-IGNORED`. An edge that is not in `resize_edge` is a protocol error.
+3. The compositor takes the pointer from the app. The app gets `wl_pointer.leave`, and no button events until the grab ends.
+4. During a move, the window follows the pointer, over the shell. During a resize, the edge follows the pointer: each motion runs the layout again, and a window whose size changed gets a configure with the new size and the `resizing` state.
+5. When the last button comes up, a move drops the window on the cell under the pointer, and a resize sends one more configure without `resizing`. The pointer then goes to whatever is under it.
+
+A request that the layout cannot use is refused (`WINDOW-MOVE-REFUSED`, `WINDOW-RESIZE-REFUSED`), and the app keeps the pointer as if it had not asked.
+
+## The keyboard and the focus
+
+One window has the keys. In the principal layout it is the window in the large cell, and in Full it is the one window that shows. Side by side and in the grid, it is the window that a person clicked last. These things change it:
+
+- An app opens a window. The new window has the keys.
+- A click on a window. In the principal layout a click on a tile brings the tile into the large cell when the button comes up. Side by side and in the grid the window keeps its cell. See [layouts.md](layouts.md#a-click).
+- Summon or the rail brings a window to the first place.
+- A move. Side by side and in the grid the window that moved keeps the keys.
+- A window closes.
+
+The window with the keys gets the `activated` state in its configure, and the other windows get a configure without it. The accent line along the head says the same to a person.
+
+A key goes to that window in three steps:
 
 1. `Input` reads the key from libinput. It gives the code of the kernel, the keysym from the keymap, and the modifiers.
 2. Ctrl+Alt+Backspace stops the compositor. Every other key goes to the app.
 3. `WaylandServer.send(key:)` sends `wl_keyboard.key` to the window with the focus, with `wl_keyboard.modifiers` before it when the modifiers changed.
 
-The seat says that it has a keyboard, and no pointer and no touch. A `wl_keyboard` object gets the keymap first: the compositor writes the xkb keymap of `Input` into shared memory and sends the file descriptor. The app compiles the same keymap, so the app reads the keys in the same way as the system.
+The seat says that it has a keyboard and a pointer, and no touch. A `wl_keyboard` object gets the keymap first: the compositor writes the xkb keymap of `Input` into shared memory and sends the file descriptor. The app compiles the same keymap, so the app reads the keys in the same way as the system.
 
 A window that gets the focus gets `wl_keyboard.enter`, and the window that loses it gets `wl_keyboard.leave`.
 
@@ -121,11 +143,12 @@ A window that gets the focus gets `wl_keyboard.enter`, and the window that loses
 | `wl_surface` | 6 | `attach`, `commit`, `frame`. The other requests have no effect. |
 | `xdg_wm_base` | 6 | `get_xdg_surface`, `create_positioner`, `pong` |
 | `xdg_surface` | 6 | `get_toplevel`, `ack_configure`. `get_popup` gives a protocol error. |
-| `xdg_toplevel` | 6 | `set_title`, `set_app_id`. The other requests have no effect. |
-| `wl_seat` | 7 | The keyboard. `get_pointer` and `get_touch` give an object that gets no events. |
+| `xdg_toplevel` | 6 | `set_title`, `set_app_id`, `set_min_size`, `move`, `resize`. The configure carries the states `maximized`, `activated` and `resizing`. The other requests have no effect. |
+| `wl_seat` | 7 | The keyboard and the pointer. `get_touch` gives an object that gets no events. |
+| `wl_pointer` | 7 | `enter`, `leave`, `motion`, `button`, `axis`, `axis_source`, `frame`. `set_cursor` has no effect: the compositor draws its own pointer. |
 | `wl_keyboard` | 7 | `keymap`, `enter`, `leave`, `key`, `modifiers`, `repeat_info` |
 
-When an app commits a buffer, the compositor copies the pixels and releases the buffer immediately. The first commit of a toplevel gets a configure event with the size of the app area, and the states `maximized` and `activated`. An app that answers with that size fills the area.
+When an app commits a buffer, the compositor copies the pixels and releases the buffer immediately. The first commit of a toplevel gets a configure event with the size of its cell, less the head, and the states `maximized` and `activated`. An app that answers with that size fills the area. A later configure comes when the size or the states change.
 
 The compositor puts a window in the app area. A window of another size goes in the middle of the area. See [applications.md](applications.md).
 
@@ -182,9 +205,9 @@ These rules apply:
 
 ## Current limits
 
-- Apps get no pointer input. The seat has a keyboard only.
 - A second compositor cannot start at once after the first one stops. `COMPOSITOR-EXIT` goes on the console before the process ends, and the screen and the DRM device go back after that. A compositor that starts inside that window fails to become DRM master, with `drmModeSetCrtc: Permission denied`. Wait for the process to end, not for the line.
-- A person cannot move a window or change its size by hand. The layout owns every frame, and Summon or the rail chooses which window is in front.
+- A person can move a window or change its size only through the app, with `xdg_toplevel.move` and `xdg_toplevel.resize`. The head that the shell draws has no bar to drag and no edge to pull.
+- A move shows no mark on the cell that the window will take. The window follows the pointer, and the drop decides.
 - The compositor draws the full screen for each frame. It ignores damage.
 - Apps can use only `wl_shm` buffers, not GPU buffers (`linux-dmabuf`).
 - There is no `wl_output`, no popups, and no window decorations.

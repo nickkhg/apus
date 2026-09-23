@@ -106,12 +106,21 @@ The programs print these markers:
 | `WINDOW-MAPPED` | `apus-compositor`, when a window opens |
 | `WINDOW-CLOSE-SENT` | `apus-compositor`, when a command of Summon asks a window to close |
 | `WINDOW-CONFIGURED`, `WINDOW-KEPT` | `apus-compositor`, when a layout gives a window a new size or keeps the one it had |
+| `WINDOW-STATE` | `apus-compositor`, when a window keeps its size and gets new states (`activated`, `resizing`) |
+| `FOCUS` | `apus-compositor`, when another window gets the keys |
+| `WINDOW-RAISED` | `apus-compositor`, when a click brings a tile into the large cell |
+| `WINDOW-MOVE-START`, `WINDOW-MOVED`, `WINDOW-MOVE-DROPPED` | `apus-compositor`, when an app starts a move, and when the window takes another cell or keeps its own |
+| `WINDOW-RESIZE-START`, `WINDOW-RESIZED` | `apus-compositor`, when an app starts a resize, and the size at the release |
+| `WINDOW-MOVE-REFUSED`, `WINDOW-RESIZE-REFUSED` | `apus-compositor`, when the layout has no use for the request |
+| `WINDOW-MOVE-IGNORED`, `WINDOW-RESIZE-IGNORED` | `apus-compositor`, when the request names no press that is still held |
 | `WINDOW-IN-RAIL` | `apus-compositor`, when a layout places no window and it waits in the rail |
 | `LAYOUT` | `apus-compositor`, when a person picks another layout |
 | `APP-STARTED`, `APP-RAISED` | `apus-compositor`, when Summon starts an app or brings its window forward |
 | `APP-DID-NOT-START` | `apus-compositor`, when an app opens no window in ten seconds |
 | `CLIENT-DRAWN` | `apus-hello-client` |
 | `CLIENT-POINTER-ENTER`, `CLIENT-POINTER`, `CLIENT-POINTER-LEAVE`, `CLIENT-BUTTON` | `apus-hello-client`, when the compositor gives it the pointer |
+| `CLIENT-MOVE`, `CLIENT-RESIZE` | `apus-hello-client`, when a press on its bar or its border asks for a move or a resize |
+| `CLIENT-CONFIGURE` | `apus-hello-client`, with the size and the states of each configure |
 | `TERMINAL-READY` | `apus-terminal`, with the size of the grid |
 
 ### Screenshots
@@ -128,6 +137,7 @@ Apple's Virtualization framework cannot make a picture of the screen of a guest,
 |---|---|
 | `--pointer X,Y` | Puts the pointer on that pixel. |
 | `--click` | Presses the left button and releases it, where the pointer is. |
+| `--press`, `--release` | Presses the left button and holds it, or releases it. A `--pointer` between the two is a drag. |
 | `--type TEXT` | Types the text. It knows the small letters, the capitals, the digits, some punctuation, and `\n` for the Enter key. |
 
 The tool runs the options in the order of the command line. A test can therefore say `--key super --type terminal --key enter`, which opens Summon, narrows the list, and then chooses. `--key` presses a key that writes no character. The names are `escape`, `backspace`, `tab`, `enter`, `up`, `down`, `left`, `right`, `super` and `space`.
@@ -173,6 +183,9 @@ The compositor test checks these places on the 1280×800 screen. The rail is 56 
 | (0, 28) to (700, 120) | Not `14111E` | What the test typed, and what the shell answered |
 | (640, 400) | `3070F0` | The window of the second app, over the first one |
 | (4, 32) | `FFFFFF` | The border of that window, at the top left of the app area |
+| (900, 9) | `A9E34B` | The accent line over the terminal, side by side, after a click on it |
+| (800, 400) | `3070F0` | The window of hello, after its right edge moved 200 to the right |
+| (300, 400), (1100, 400) | `14111E`, `3070F0` | The terminal and hello, after hello moved to the other half |
 | (640, 400) | `14111E` | The terminal again, after a click on the Close button |
 | (640, 400) | `2B2340` | The desktop, after the terminal closes too |
 | (667, 771) | `171320` | The background of the dock, where the dot was |
