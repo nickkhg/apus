@@ -37,6 +37,10 @@ final class App {
     /// The pixels of the window, and how many bytes are mapped.
     var pixels: UnsafeMutablePointer<UInt32>?
     var mappedBytes = 0
+    /// What each frame changed from the one before. The window keeps its
+    /// one buffer between frames, so a frame draws only that part again and
+    /// tells the compositor which part it was (wl_surface.damage_buffer).
+    let damage = DamageTracker()
     /// The size of the window in points. A point is `scale` pixels.
     var width = 800
     var height = 500
@@ -138,6 +142,8 @@ func applySize(_ app: App) {
     }
     app.pixels = memory.assumingMemoryBound(to: UInt32.self)
     app.mappedBytes = size
+    // The new buffer holds nothing yet, so the next frame is whole.
+    app.damage.reset()
     app.pool = wl_shm_create_pool(app.shm, fd, Int32(size))
     app.buffer = wl_shm_pool_create_buffer(app.pool, 0, Int32(app.pixelWidth), Int32(app.pixelHeight),
                                            Int32(stride), WL_SHM_FORMAT_XRGB8888.rawValue)
@@ -163,7 +169,8 @@ func draw(_ app: App) {
                                    in: frame, scale: Double(app.scale))
         : Grid.displayList(for: app.screen, cell: app.cell, in: frame,
                            selection: app.selection)
-    SoftwareRenderer.render(list, into: canvas)
+    let changed = app.damage.damage(for: list, screen: frame)
+    SoftwareRenderer.render(list, into: canvas, region: changed)
     app.screen.hasChanged = false
     // The shell draws the title in the head of the window and in the card
     // of a window that waits, so a change goes to the compositor.
@@ -178,8 +185,15 @@ func draw(_ app: App) {
     wl_callback_add_listener(callback, Listeners.frame, Unmanaged.passUnretained(app).toOpaque())
     app.framePending = true
 
-    wl_surface_attach(surface, buffer, 0, 0)
-    wl_surface_damage_buffer(surface, 0, 0, Int32.max, Int32.max)
+    // A frame that changed nothing sends no buffer: the compositor keeps
+    // the last one, and the commit still asks for the next frame.
+    if !changed.isEmpty {
+        wl_surface_attach(surface, buffer, 0, 0)
+        for rect in changed.rects {
+            wl_surface_damage_buffer(surface, Int32(rect.x), Int32(rect.y),
+                                     Int32(rect.width), Int32(rect.height))
+        }
+    }
     wl_surface_commit(surface)
 }
 

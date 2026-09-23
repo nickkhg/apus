@@ -65,6 +65,10 @@ public final class AppWindow {
     var pixels: UnsafeMutablePointer<UInt32>?
     var mappedBytes = 0
     var buffers = 0
+    /// What each frame changed from the one before. The window keeps its
+    /// one buffer between frames, so a frame draws only that part again and
+    /// tells the compositor which part it was (wl_surface.damage_buffer).
+    let damage = DamageTracker()
 
     /// The size that the last configure asked for, in points.
     var newSize: Size?

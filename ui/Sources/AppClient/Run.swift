@@ -88,6 +88,8 @@ extension AppWindow {
         }
         pixels = memory.assumingMemoryBound(to: UInt32.self)
         mappedBytes = bytes
+        // The new buffer holds nothing yet, so the next frame is whole.
+        damage.reset()
         pool = wl_shm_create_pool(shm, fd, Int32(bytes))
         buffer = wl_shm_pool_create_buffer(pool, 0, Int32(pixelWidth), Int32(pixelHeight),
                                            Int32(stride), WL_SHM_FORMAT_XRGB8888.rawValue)
@@ -120,14 +122,23 @@ extension AppWindow {
             for: AnyViewBox(body()),
             in: Rect(x: 0, y: 0, width: Int(size.width), height: Int(size.height)),
             scale: Double(scale))
-        SoftwareRenderer.render(list, into: canvas)
+        let changed = damage.damage(
+            for: list, screen: Rect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
+        SoftwareRenderer.render(list, into: canvas, region: changed)
 
         let callback = wl_surface_frame(surface)
         wl_callback_add_listener(callback, Listeners.frame, Unmanaged.passUnretained(self).toOpaque())
         framePending = true
 
-        wl_surface_attach(surface, buffer, 0, 0)
-        wl_surface_damage_buffer(surface, 0, 0, Int32.max, Int32.max)
+        // A frame that changed nothing sends no buffer: the compositor keeps
+        // the last one, and the commit still asks for the next frame.
+        if !changed.isEmpty {
+            wl_surface_attach(surface, buffer, 0, 0)
+            for rect in changed.rects {
+                wl_surface_damage_buffer(surface, Int32(rect.x), Int32(rect.y),
+                                         Int32(rect.width), Int32(rect.height))
+            }
+        }
         wl_surface_commit(surface)
     }
 }
