@@ -34,11 +34,11 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
    A screen that moves also makes the pixel tests uncertain: a picture taken in the middle of a move is a different picture each run. `apus-screen shot` could wait for the screen to settle first. `ViewHost` knows when nothing is moving.
 8. The display list of a view that did not change. The graph keeps the nodes of such a view. The frame still walks every node, to lay it out and to ask it for its items. A frame of the shell is 0.22 ms of that walk. An attribute for the items of a subtree, under its frame and the scale, would take most of it away.
 9. Test OpenSwiftUI on Linux again if OpenAttributeGraph gets its engine. The toolkit API has the same shape, so a change costs little.
+10. Key repeat in the shell. The apps repeat a held key, and the shell does not: the compositor reads the keys from libinput, which sends one press, and gives them to Summon as they come. `KeyRepeat` of the toolkit is the clock, and a timer of the event loop of the compositor could drive it.
 
 ## The terminal
 
-1. Key repeat. The compositor sends `repeat_info`, and the app does nothing with it.
-2. More than one window, or more than one shell in one window.
+1. More than one window, or more than one shell in one window.
 
 ## The system
 

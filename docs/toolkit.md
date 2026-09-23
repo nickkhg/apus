@@ -487,6 +487,8 @@ SummonView(state: state, actions: actions)
 
 The compositor gives each key to the shell first, and sends it to the app only when no view of the shell used it.
 
+`KeyRepeat` is the clock of a held key, for an app under the toolkit. Wayland leaves the repeat to the app. The app says which key went down and up and whether the keymap lets it repeat, its loop waits no longer than `wait(at:)`, and `due(at:)` gives the key when it goes again. It knows no Wayland, so the Mac tests it. `AppClient` and the terminal use it. The shell does not: the compositor reads its keys from libinput, and a held key in Summon does not repeat.
+
 ## Notices
 
 A notice is a short message from the system or from an app. It never covers the window in the large cell. It goes where a tile would go, at the end of the band, and the newest one is lowest. `Notice.Kind` is `information`, `warning` or `failure`, and each has a colour. The colour never carries the meaning on its own. The text says it too.

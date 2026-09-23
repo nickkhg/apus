@@ -101,6 +101,13 @@ final class Keyboard {
         }
     }
 
+    /// Whether the keymap lets the key repeat while it is held. A modifier
+    /// does not, nor does Caps Lock.
+    func repeats(key code: UInt32) -> Bool {
+        guard let keymap else { return false }
+        return xkb_keymap_key_repeats(keymap, code + 8) != 0
+    }
+
     /// What a key that went down sends to the program. `code` is the code of
     /// the kernel, as wl_keyboard gives it; xkb adds 8 to it.
     func bytes(forKey code: UInt32) -> [UInt8] {

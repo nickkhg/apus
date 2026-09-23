@@ -49,6 +49,13 @@ final class Keymap {
         xkb_state_update_mask(state, depressed, latched, locked, 0, 0, group)
     }
 
+    /// Whether the keymap lets the key repeat while it is held. A modifier
+    /// does not, nor does Caps Lock.
+    func repeats(code: UInt32) -> Bool {
+        guard let keymap else { return false }
+        return xkb_keymap_key_repeats(keymap, code + 8) != 0
+    }
+
     /// One key of the compositor, as a view reads it. `code` is the key of
     /// the kernel; xkb counts from eight higher.
     func event(code: UInt32, pressed: Bool) -> KeyEvent? {

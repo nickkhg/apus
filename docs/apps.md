@@ -27,6 +27,8 @@ window.run()
 
 The pointer, the wheel and the keys go through `ViewHost`. So `onHover`, `onPress`, `onTapGesture`, `onKey` and `ScrollView` work in an app exactly as they do in the shell, and an app writes no Wayland code.
 
+A key that is held repeats. The window reads the rate and the delay from `wl_keyboard.repeat_info`, asks xkbcommon whether the key repeats (a modifier does not), and gives the views the key again at that rate, as a press. A view cannot tell a repeat from a press. The clock is `KeyRepeat` in the toolkit, and the terminal uses it too.
+
 ## Two user interfaces
 
 `sizeClass` says how much room the window has: `widget`, `compact` or `large`. It comes from the size that the compositor proposed, so an app knows what to draw before it draws anything. See [layouts.md](layouts.md).

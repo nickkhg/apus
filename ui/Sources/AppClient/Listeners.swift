@@ -110,22 +110,34 @@ enum Listeners {
             window(data).keys.read(fd: fd, size: Int(size))
             close(fd)
         },
+        // The keys that are down when the window gets the focus do not
+        // repeat: they went down somewhere else.
         enter: { _, _, _, _, _ in },
-        leave: { _, _, _, _ in },
+        // A window without the keys hears no release, so a key that was
+        // held stops here.
+        leave: { data, _, _, _ in window(data).keyRepeat.stop() },
         key: { data, _, _, _, key, state in
             let app = window(data)
-            guard let event = app.keys.event(code: key,
-                                             pressed: state == WL_KEYBOARD_KEY_STATE_PRESSED.rawValue)
-            else { return }
+            let pressed = state == WL_KEYBOARD_KEY_STATE_PRESSED.rawValue
+            // The compositor sends one press for a key that is held; the
+            // repeat is the app's to make. The keymap says which keys
+            // repeat, and a modifier does not.
+            if pressed {
+                app.keyRepeat.pressed(key, repeats: app.keys.repeats(code: key), at: monotonic())
+            } else {
+                app.keyRepeat.released(key)
+            }
             // A view of the app reads the key first. A key that no view took
             // belongs to the app itself.
-            if !app.host.key(event) { app.onKey(event) }
+            app.deliver(key: key, pressed: pressed)
         },
         modifiers: { data, _, _, depressed, latched, locked, group in
             window(data).keys.setModifiers(depressed: depressed, latched: latched,
                                            locked: locked, group: group)
         },
-        repeat_info: { _, _, _, _ in }
+        repeat_info: { data, _, rate, delay in
+            window(data).keyRepeat.set(rate: rate, delay: delay)
+        }
     ))
 
     nonisolated(unsafe) static let pointer = permanent(wl_pointer_listener(

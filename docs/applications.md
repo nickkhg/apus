@@ -195,6 +195,28 @@ The terminal says `TERM=xterm-256color` to the programs in it. It understands th
 
 The terminal ends when the shell in it ends. The Close button of the panel also ends it, because the app stops at `xdg_toplevel.close`.
 
+### The keys
+
+The compositor sends each key once when it goes down and once when it goes
+up. A key that is held repeats in the app, as Wayland has it: the compositor
+says how with `wl_keyboard.repeat_info`, which on Apus is 25 times a second
+after 600 ms, and the terminal sends the bytes of the key again at that rate
+until the key goes up, another key goes down, or the window loses the keys.
+
+- xkbcommon says which keys repeat (`xkb_keymap_key_repeats`). Shift,
+  Control, Alt and Caps Lock do not.
+- A rate of 0 is no repeat.
+- A held key is read again each time it goes: Shift pressed while a letter
+  repeats stops the repeat, because a person who presses a second key means
+  that one.
+- `Shift+Page Up` and `Shift+Page Down` repeat, and scroll on. Copy and
+  paste do not: a held `Ctrl+Shift+V` pastes once.
+
+The clock of the repeat is `KeyRepeat` in the toolkit
+(`ui/Toolkit/Sources/Toolkit/KeyRepeat.swift`), so the Mac tests it. The
+loop of the terminal waits in `poll` no longer than the time to the next
+repeat. The apps of `AppClient` use the same clock. See [apps.md](apps.md).
+
 ### Scrolling back
 
 The terminal keeps the lines that go off the top of the screen — 5000 of them
@@ -226,6 +248,5 @@ clipboard of the Mac. See [clipboard.md](clipboard.md).
 - There is no primary selection: a selection is not on the clipboard until
   `Ctrl+Shift+C`, and the middle button does not paste.
 - A paste is not bracketed, so a paste of several lines runs all but the last.
-- A key does not repeat while it stays down.
 - The terminal reads underline, italic and a cursor of another shape, and then drops them.
 - One window. A second click on the icon brings the window to the front.
