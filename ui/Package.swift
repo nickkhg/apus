@@ -47,6 +47,7 @@ let package = Package(
         .executable(name: "apus-terminal", targets: ["TerminalApp"]),
         .executable(name: "apus-system", targets: ["SystemMonitor"]),
         .executable(name: "apus-settings", targets: ["SettingsApp"]),
+        .executable(name: "apus-files", targets: ["FilesApp"]),
         .executable(name: "apus-display-probe", targets: ["DisplayProbe"]),
         .executable(name: "apus-ui-check", targets: ["UICheck"]),
         .executable(name: "apus-screen", targets: ["ScreenTool"]),
@@ -142,6 +143,15 @@ let package = Package(
         // toolkit, which the Mac tests; this is the window and the files.
         // The bundle in Apps/Settings.app puts it in /Applications.
         .executableTarget(name: "SettingsApp", dependencies: [
+            "AppClient",
+            .product(name: "ApusUI", package: "Toolkit"),
+            ]),
+
+        // Files: the folders of this machine. The list and the keys are the
+        // Files module of the toolkit, which the Mac tests; this is the
+        // window and the disk. The bundle in Apps/Files.app puts it in
+        // /Applications.
+        .executableTarget(name: "FilesApp", dependencies: [
             "AppClient",
             .product(name: "ApusUI", package: "Toolkit"),
             ]),

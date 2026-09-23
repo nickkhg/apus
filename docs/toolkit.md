@@ -131,6 +131,8 @@ ui/
 | `Toolkit` | The views, the layout, the text, `ViewRenderer`, and `playSound`. It makes display lists. It knows nothing about the screen or about Wayland. |
 | `Shell` | What Apus draws itself: the rail, Summon, the layouts, and `RootView`. |
 | `Terminal` | What the terminal app draws: the grid of characters, and the escape sequences that change it. The app around it is `ui/Sources/TerminalApp/`. See [applications.md](applications.md). |
+| `Settings` | The panes of Settings, its keys and the parsers of the files of the system. The app around it is `ui/Sources/SettingsApp/`. See [settings.md](settings.md). |
+| `Files` | The list of a folder, the places and the keys of Files. The app around it is `ui/Sources/FilesApp/`. See [files.md](files.md). |
 
 ### The root view
 
@@ -353,7 +355,14 @@ A view of the interface goes in `ui/Toolkit/Sources/Shell/`. A view that every U
 
 ## Tests
 
-`make test-ui` runs the unit tests on the Mac, and `make test-ui-linux` runs the same tests on apus. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, the shapes, the state, and the pointer. `ui/Toolkit/Tests/ShellTests/` tests the panel, the dock and the app area. `ui/Toolkit/Tests/TerminalTests/` tests the grid of the terminal and its escape sequences. `ui/Toolkit/Tests/SettingsTests/` tests the panes of Settings, its keys and the files that it reads, with a machine of its own.
+`make test-ui` runs the unit tests on the Mac, and `make test-ui-linux` runs the same tests on apus. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, the shapes, the state, and the pointer. `ui/Toolkit/Tests/ShellTests/` tests the panel, the dock and the app area. `ui/Toolkit/Tests/TerminalTests/` tests the grid of the terminal and its escape sequences. `ui/Toolkit/Tests/SettingsTests/` tests the panes of Settings, its keys and the files that it reads, with a machine of its own. `ui/Toolkit/Tests/FilesTests/` tests the list of Files and its keys, with a disk of its own.
+
+The tests of an app also draw each size of it into pixels. With `APUS_PREVIEWS` set to a folder, they write those pictures there as PPM files, so that a person can look at an app without a VM:
+
+```sh
+mkdir -p /tmp/previews
+APUS_PREVIEWS=/tmp/previews make test-ui
+```
 
 A test lays out a view in a rectangle and looks at the display list. For example, this is the test of a spacer:
 

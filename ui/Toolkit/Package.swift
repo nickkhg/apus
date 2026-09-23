@@ -43,7 +43,7 @@ let package = Package(
     // programs that use it must come from one build. See docs/ui.md.
     products: [
         .library(name: "ApusUI", type: .dynamic,
-                 targets: ["Render", "Toolkit", "Shell", "Terminal", "Settings"]),
+                 targets: ["Render", "Toolkit", "Shell", "Terminal", "Settings", "Files"]),
         // The display server links these C libraries too (apus-ui-check).
         .library(name: "CFreeType", targets: ["CFreeType"]),
         .library(name: "CHarfBuzz", targets: ["CHarfBuzz"]),
@@ -77,6 +77,11 @@ let package = Package(
         // which reads and writes the files, is ui/Sources/SettingsApp.
         .target(name: "Settings", dependencies: ["Toolkit", "Render"]),
 
+        // What the Files app draws: the places, the way to a folder, and
+        // the list of what is in it. The app around it, which reads the
+        // folders, is ui/Sources/FilesApp.
+        .target(name: "Files", dependencies: ["Toolkit", "Render"]),
+
         // How long a frame takes: swift run -c release toolkit-bench
         .executableTarget(name: "toolkit-bench", dependencies: ["Shell", "Toolkit", "Render"]),
 
@@ -85,5 +90,6 @@ let package = Package(
         .testTarget(name: "ShellTests", dependencies: ["Shell", "Toolkit", "Render"]),
         .testTarget(name: "TerminalTests", dependencies: ["Terminal", "Toolkit", "Render"]),
         .testTarget(name: "SettingsTests", dependencies: ["Settings", "Toolkit", "Render"]),
+        .testTarget(name: "FilesTests", dependencies: ["Files", "Toolkit", "Render"]),
     ]
 )
