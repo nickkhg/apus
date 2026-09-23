@@ -18,6 +18,10 @@ apus-release
 # The Swift UI (packages/apus-ui, built from ui/)
 apus-ui
 
+# The sound theme (packages/apus-sounds): /usr/share/sounds/apus. See
+# docs/sounds.md.
+apus-sounds
+
 # Vulkan, for a guest with a GPU. vulkan-virtio is Mesa's Venus driver: it
 # turns Vulkan calls into a stream that the virtio-gpu device carries to the
 # renderer on the Mac. vulkan-icd-loader is what an app links to.
@@ -38,12 +42,12 @@ apus-zink
 # the VM, which linux-aarch64 leaves out. PipeWire is the sound server, with
 # WirePlumber to manage it, and pipewire-pulse and pipewire-alsa so that
 # programs written for PulseAudio or for ALSA reach it too. alsa-utils has
-# aplay and speaker-test, and the freedesktop sound theme gives the
-# names of the system sounds and a set of them. See docs/audio.md.
+# aplay and speaker-test. The system sounds are apus-sounds, above; the
+# freedesktop theme is left out on purpose (see docs/sounds.md). See
+# docs/audio.md.
 virtio-snd
 pipewire
 wireplumber
 pipewire-pulse
 pipewire-alsa
 alsa-utils
-sound-theme-freedesktop

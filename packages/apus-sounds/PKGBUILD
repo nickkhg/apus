@@ -1,0 +1,60 @@
+# The sounds of Apus: a freedesktop sound theme in /usr/share/sounds/apus.
+#
+# Nothing here is a recording. generate.swift makes every sound from the
+# numbers in it, oggenc encodes them, and check.swift measures them before
+# and after the encoder. So the files are ours, the same on every build, and
+# a sound changes with a line of Swift. See docs/sounds.md.
+#
+# The build needs swiftc (the builder image has it) and vorbis-tools
+# (build.sh installs it). The machine needs neither.
+pkgname=apus-sounds
+pkgver=1
+pkgrel=1
+pkgdesc='Apus sound theme'
+arch=('any')
+license=('Apache-2.0')
+makedepends=('vorbis-tools')
+source=('generate.swift' 'check.swift' 'index.theme' 'settings.ini')
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP')
+
+build() {
+    cd "$srcdir"
+    swiftc -O generate.swift -o generate
+    swiftc -O check.swift -o check
+    rm -rf wav stereo
+    mkdir wav stereo
+    ./generate wav
+
+    # A fixed serial number for each stream: oggenc picks a random one
+    # otherwise, and the files would differ from build to build.
+    local wav id serial=1
+    for wav in wav/*.wav; do
+        id=${wav##*/}
+        id=${id%.wav}
+        oggenc --quiet --quality 6 --serial "$serial" -o "stereo/$id.oga" "$wav"
+        serial=$((serial + 1))
+    done
+}
+
+check() {
+    cd "$srcdir"
+    ./check wav/levels.tsv wav/*.wav
+
+    # And what a person hears: the files after the encoder.
+    rm -rf decoded
+    mkdir decoded
+    local oga id
+    for oga in stereo/*.oga; do
+        id=${oga##*/}
+        id=${id%.oga}
+        oggdec --quiet -o "decoded/$id.wav" "$oga"
+    done
+    ./check --decoded wav/levels.tsv decoded/*.wav
+}
+
+package() {
+    cd "$srcdir"
+    install -Dm644 index.theme "$pkgdir/usr/share/sounds/apus/index.theme"
+    install -Dm644 -t "$pkgdir/usr/share/sounds/apus/stereo" stereo/*.oga
+    install -Dm644 settings.ini "$pkgdir/etc/xdg/gtk-3.0/settings.ini"
+}

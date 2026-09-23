@@ -62,7 +62,7 @@ mark "the PulseAudio server"
 
 # A stream, through PipeWire and ALSA, to the device. While it plays the
 # card says RUNNING, and it runs only while the Mac takes the samples.
-send "pw-play --volume 0 /usr/share/sounds/freedesktop/stereo/complete.oga & sleep 0.5;"
+send "pw-play --volume 0 /usr/share/sounds/apus/stereo/desktop-login.oga & sleep 0.5;"
 send " grep -q RUNNING /proc/asound/card0/pcm0p/sub0/status && printf 'PLAY-%s\\n' OK || printf 'PLAY-%s\\n' STOPPED; wait\r"
 expect {
     "PLAY-OK"      {}

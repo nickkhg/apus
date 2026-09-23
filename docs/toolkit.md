@@ -128,7 +128,7 @@ ui/
 | Module | Content |
 |---|---|
 | `Render` | `Rect`, `Bitmap`, `DisplayItem`, `DisplayList`, `Canvas`, and `SoftwareRenderer`. No other module of ours is below it. |
-| `Toolkit` | The views, the layout, the text, and `ViewRenderer`. It makes display lists. It knows nothing about the screen or about Wayland. |
+| `Toolkit` | The views, the layout, the text, `ViewRenderer`, and `playSound`. It makes display lists. It knows nothing about the screen or about Wayland. |
 | `Shell` | What Apus draws itself: the rail, Summon, the layouts, and `RootView`. |
 | `Terminal` | What the terminal app draws: the grid of characters, and the escape sequences that change it. The app around it is `ui/Sources/TerminalApp/`. See [applications.md](applications.md). |
 
@@ -507,6 +507,10 @@ The compositor gives each key to the shell first, and sends it to the app only w
 ## Notices
 
 A notice is a short message from the system or from an app. It never covers the window in the large cell. It goes where a tile would go, at the end of the band, and the newest one is lowest. `Notice.Kind` is `information`, `warning` or `failure`, and each has a colour. The colour never carries the meaning on its own. The text says it too.
+
+## Sounds
+
+`playSound(.dialogWarning)` plays a sound of the system theme and returns at once. The toolkit finds the file as the freedesktop sound theme spec says, and gives it to `pw-play`. It links no audio library. A machine with no PipeWire plays nothing. See [sounds.md](sounds.md).
 
 ## The two modes
 

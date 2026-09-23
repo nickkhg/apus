@@ -32,7 +32,8 @@ pacman -Sy --noconfirm --needed \
     meson ninja cmake python-mako python-packaging python-yaml \
     glslang spirv-tools expat zlib zstd vulkan-headers vulkan-icd-loader \
     libx11 libxext libxdamage libxfixes libxshmfence libxxf86vm libxrandr \
-    xorgproto libxcb linux-aarch64-headers
+    xorgproto libxcb linux-aarch64-headers \
+    vorbis-tools        # packages/apus-sounds encodes its sounds with oggenc
 
 step "Building Apus packages"
 # Every packages/<name>/PKGBUILD becomes a package in the local [apus]

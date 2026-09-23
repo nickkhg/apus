@@ -117,7 +117,7 @@ RUN = container run --rm --cap-add ALL -c $(CPUS) -m $(MEM) \
 	-v $(VOL_PKG):/var/cache/pacman/pkg \
 	-w $(CURDIR)
 
-.PHONY: help preflight virgl install-disk builder volumes build sdk ui ui-container protocols shell vm live installed gui demo demo-dev test test-venus test-dev test-ui test-ui-linux ssh bench clean distclean
+.PHONY: help preflight virgl install-disk builder volumes build sdk ui ui-container protocols shell vm live installed gui demo demo-dev test test-venus test-dev test-ui test-ui-linux ssh bench sounds clean distclean
 
 help:
 	@echo "make build      build out/live.img"
@@ -136,6 +136,7 @@ help:
 	@echo "make test-venus  the guest finds the GPU of the Mac (needs the renderer)"
 	@echo "make test-ui-linux  the same tests in the builder container"
 	@echo "make bench      how long one frame of the shell takes"
+	@echo "make sounds     the system sounds as WAV files in out/sounds, checked"
 	@echo "make test-dev   the compositor test, with the programs from 'make ui'"
 	@echo "make shell      root shell in the build container"
 	@echo "make clean      remove build output (keeps package cache)"
@@ -239,6 +240,17 @@ test-ui: $(SWIFT_MAC)/usr/bin/swift
 # How long one frame of the shell takes, on the Mac.
 bench: $(SWIFT_MAC)/usr/bin/swift
 	$(SWIFT_MAC)/usr/bin/swift run -c release --package-path ui/Toolkit toolkit-bench
+
+# The sounds of the system, as WAV files in out/sounds, to hear on the Mac
+# (afplay out/sounds/bell.wav). The image carries the same sounds as Ogg
+# Vorbis: packages/apus-sounds encodes them. See docs/sounds.md.
+SOUNDS := out/sounds
+sounds:
+	mkdir -p $(SOUNDS)
+	xcrun swiftc -O packages/apus-sounds/generate.swift -o $(SOUNDS)/generate
+	xcrun swiftc -O packages/apus-sounds/check.swift -o $(SOUNDS)/check
+	$(SOUNDS)/generate $(SOUNDS)
+	$(SOUNDS)/check $(SOUNDS)/levels.tsv $(SOUNDS)/*.wav
 
 # The same tests on Apus itself (aarch64 Linux), in the builder container.
 test-ui-linux: builder volumes

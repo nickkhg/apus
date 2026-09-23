@@ -46,6 +46,21 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
 
 1. More than one window, or more than one shell in one window.
 
+## Sounds
+
+The theme is in the image, and the toolkit has `playSound` (see [sounds.md](sounds.md)). Nothing asks for a sound yet. In this sequence:
+
+1. The audio stack: PipeWire, WirePlumber and `pipewire-audio` (for `pw-play`), and virtio-sound to the Mac. This work is separate. Until it is done, `playSound` plays nothing.
+2. The compositor plays `desktop-login` at the first frame of the session, and a sound for each notice: `message-new-instant` for a notice of an app, and `dialog-information`, `dialog-warning` or `dialog-error` for a notice of the system.
+3. The terminal plays `bellTerminal` for BEL, at most once in 100 ms. `Screen.swift` drops BEL now.
+4. The volume keys: the compositor changes the volume with `wpctl`, then plays `audio-volume-change`.
+5. The Power app plays `power-plug`, `power-unplug`, and `battery-low` once when the charge crosses the low level.
+6. A udev monitor in the compositor plays `device-added` and `device-removed` for a device that a person plugs in after the session started.
+7. The compositor plays `desktop-logout` and waits 0.6 s before it asks systemd to power off. Otherwise systemd stops the player with the shell.
+8. A screenshot key, which plays `screen-capture`.
+9. A switch in Settings: sounds on or off, and a volume for event sounds. The lookup honours a `.disabled` file already.
+10. Nobody has listened to the sounds on the machine yet. The check measures them; it cannot hear them.
+
 ## The system
 
 - Root has no password. The Password pane of Settings gives it one. Add a user account for use outside a VM. Settings then needs a program of the system to change `/etc` for the user, such as `hostnamed` and `timedated`.

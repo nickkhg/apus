@@ -1,0 +1,13 @@
+# The sound theme of Apus. The sounds are made, not recorded:
+# packages/apus-sounds/generate.swift writes every one of them, and
+# docs/sounds.md says why each one sounds as it does.
+#
+# The theme inherits nothing. An event with no file here is an event that
+# Apus keeps silent on purpose, such as a window that opens.
+[Sound Theme]
+Name=Apus
+Comment=The sounds of Apus
+Directories=stereo
+
+[stereo]
+OutputProfile=stereo
