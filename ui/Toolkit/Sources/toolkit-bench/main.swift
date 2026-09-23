@@ -138,3 +138,62 @@ measure("whole frame") {
     let items = host.displayList(for: RootView(state: state), in: screen)
     SoftwareRenderer.render(items, into: canvas)
 }
+
+// Damage: a frame draws only what changed from the frame before. Each case
+// is one change, drawn whole and then drawn as its damage. The two pictures
+// are the same (RenderTests holds that); the time is not.
+print("--- damage: one change, drawn whole and in part")
+@MainActor func compare(_ name: String, before: DisplayList, after: DisplayList) {
+    let tracker = DamageTracker()
+    _ = tracker.damage(for: before, screen: screen)
+    var region = tracker.damage(for: after, screen: screen)
+    let share = Double(region.area) / Double(width * height) * 100
+    print(String(format: "%@: %d rectangles, %.2f%% of the screen", name,
+                 region.rects.count, share))
+    measure("  find the damage") {
+        let again = DamageTracker()
+        _ = again.damage(for: before, screen: screen)
+        region = again.damage(for: after, screen: screen)
+    }
+    measure("  draw whole") { SoftwareRenderer.render(after, into: canvas) }
+    measure("  draw the damage") { SoftwareRenderer.render(after, into: canvas, region: region) }
+}
+
+var later = state
+later.clock = Clock(hour: "14", minute: "06", weekday: "TUE")
+let clockHost = ViewHost()
+let beforeClock = clockHost.displayList(for: RootView(state: state), in: screen)
+compare("the minute changes", before: beforeClock,
+        after: clockHost.displayList(for: RootView(state: later), in: screen))
+
+// A window of the terminal, in which a person types one character.
+let window = Bitmap(width: 900, height: 700, isOpaque: true,
+                    pixels: [UInt32](repeating: 0xFF14_111E, count: 900 * 700))
+let windowList: DisplayList = [.fill(screen, color: 0xFF07_080A),
+                               .pushClip(Rect(x: 300, y: 60, width: 900, height: 700)),
+                               .bitmap(window, x: 300, y: 60), .popClip] + beforeClock
+window.markChanged([Rect(x: 120, y: 200, width: 9, height: 18)])
+do {
+    let tracker = DamageTracker()
+    _ = tracker.damage(for: windowList, screen: screen)
+    window.markChanged([Rect(x: 129, y: 200, width: 9, height: 18)])
+    let region = tracker.damage(for: windowList, screen: screen)
+    print(String(format: "a key in the terminal: %.2f%% of the screen",
+                 Double(region.area) / Double(width * height) * 100))
+    measure("  draw whole") { SoftwareRenderer.render(windowList, into: canvas) }
+    measure("  draw the damage") {
+        SoftwareRenderer.render(windowList, into: canvas, region: region)
+    }
+}
+
+// Summon, open in GPU mode, with a letter typed into it: the blur is under
+// the list, so the damage holds all that the blur reads.
+let typedHost = ViewHost()
+let beforeTyping = typedHost.displayList(for: RootView(state: open), in: screen)
+_ = typedHost.key(KeyEvent(keysym: 0x74, characters: "t"))
+compare("summon: a letter typed", before: beforeTyping,
+        after: typedHost.displayList(for: RootView(state: open), in: screen))
+
+// The worst case for finding the damage: most of the list is new.
+compare("summon opens", before: beforeClock,
+        after: ViewHost().displayList(for: RootView(state: open), in: screen))
