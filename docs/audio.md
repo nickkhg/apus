@@ -13,7 +13,7 @@ microphone of the Mac, when a person asks for that.
 ## Play a sound
 
 ```sh
-pw-play /usr/share/sounds/freedesktop/stereo/bell.oga
+pw-play /usr/share/sounds/apus/stereo/message-new-instant.oga
 ```
 
 `pw-play` plays a file (WAV, FLAC, Ogg Vorbis, and the other types of
@@ -37,23 +37,15 @@ speaker-test -c 2 -t wav -l 1     # "front left", "front right"
 
 ### Where the system sounds go
 
-The image has the freedesktop sound theme (`sound-theme-freedesktop`) in
-`/usr/share/sounds/freedesktop/stereo/`. It gives the names of the sounds of
-the [freedesktop sound naming
-specification](https://specifications.freedesktop.org/sound-naming-spec/latest/):
-`bell`, `complete`, `dialog-error`, `message-new-instant`, and more.
+The sounds of Apus are the `apus` sound theme, in `/usr/share/sounds/apus/`,
+with one file for each name of the [freedesktop sound naming
+specification](https://specifications.freedesktop.org/sound-naming-spec/latest/)
+that has a sound. The toolkit finds the file and gives it to `pw-play`. See
+[sounds.md](sounds.md).
 
-The sounds of Apus are to be a theme of the same form:
-
-```
-/usr/share/sounds/apus/index.theme        [Sound Theme] Name=Apus, Inherits=freedesktop
-/usr/share/sounds/apus/stereo/bell.oga    one file for each name of the specification
-```
-
-A sound that the Apus theme does not have then comes from the freedesktop
-theme. A program looks for `apus/stereo/<name>` first, then
-`freedesktop/stereo/<name>`, with the extensions `.oga`, `.ogg` and `.wav`,
-and gives the first file that it finds to `pw-play`. The image has no
+The image does not have the freedesktop sound theme. The spec makes
+`freedesktop` the last theme of every lookup, so with it an event that Apus
+keeps silent on purpose would play a sound of that theme. The image has no
 libcanberra: its player, `canberra-gtk-play`, needs GTK, and `pw-play` does
 the same work.
 

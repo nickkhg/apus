@@ -70,6 +70,10 @@ Linux ARM kernel does not have. It fits one kernel release, so a new
 `linux-aarch64` needs a new `pkgver` and new sums. See
 [audio.md](audio.md#the-driver).
 
+## apus-sounds
+
+`apus-sounds` is the sound theme of Apus: `/usr/share/sounds/apus`, with one Ogg Vorbis file for each event. The package makes the sounds when it builds: `generate.swift` writes them, `oggenc` encodes them, and `check.swift` measures them before and after the encoder. `build.sh` installs `vorbis-tools` for the build. See [sounds.md](sounds.md).
+
 ## Add a package
 
 To add an Arch Linux ARM package to the image:
