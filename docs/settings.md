@@ -110,4 +110,3 @@ In a field, Enter keeps the text and Escape does not. In Password, Tab moves bet
 - The Network pane shows the wired and wireless interfaces, but it cannot join a wireless network. Apus has no wireless daemon.
 - The layout list has the layouts that most people use. xkeyboard-config has many more. To use another one, write its name in the drop-in yourself.
 - A field of text has its caret at the end only, as the query of Summon has.
-- The keys do not repeat while they stay down. See [next-steps.md](next-steps.md).

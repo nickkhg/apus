@@ -14,3 +14,10 @@ func permanent<T>(_ value: T) -> UnsafeMutablePointer<T> {
     pointer.initialize(to: value)
     return pointer
 }
+
+/// Seconds since the machine started. The repeat of a held key reads it.
+func monotonic() -> Double {
+    var now = timespec()
+    clock_gettime(CLOCK_MONOTONIC, &now)
+    return Double(now.tv_sec) + Double(now.tv_nsec) / 1_000_000_000
+}

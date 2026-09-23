@@ -15,10 +15,13 @@ extension AppWindow {
             wl_display_flush(display)
             var watched = [pollfd(fd: fd, events: Int16(POLLIN), revents: 0)]
             // The wait ends every 100 ms even with nothing to read, so that
-            // a view that moves gets its next frame.
-            guard poll(&watched, 1, 100) >= 0 || errno == EINTR else { break }
+            // a view that moves gets its next frame. A key that is held ends
+            // it early, when it is due to go again.
+            let wait = min(100, keyRepeat.wait(at: monotonic()) ?? 100)
+            guard poll(&watched, 1, wait) >= 0 || errno == EINTR else { break }
             if watched[0].revents & Int16(POLLIN) != 0, wl_display_dispatch(display) < 0 { break }
             let now = monotonic()
+            if let key = keyRepeat.due(at: now) { deliver(key: key, pressed: true) }
             if now - lastSecond >= 1 {
                 lastSecond = now
                 everySecond()

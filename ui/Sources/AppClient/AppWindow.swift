@@ -73,6 +73,8 @@ public final class AppWindow {
     var needsDraw = true
     let host = ViewHost()
     let keys = Keymap()
+    /// The key that is held down and repeats, and when it goes again.
+    var keyRepeat = KeyRepeat()
     /// When the window opened, so that a view can move from the start.
     let startedAt = monotonic()
     /// When `everySecond` last ran.
@@ -110,6 +112,13 @@ public final class AppWindow {
         let delta = scrolled * (scrollIsWheel ? AppWindow.pointsPerDegree : 1)
         scrolled = 0
         host.pointerScrolled(by: delta)
+    }
+
+    /// Gives one key to the views of the app, and to the app if no view
+    /// took it. A key that repeats comes here each time it goes again.
+    func deliver(key code: UInt32, pressed: Bool) {
+        guard let event = keys.event(code: code, pressed: pressed) else { return }
+        if !host.key(event) { onKey(event) }
     }
 
     var pixelWidth: Int { Int(size.width) * scale }

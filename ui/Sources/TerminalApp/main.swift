@@ -67,6 +67,8 @@ final class App {
 
     var command = "/bin/bash"
     let keyboard = Keyboard()
+    /// The key that is held down and repeats, and when it goes again.
+    var keyRepeat = KeyRepeat()
     /// Copying and pasting, and with it the clipboard of the Mac.
     let clipboard = Clipboard()
     /// What a person has selected with the pointer, if anything.
@@ -229,6 +231,41 @@ func pasteIntoTheShell(_ app: App, display: OpaquePointer?) {
     // does, and what a person pasting a command expects.
     app.screen.scrollToBottom()
     app.pty?.write(Array(text.utf8))
+}
+
+/// What a key that went down does, and what a held key does each time it
+/// repeats. It answers whether the key may repeat: copy and paste may not,
+/// because a held Control+Shift+V would paste many times.
+@discardableResult
+func press(_ app: App, key: UInt32, data: UnsafeMutableRawPointer?) -> Bool {
+    // Copy, paste and the keys that scroll are read before the key becomes
+    // bytes: Control+Shift+C makes the same byte as Control+C, which is the
+    // one that stops a program.
+    if let chord = app.keyboard.chord(forKey: key) {
+        switch chord {
+        case .copy:
+            copySelection(app, data: data)
+            return false
+        case .paste:
+            pasteIntoTheShell(app, display: wl_proxy_get_display(app.surface))
+            return false
+        case .scrollUp: app.screen.scrollBack(by: app.screen.rows / 2)
+        case .scrollDown: app.screen.scrollBack(by: -(app.screen.rows / 2))
+        }
+        return true
+    }
+    let bytes = app.keyboard.bytes(forKey: key)
+    guard !bytes.isEmpty else { return false }
+    // A person who types wants to see what they are typing, so the view goes
+    // back to the live screen, as every terminal does, and what was selected
+    // is no longer what they are looking at.
+    app.screen.scrollToBottom()
+    if app.selection != nil {
+        app.selection = nil
+        app.screen.hasChanged = true
+    }
+    app.pty?.write(bytes)
+    return true
 }
 
 // MARK: - The listeners of libwayland
@@ -410,41 +447,32 @@ enum Listeners {
             }
             close(fd)
         },
+        // The keys that are down when the window gets the focus do not
+        // repeat: they went down somewhere else.
         enter: { _, _, _, _, _ in },
-        leave: { _, _, _, _ in },
+        // A window without the keys hears no release, so a key that was
+        // held stops here.
+        leave: { data, _, _, _ in appState(data).keyRepeat.stop() },
         key: { data, _, serial, _, key, keyState in
             let app = appState(data)
             app.clipboard.lastSerial = serial
-            guard keyState == WL_KEYBOARD_KEY_STATE_PRESSED.rawValue else { return }
-            // Copy, paste and the keys that scroll are read before the key
-            // becomes bytes: Control+Shift+C makes the same byte as
-            // Control+C, which is the one that stops a program.
-            if let chord = app.keyboard.chord(forKey: key) {
-                switch chord {
-                case .copy: copySelection(app, data: data)
-                case .paste: pasteIntoTheShell(app, display: wl_proxy_get_display(app.surface))
-                case .scrollUp: app.screen.scrollBack(by: app.screen.rows / 2)
-                case .scrollDown: app.screen.scrollBack(by: -(app.screen.rows / 2))
-                }
+            guard keyState == WL_KEYBOARD_KEY_STATE_PRESSED.rawValue else {
+                app.keyRepeat.released(key)
                 return
             }
-            let bytes = app.keyboard.bytes(forKey: key)
-            guard !bytes.isEmpty else { return }
-            // A person who types wants to see what they are typing, so the
-            // view goes back to the live screen, as every terminal does, and
-            // what was selected is no longer what they are looking at.
-            app.screen.scrollToBottom()
-            if app.selection != nil {
-                app.selection = nil
-                app.screen.hasChanged = true
-            }
-            app.pty?.write(bytes)
+            // The compositor sends one press for a key that is held; the
+            // repeat is the app's to make. The keymap says which keys
+            // repeat, and a modifier does not.
+            let repeats = press(app, key: key, data: data) && app.keyboard.repeats(key: key)
+            app.keyRepeat.pressed(key, repeats: repeats, at: monotonic())
         },
         modifiers: { data, _, _, depressed, latched, locked, group in
             appState(data).keyboard.setModifiers(depressed: depressed, latched: latched,
                                                  locked: locked, group: group)
         },
-        repeat_info: { _, _, _, _ in }
+        repeat_info: { data, _, rate, delay in
+            appState(data).keyRepeat.set(rate: rate, delay: delay)
+        }
     ))
 }
 
@@ -498,7 +526,8 @@ xdg_toplevel_set_app_id(app.toplevel, "org.apus.terminal")
 wl_surface_commit(app.surface)
 
 // The app waits for two things: events of the compositor (keys, frames) and
-// text from the shell.
+// text from the shell. A key that is held down ends the wait early, when it
+// is due to go again.
 let displayFD = wl_display_get_fd(display)
 while app.running {
     wl_display_flush(display)
@@ -506,7 +535,8 @@ while app.running {
         pollfd(fd: displayFD, events: Int16(POLLIN), revents: 0),
         pollfd(fd: app.pty?.fd ?? -1, events: Int16(POLLIN), revents: 0),
     ]
-    guard poll(&watched, 2, 1000) >= 0 || errno == EINTR else { break }
+    let wait = min(1000, app.keyRepeat.wait(at: monotonic()) ?? 1000)
+    guard poll(&watched, 2, wait) >= 0 || errno == EINTR else { break }
     if watched[0].revents & Int16(POLLIN) != 0 {
         if wl_display_dispatch(display) < 0 { break }
     }
@@ -516,6 +546,10 @@ while app.running {
             break
         }
         if !bytes.isEmpty { app.screen.write(bytes) }
+    }
+    if let key = app.keyRepeat.due(at: monotonic()),
+       !press(app, key: key, data: appPointer) {
+        app.keyRepeat.stop()
     }
     if app.screen.hasChanged, !app.framePending { draw(app) }
 }
