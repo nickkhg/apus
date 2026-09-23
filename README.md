@@ -65,6 +65,7 @@ To install software on a running system, use pacman. For example: `pacman -S hto
 | [Applications](docs/applications.md) | The app bundles in `/Applications`, Summon, and the terminal |
 | [Settings](docs/settings.md) | The Settings app: what each pane reads and writes, and the keys |
 | [Files](docs/files.md) | The Files app: the list of a folder, the places, and the keys |
+| [Notes](docs/notes.md) | The Notes app: notes as plain files in `~/Notes`, saved on every change |
 | [Layouts](docs/layouts.md) | How a layout and a window agree on a size, and the four layouts |
 | [Sounds](docs/sounds.md) | The system sounds: the events, how they are made, the check, and how to play one |
 | [Writing an app](docs/apps.md) | The client library, the two user interfaces of an app, and the bundle |

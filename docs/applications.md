@@ -40,6 +40,7 @@ The source of a bundle is a directory in `ui/Apps/`. The `apus-ui` package copie
 | `Terminal.app` | `bin/apus-terminal` in the bundle | The terminal. |
 | `Settings.app` | `bin/apus-settings` in the bundle | The settings of the system. See [settings.md](settings.md). |
 | `Files.app` | `bin/apus-files` in the bundle | The folders of the machine. See [files.md](files.md). |
+| `Notes.app` | `bin/apus-notes` in the bundle | Short texts, as plain files in `~/Notes`. See [notes.md](notes.md). |
 
 A bundle that names a program with a path in the bundle gets that program from the build. The program is then in the bundle only, and not in `/usr/bin`.
 

@@ -48,6 +48,7 @@ let package = Package(
         .executable(name: "apus-system", targets: ["SystemMonitor"]),
         .executable(name: "apus-settings", targets: ["SettingsApp"]),
         .executable(name: "apus-files", targets: ["FilesApp"]),
+        .executable(name: "apus-notes", targets: ["NotesApp"]),
         .executable(name: "apus-display-probe", targets: ["DisplayProbe"]),
         .executable(name: "apus-ui-check", targets: ["UICheck"]),
         .executable(name: "apus-screen", targets: ["ScreenTool"]),
@@ -152,6 +153,15 @@ let package = Package(
         // window and the disk. The bundle in Apps/Files.app puts it in
         // /Applications.
         .executableTarget(name: "FilesApp", dependencies: [
+            "AppClient",
+            .product(name: "ApusUI", package: "Toolkit"),
+            ]),
+
+        // Notes: short texts, kept as plain files in ~/Notes. The list, the
+        // editor and the keys are the Notes module of the toolkit, which the
+        // Mac tests; this is the window and the folder. The bundle in
+        // Apps/Notes.app puts it in /Applications.
+        .executableTarget(name: "NotesApp", dependencies: [
             "AppClient",
             .product(name: "ApusUI", package: "Toolkit"),
             ]),

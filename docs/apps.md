@@ -11,7 +11,7 @@ window.body = { SystemView(readings: readings) }
 window.run()
 ```
 
-`ui/Sources/SystemMonitor` is the whole of an app written this way. It is worth reading before you write one. `ui/Sources/SettingsApp` is a larger one: its views are a module of the toolkit package, so that the Mac tests them, and the program holds only the window and the files of the system. See [settings.md](settings.md). Files is the same shape and smaller ([files.md](files.md)): the module holds the list and the keys, and the program holds the window and a `FileSystem` that reads the folders.
+`ui/Sources/SystemMonitor` is the whole of an app written this way. It is worth reading before you write one. `ui/Sources/SettingsApp` is a larger one: its views are a module of the toolkit package, so that the Mac tests them, and the program holds only the window and the files of the system. See [settings.md](settings.md). Files is the same shape and smaller ([files.md](files.md)): the module holds the list and the keys, and the program holds the window and a `FileSystem` that reads the folders. Notes ([notes.md](notes.md)) adds a `TextEditor` of the toolkit, for an app that takes more than a line of text.
 
 ## What the window gives you
 
