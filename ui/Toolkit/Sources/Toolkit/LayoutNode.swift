@@ -408,6 +408,7 @@ final class ClipNode: LayoutNode {
         // button that the clip hides cannot be hovered or clicked.
         let hovers = pass.hoverRegions.count
         let taps = pass.tapRegions.count
+        let scrolls = pass.scrollRegions.count
 
         pass.list.append(.pushClip(rect))
         child.render(in: frame, into: &pass)
@@ -418,6 +419,9 @@ final class ClipNode: LayoutNode {
         }
         for index in taps..<pass.tapRegions.count {
             pass.tapRegions[index].frame = pass.tapRegions[index].frame.intersection(frame)
+        }
+        for index in scrolls..<pass.scrollRegions.count {
+            pass.scrollRegions[index].frame = pass.scrollRegions[index].frame.intersection(frame)
         }
     }
 }

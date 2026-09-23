@@ -43,7 +43,7 @@ let package = Package(
     // programs that use it must come from one build. See docs/ui.md.
     products: [
         .library(name: "ApusUI", type: .dynamic,
-                 targets: ["Render", "Toolkit", "Shell", "Terminal"]),
+                 targets: ["Render", "Toolkit", "Shell", "Terminal", "Settings"]),
         // The display server links these C libraries too (apus-ui-check).
         .library(name: "CFreeType", targets: ["CFreeType"]),
         .library(name: "CHarfBuzz", targets: ["CHarfBuzz"]),
@@ -72,6 +72,11 @@ let package = Package(
         // the Mac.
         .target(name: "Terminal", dependencies: ["Toolkit", "Render"]),
 
+        // What the Settings app draws, and what it makes of the files of the
+        // system: the panes, the keys, and the parsers. The app around it,
+        // which reads and writes the files, is ui/Sources/SettingsApp.
+        .target(name: "Settings", dependencies: ["Toolkit", "Render"]),
+
         // How long a frame takes: swift run -c release toolkit-bench
         .executableTarget(name: "toolkit-bench", dependencies: ["Shell", "Toolkit", "Render"]),
 
@@ -79,5 +84,6 @@ let package = Package(
         .testTarget(name: "ToolkitTests", dependencies: ["Toolkit", "Render"]),
         .testTarget(name: "ShellTests", dependencies: ["Shell", "Toolkit", "Render"]),
         .testTarget(name: "TerminalTests", dependencies: ["Terminal", "Toolkit", "Render"]),
+        .testTarget(name: "SettingsTests", dependencies: ["Settings", "Toolkit", "Render"]),
     ]
 )

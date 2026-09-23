@@ -46,6 +46,7 @@ let package = Package(
         .executable(name: "apus-hello-client", targets: ["HelloClient"]),
         .executable(name: "apus-terminal", targets: ["TerminalApp"]),
         .executable(name: "apus-system", targets: ["SystemMonitor"]),
+        .executable(name: "apus-settings", targets: ["SettingsApp"]),
         .executable(name: "apus-display-probe", targets: ["DisplayProbe"]),
         .executable(name: "apus-ui-check", targets: ["UICheck"]),
         .executable(name: "apus-screen", targets: ["ScreenTool"]),
@@ -132,6 +133,15 @@ let package = Package(
         // The system monitor: an app of the toolkit, and the second user of
         // it. The bundle in Apps/System.app puts it in /Applications.
         .executableTarget(name: "SystemMonitor", dependencies: [
+            "AppClient",
+            .product(name: "ApusUI", package: "Toolkit"),
+            ]),
+
+        // Settings: the machine's name, clock, password, screen, keys,
+        // network, apps and power. The panes are the Settings module of the
+        // toolkit, which the Mac tests; this is the window and the files.
+        // The bundle in Apps/Settings.app puts it in /Applications.
+        .executableTarget(name: "SettingsApp", dependencies: [
             "AppClient",
             .product(name: "ApusUI", package: "Toolkit"),
             ]),

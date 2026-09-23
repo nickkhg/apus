@@ -11,7 +11,7 @@ window.body = { SystemView(readings: readings) }
 window.run()
 ```
 
-`ui/Sources/SystemMonitor` is the whole of an app written this way. It is worth reading before you write one.
+`ui/Sources/SystemMonitor` is the whole of an app written this way. It is worth reading before you write one. `ui/Sources/SettingsApp` is a larger one: its views are a module of the toolkit package, so that the Mac tests them, and the program holds only the window and the files of the system. See [settings.md](settings.md).
 
 ## What the window gives you
 
@@ -25,7 +25,7 @@ window.run()
 | `setNeedsDraw()` | Asks for a frame |
 | `close()` | Ends `run()` |
 
-The pointer and the keys go through `ViewHost`. So `onHover`, `onPress`, `onTapGesture` and `onKey` work in an app exactly as they do in the shell, and an app writes no Wayland code.
+The pointer, the wheel and the keys go through `ViewHost`. So `onHover`, `onPress`, `onTapGesture`, `onKey` and `ScrollView` work in an app exactly as they do in the shell, and an app writes no Wayland code.
 
 ## Two user interfaces
 

@@ -142,9 +142,16 @@ enum Listeners {
             window(data).host.pointerButton(
                 pressed: state == WL_POINTER_BUTTON_STATE_PRESSED.rawValue)
         },
-        axis: { _, _, _, _, _ in },
-        frame: { _, _ in },
-        axis_source: { _, _, _ in },
+        axis: { data, _, _, axis, value in
+            guard axis == WL_POINTER_AXIS_VERTICAL_SCROLL.rawValue else { return }
+            window(data).scrolled += wl_fixed_to_double(value)
+        },
+        // The events of one movement end with a frame, and the views move
+        // once for all of them.
+        frame: { data, _ in window(data).applyScroll() },
+        axis_source: { data, _, source in
+            window(data).scrollIsWheel = source == WL_POINTER_AXIS_SOURCE_WHEEL.rawValue
+        },
         axis_stop: { _, _, _, _ in },
         axis_discrete: { _, _, _, _ in },
         axis_value120: { _, _, _, _ in },

@@ -18,7 +18,7 @@ In this sequence:
 
 The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the pointer. A layout puts the windows on the canvas. Summon starts the apps of `/Applications`, and the terminal is one of them. See [toolkit.md](toolkit.md), [layouts.md](layouts.md) and [applications.md](applications.md). Next, in this sequence:
 
-1. More apps. `AppClient` and the system monitor are the pattern to follow. See [apps.md](apps.md). The design draws a file browser, a notes app and a power reading.
+1. More apps. `AppClient` and the system monitor are the pattern to follow. See [apps.md](apps.md). The design draws a file browser, a notes app and a power reading. Settings is there ([settings.md](settings.md)); it cannot join a wireless network, because Apus has no wireless daemon.
 2. An icon file in a bundle, and an image as a display item. Summon draws a colour mark now.
 3. A pointer position in a handler, and a drag.
 4. More of the second mode. The shadow, the blur and the gradient are in the display list now, and both renderers draw all three. See [toolkit.md](toolkit.md#the-two-modes). Three things remain:
@@ -44,7 +44,7 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
 
 ## The system
 
-- Root has no password. Add a user account and a password for use outside a VM.
+- Root has no password. The Password pane of Settings gives it one. Add a user account for use outside a VM. Settings then needs a program of the system to change `/etc` for the user, such as `hostnamed` and `timedated`.
 - The toolkit is one dynamic library, and the machine carries one copy of it (see [ui.md](ui.md#one-library-for-the-machine)). It has no stable ABI: the library and the programs must come from one build. `-enable-library-evolution` on the toolkit would make a new library work with the programs that are there already. Put `@frozen` on the types of the hot path with it: `Frame`, `Size`, `Color`, `Rect` and `Proposal`. Measure `make bench` after it: a resilient type reaches its fields through a function.
 - The shell runs as root. A shell of a person wants a session of that person. logind gives the seat, and the files that the apps open are that person's files.
 - The live system does not start the installer automatically.

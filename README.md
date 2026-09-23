@@ -63,6 +63,7 @@ To install software on a running system, use pacman. For example: `pacman -S hto
 | [Compositor](docs/compositor.md) | The design of `apus-compositor` and of its Wayland server in Swift |
 | [Toolkit](docs/toolkit.md) | The declarative UI layer: views, layout, and text |
 | [Applications](docs/applications.md) | The app bundles in `/Applications`, Summon, and the terminal |
+| [Settings](docs/settings.md) | The Settings app: what each pane reads and writes, and the keys |
 | [Layouts](docs/layouts.md) | How a layout and a window agree on a size, and the four layouts |
 | [Writing an app](docs/apps.md) | The client library, the two user interfaces of an app, and the bundle |
 | [Testing](docs/testing.md) | The VM, the tests, and the screenshot checks |

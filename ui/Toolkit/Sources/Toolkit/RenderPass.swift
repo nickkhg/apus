@@ -17,6 +17,9 @@ public struct RenderPass {
     /// The views that want the keys, in the order that they were drawn. The
     /// last one is in front, and it reads a key first.
     public internal(set) var keyRegions: [KeyRegion] = []
+    /// The views that use the wheel, in the order that they were drawn. The
+    /// last one is in front, or inside the one before it.
+    public internal(set) var scrollRegions: [ScrollRegion] = []
 
     public init() {}
 }

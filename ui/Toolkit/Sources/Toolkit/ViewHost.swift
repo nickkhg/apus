@@ -24,6 +24,7 @@ public final class ViewHost {
     private var hoverRegions: [HoverRegion] = []
     private var tapRegions: [TapRegion] = []
     private var keyRegions: [KeyRegion] = []
+    private var scrollRegions: [ScrollRegion] = []
     private var hovered: Set<Int> = []
     private var pointer: (x: Double, y: Double)?
     /// The view that the pointer went down on, and whether the pointer is
@@ -60,6 +61,7 @@ public final class ViewHost {
         hoverRegions = pass.hoverRegions
         tapRegions = pass.tapRegions
         keyRegions = pass.keyRegions
+        scrollRegions = pass.scrollRegions
         // A move that has not arrived needs the next frame to carry it on,
         // and so does a value that changed while the tree was laid out.
         if state.isMoving || missedUpdate {
@@ -91,7 +93,26 @@ public final class ViewHost {
         }
     }
 
-    /// The pointer left the screen or another program took it.
+    /// The wheel turned, or fingers moved on a touchpad. `delta` is in
+    /// points, and a positive one moves the content towards its end. The
+    /// scroll view under the pointer that can still move takes it, from the
+    /// innermost out. It answers whether a view moved.
+    @discardableResult
+    public func pointerScrolled(by delta: Double) -> Bool {
+        guard let pointer, delta != 0 else { return false }
+        var used = false
+        send {
+            for region in scrollRegions.reversed()
+            where region.contains(x: pointer.x, y: pointer.y) {
+                if region.handler(delta) {
+                    used = true
+                    break
+                }
+            }
+        }
+        return used
+    }
+
     /// Gives a key to the view in front that wants it. It answers whether a
     /// view used the key; a key that none used belongs to whatever is under
     /// the toolkit.
@@ -109,6 +130,7 @@ public final class ViewHost {
         return used
     }
 
+    /// The pointer left the screen or another program took it.
     public func pointerLeft() {
         pointer = nil
         send {

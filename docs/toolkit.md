@@ -189,6 +189,7 @@ The only platform-dependent code is in `FontCache.swift`: which directory the fo
 | `Divider` | A line across a stack |
 | `VStack`, `HStack`, `ZStack` | Children in a column, in a row, or on top of each other |
 | `ForEach`, `Group`, `AnyView`, `EmptyView` | Containers |
+| `ScrollView` | A part of a taller view, which the wheel moves. See [Scrolling](#scrolling). |
 
 | Shape | Purpose |
 |---|---|
@@ -312,6 +313,25 @@ becomes brighter under the pointer and darker while the pointer is down.
 `Button(action:label:)` draws only the label, and the label decides how the
 button looks. The dock icons use the second one.
 
+## Scrolling
+
+`ScrollView` lays out what it holds at the height that it wants, and its frame shows a part of it. The wheel moves that part.
+
+```swift
+ScrollView {
+    ForEach(zones) { zone in ZoneRow(zone) }
+}
+```
+
+- The content moves on the vertical axis only, and it is as wide as the frame.
+- A scroll view keeps its offset in `@State`. `ScrollView(offset:)` takes a `Binding` instead, for an owner that moves the view itself.
+- `ScrollView(offset:reveal:)` brings a part of the content into sight with the least move: a row that the keyboard selected. Give it in the frame after the selection moved, and not in every frame. Otherwise the wheel could never move the row out of sight.
+- The owner of the window gives the wheel to `ViewHost.pointerScrolled(by:)`, in points. A positive number moves the content towards its end. `AppClient` does this for an app: one click of a wheel is 45 points, and a touchpad moves by its own points.
+- The host gives the wheel to the scroll view under the pointer. The innermost one gets it first. A scroll view at its end does not use it, so the one around it gets it.
+- What the frame cuts away cannot be hovered or clicked, as with `clipped()`.
+- A thin line at the right edge says where the part is, when the content is taller than the frame.
+- A scroll view that gets no height from its parent is as tall as its content, and it has nothing to scroll. Give it a frame, or put it in a stack that gives it the rest of the space.
+
 ## Text
 
 `Text` uses two C libraries:
@@ -333,7 +353,7 @@ A view of the interface goes in `ui/Toolkit/Sources/Shell/`. A view that every U
 
 ## Tests
 
-`make test-ui` runs the 107 unit tests on the Mac, and `make test-ui-linux` runs the same tests on apus. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, the shapes, the state, and the pointer. `ui/Toolkit/Tests/ShellTests/` tests the panel, the dock and the app area. `ui/Toolkit/Tests/TerminalTests/` tests the grid of the terminal and its escape sequences.
+`make test-ui` runs the unit tests on the Mac, and `make test-ui-linux` runs the same tests on apus. They need no screen. `ui/Toolkit/Tests/ToolkitTests/` tests the layout, the modifiers, the shapes, the state, and the pointer. `ui/Toolkit/Tests/ShellTests/` tests the panel, the dock and the app area. `ui/Toolkit/Tests/TerminalTests/` tests the grid of the terminal and its escape sequences. `ui/Toolkit/Tests/SettingsTests/` tests the panes of Settings, its keys and the files that it reads, with a machine of its own.
 
 A test lays out a view in a rectangle and looks at the display list. For example, this is the test of a spacer:
 

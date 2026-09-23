@@ -77,6 +77,15 @@ public final class AppWindow {
     let startedAt = monotonic()
     /// When `everySecond` last ran.
     var lastSecond = monotonic()
+    /// The scroll of one movement of the wheel, which a frame event of the
+    /// pointer ends.
+    var scrolled = 0.0
+    /// What the last axis_source said made the scroll. A wheel counts in
+    /// degrees, 15 to a click, and a touchpad counts in points.
+    var scrollIsWheel = true
+    /// How far one degree of the wheel moves a view: a click is 45 points,
+    /// about three lines of text.
+    static let pointsPerDegree = 3.0
 
     public init(title: String, appID: String, minimumSize: Size? = nil) {
         self.title = title
@@ -93,6 +102,14 @@ public final class AppWindow {
     /// Closes the window and ends `run()`.
     public func close() {
         running = false
+    }
+
+    /// Gives the scroll of one movement to the view under the pointer.
+    func applyScroll() {
+        guard scrolled != 0 else { return }
+        let delta = scrolled * (scrollIsWheel ? AppWindow.pointsPerDegree : 1)
+        scrolled = 0
+        host.pointerScrolled(by: delta)
     }
 
     var pixelWidth: Int { Int(size.width) * scale }

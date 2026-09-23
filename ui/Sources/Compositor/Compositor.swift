@@ -522,6 +522,10 @@ public final class Compositor {
     /// The time from the system clock, in local time. The rail stacks the
     /// hour over the minute over the day.
     private static func clockText() -> Clock {
+        // Settings changes the zone by giving /etc/localtime a new link.
+        // tzset reads it again when it changed; localtime_r alone keeps the
+        // zone that the compositor started with.
+        tzset()
         var now = time_t(time(nil))
         var parts = tm()
         localtime_r(&now, &parts)
