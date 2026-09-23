@@ -218,6 +218,42 @@ struct SideBySideTests {
         #expect(frames[0]?.width == 596)
         #expect(frames[1]?.width == 596)
     }
+
+    @Test("A moved edge gives one window more and the other less")
+    func aMovedEdge() {
+        // The edge went 200 points to the right: 596 + 200 for the first,
+        // and what is left, less the gap, for the second.
+        let split = SideBySide.split(firstWidth: 796, in: laptop.width)
+        let frames = SideBySide(split: split).frames(
+            in: laptop, subviews: LayoutSubviews([app(400), app(400, id: 1)]))
+        #expect(frames[0] == Frame(x: 0, y: 0, width: 796, height: 784))
+        #expect(frames[1] == Frame(x: 804, y: 0, width: 396, height: 784))
+    }
+
+    @Test("Neither side becomes narrower than the smallest half")
+    func theEdgeStops() {
+        let room = laptop.width - WindowMetrics.gap
+        #expect(SideBySide.firstWidth(split: 0, in: laptop.width) == WindowMetrics.sideMinimum)
+        #expect(SideBySide.firstWidth(split: 1, in: laptop.width)
+                == room - WindowMetrics.sideMinimum)
+        // So the split that is kept is the one that the edge stopped at, and
+        // a pointer that comes back moves the edge at once.
+        let kept = SideBySide.split(firstWidth: 10, in: laptop.width)
+        #expect(SideBySide.firstWidth(split: kept, in: laptop.width) == WindowMetrics.sideMinimum)
+    }
+
+    @Test("A narrow canvas is split in half, wherever the edge was")
+    func aNarrowCanvasIsHalved() {
+        #expect(SideBySide.firstWidth(split: 0.8, in: 608) == 300)
+    }
+
+    @Test("The split is a part of the canvas, so it keeps its place on a new screen")
+    func theSplitFollowsTheScreen() {
+        let split = SideBySide.split(firstWidth: 796, in: laptop.width)
+        // 1920 x 1200 gives a canvas of 1840 wide.
+        let wide = SideBySide.firstWidth(split: split, in: 1840)
+        #expect(abs(wide / (1840 - WindowMetrics.gap) - 796 / (laptop.width - WindowMetrics.gap)) < 0.001)
+    }
 }
 
 @Suite("The grid")

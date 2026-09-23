@@ -5,6 +5,11 @@
 //
 // The window takes the size that the compositor asks for in the configure
 // event, which is the app area of the screen. --size keeps a size of our own.
+//
+// The window draws its own edges, as an app with its own decorations does. A
+// press on the white border asks the compositor to change the size of the
+// window from that edge (xdg_toplevel.resize), and a press on the darker bar
+// along the top asks it to move the window (xdg_toplevel.move).
 
 import CWaylandClient
 import CXDGShellClient
@@ -13,6 +18,9 @@ import Glibc
 let windowColor: UInt32 = 0x3070F0
 let borderColor: UInt32 = 0xFFFFFF
 let border = 8
+/// The bar along the top, inside the border, that moves the window.
+let barColor: UInt32 = 0x2458C0
+let barHeight = 32
 
 func fail(_ message: String) -> Never {
     print("apus-hello-client: \(message)")
@@ -50,6 +58,9 @@ final class Client {
     var buffers = 0
     var seat: OpaquePointer?
     var pointer: OpaquePointer?
+    var toplevel: OpaquePointer?
+    /// Where the pointer is in the window, in points.
+    var pointerAt = (x: 0.0, y: 0.0)
 }
 
 let client = Client()
@@ -101,6 +112,7 @@ func makeBuffer(_ client: Client) {
     // the screen.
     let (width, height) = (client.width * client.scale, client.height * client.scale)
     let border = border * client.scale
+    let bar = border + barHeight * client.scale
     let stride = width * 4
     let size = stride * height
     // The compositor copies the pixels and gives the buffer back at once, so
@@ -122,7 +134,7 @@ func makeBuffer(_ client: Client) {
     for y in 0..<height {
         for x in 0..<width {
             let edge = x < border || y < border || x >= width - border || y >= height - border
-            pixels[y * width + x] = edge ? borderColor : windowColor
+            pixels[y * width + x] = edge ? borderColor : y < bar ? barColor : windowColor
         }
     }
     let pool = wl_shm_create_pool(client.shm, fd, Int32(size))
@@ -186,7 +198,8 @@ let outputListener = permanent(wl_output_listener(
 // The pointer. The test reads these lines to check that the compositor
 // gives the pointer to the window under it.
 let pointerListener = permanent(wl_pointer_listener(
-    enter: { _, _, _, _, x, y in
+    enter: { data, _, _, _, x, y in
+        state(data).pointerAt = (wl_fixed_to_double(x), wl_fixed_to_double(y))
         print("CLIENT-POINTER-ENTER \(Int(wl_fixed_to_double(x))),\(Int(wl_fixed_to_double(y)))")
         fflush(nil)
     },
@@ -194,12 +207,25 @@ let pointerListener = permanent(wl_pointer_listener(
         print("CLIENT-POINTER-LEAVE")
         fflush(nil)
     },
-    motion: { _, _, _, x, y in
+    motion: { data, _, _, x, y in
+        state(data).pointerAt = (wl_fixed_to_double(x), wl_fixed_to_double(y))
         print("CLIENT-POINTER \(Int(wl_fixed_to_double(x))),\(Int(wl_fixed_to_double(y)))")
         fflush(nil)
     },
-    button: { _, _, _, _, button, state in
-        print("CLIENT-BUTTON \(button) \(state)")
+    button: { data, _, serial, _, button, buttonState in
+        print("CLIENT-BUTTON \(button) \(buttonState)")
+        fflush(nil)
+        // BTN_LEFT, pressed: the edges and the bar belong to the compositor.
+        guard button == 0x110, buttonState == WL_POINTER_BUTTON_STATE_PRESSED.rawValue else { return }
+        let client = state(data)
+        let pressedEdges = edges(at: client.pointerAt, of: client)
+        if pressedEdges != 0 {
+            xdg_toplevel_resize(client.toplevel, client.seat, serial, pressedEdges)
+            print("CLIENT-RESIZE \(pressedEdges)")
+        } else if client.pointerAt.y < Double(border + barHeight) {
+            xdg_toplevel_move(client.toplevel, client.seat, serial)
+            print("CLIENT-MOVE")
+        }
         fflush(nil)
     },
     axis: { _, _, _, _, _ in },
@@ -212,6 +238,33 @@ let pointerListener = permanent(wl_pointer_listener(
     // The pointer was put somewhere, rather than moved there.
     warp: { _, _, _, _ in }
 ))
+
+/// The edges of the window that a point is on, as xdg_toplevel.resize wants
+/// them: a bit for each edge, so a corner is two.
+func edges(at point: (x: Double, y: Double), of client: Client) -> UInt32 {
+    var edges: UInt32 = 0
+    if point.y < Double(border) { edges |= XDG_TOPLEVEL_RESIZE_EDGE_TOP.rawValue }
+    if point.y >= Double(client.height - border) { edges |= XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM.rawValue }
+    if point.x < Double(border) { edges |= XDG_TOPLEVEL_RESIZE_EDGE_LEFT.rawValue }
+    if point.x >= Double(client.width - border) { edges |= XDG_TOPLEVEL_RESIZE_EDGE_RIGHT.rawValue }
+    return edges
+}
+
+/// The states of a configure, as words.
+func stateNames(_ states: UnsafeMutablePointer<wl_array>?) -> String {
+    guard let array = states?.pointee, let data = array.data else { return "" }
+    let values = data.assumingMemoryBound(to: UInt32.self)
+    var names: [String] = []
+    for index in 0..<(array.size / MemoryLayout<UInt32>.size) {
+        switch values[index] {
+        case XDG_TOPLEVEL_STATE_MAXIMIZED.rawValue: names.append("maximized")
+        case XDG_TOPLEVEL_STATE_RESIZING.rawValue: names.append("resizing")
+        case XDG_TOPLEVEL_STATE_ACTIVATED.rawValue: names.append("activated")
+        default: names.append("\(values[index])")
+        }
+    }
+    return names.joined(separator: " ")
+}
 
 let seatListener = permanent(wl_seat_listener(
     capabilities: { data, seat, capabilities in
@@ -248,7 +301,11 @@ let xdgSurfaceListener = permanent(xdg_surface_listener(
 ))
 
 let toplevelListener = permanent(xdg_toplevel_listener(
-    configure: { data, _, newWidth, newHeight, _ in
+    configure: { data, _, newWidth, newHeight, states in
+        // The test reads this line to see the size and the states that the
+        // compositor asked for, the resizing state among them.
+        print("CLIENT-CONFIGURE \(newWidth)x\(newHeight) \(stateNames(states))")
+        fflush(nil)
         // The compositor gives the window the app area of the screen. A zero
         // size means "pick your own", and --size keeps ours.
         let client = state(data)
@@ -279,6 +336,7 @@ client.surface = wl_compositor_create_surface(client.compositor)
 let xdgSurface = xdg_wm_base_get_xdg_surface(client.wmBase, client.surface)
 xdg_surface_add_listener(xdgSurface, xdgSurfaceListener, clientPointer)
 let toplevel = xdg_surface_get_toplevel(xdgSurface)
+client.toplevel = toplevel
 xdg_toplevel_add_listener(toplevel, toplevelListener, clientPointer)
 xdg_toplevel_set_title(toplevel, "Hello from Swift")
 xdg_toplevel_set_app_id(toplevel, "org.apus.hello")

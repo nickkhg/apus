@@ -87,13 +87,24 @@ final class Toplevel {
     /// compositor cannot ask another process for a size.
     var minSize: (width: Double, height: Double)?
     /// The size that the last configure asked for. The compositor sends a
-    /// new one only when the size changes.
+    /// new one only when the size or the states change.
     var configuredSize: (width: Int, height: Int)?
+    /// The states that the last configure gave.
+    var configuredStates: WindowStates?
     fileprivate var configured = false
 
     init(xdgSurface: Resource<XdgSurface>, resource: Resource<XdgToplevel>, surface: Surface) {
         (self.xdgSurface, self.resource, self.surface) = (xdgSurface, resource, surface)
     }
+}
+
+/// The states of a window that change while it is open. It is always
+/// maximized as well, because a layout gives it its frame.
+struct WindowStates: Equatable {
+    /// It has the keys.
+    var activated = false
+    /// A person is changing its size now.
+    var resizing = false
 }
 
 final class WaylandServer {
@@ -110,6 +121,14 @@ final class WaylandServer {
     var surfaceCommitted: (Surface) -> Void = { _ in }
     /// A surface went away.
     var surfaceDestroyed: (Surface) -> Void = { _ in }
+    /// An app asked to move its window (xdg_toplevel.move), with the serial
+    /// of the press that holds the pointer now. The server checked the
+    /// serial; the compositor decides what a move means.
+    var moveRequested: (Surface) -> Void = { _ in }
+    /// An app asked to change the size of its window from these edges
+    /// (xdg_toplevel.resize), with the serial of the press that holds the
+    /// pointer now.
+    var resizeRequested: (Surface, UInt32) -> Void = { _, _ in }
     /// The keymap that apps get in wl_keyboard.keymap. The compositor sets
     /// it before the first app connects.
     var keymap = ""
@@ -120,6 +139,11 @@ final class WaylandServer {
     private var pointers: [Resource<WlPointer>] = []
     /// The surface that the pointer is over, when it belongs to an app.
     private weak var pointerFocus: Surface?
+    /// The last press that an app got, and the serials it carried: one for
+    /// each wl_pointer of the app. A move or a resize names one of them,
+    /// which is how an app proves that a person is holding the button.
+    private weak var pressedSurface: Surface?
+    private var pressSerials: [UInt32] = []
     /// What the screen is now: its size in pixels, how many pixels there
     /// are to a point, and how large the picture is in millimetres. An app
     /// reads this from wl_output, and it needs the scale to draw sharply.
@@ -291,11 +315,29 @@ final class WaylandServer {
     func sendPointer(button code: UInt32, pressed: Bool, time: UInt32) {
         guard let resource = pointerFocus?.resource, !resource.isDestroyed else { return }
         let state = pressed ? WlPointer.ButtonState.pressed : .released
+        if pressed {
+            pressedSurface = pointerFocus
+            pressSerials.removeAll()
+        }
         for pointer in pointers(of: resource.client) {
-            pointer.sendButton(serial: display.nextSerial(), time: time,
+            let serial = display.nextSerial()
+            if pressed { pressSerials.append(serial) }
+            pointer.sendButton(serial: serial, time: time,
                                button: code, state: state.rawValue)
             pointer.sendFrame()
         }
+    }
+
+    /// Forgets the last press. The compositor calls this when every button
+    /// is up, so that a serial of an old press cannot start a move.
+    func pressEnded() {
+        pressedSurface = nil
+        pressSerials.removeAll()
+    }
+
+    /// Whether this serial is the serial of the press that the surface got.
+    private func isPress(_ serial: UInt32, on surface: Surface) -> Bool {
+        pressedSurface === surface && pressSerials.contains(serial)
     }
 
     /// A wheel or a touchpad, for the surface that has the pointer.
@@ -451,7 +493,8 @@ final class WaylandServer {
             // An app that keeps another size still opens, in the middle of
             // the area.
             let area = sizeForNewWindow(surface)
-            configure(surface, width: area.width, height: area.height, activated: true)
+            configure(surface, width: area.width, height: area.height,
+                      states: WindowStates(activated: true))
             toplevel.configured = true
             return
         }
@@ -462,19 +505,21 @@ final class WaylandServer {
     /// Asks a window for a size. The layout owns the size, so this is the
     /// proposal of the negotiation: the app answers by committing a buffer,
     /// which may be a different size.
-    func configure(_ surface: Surface, width: Int, height: Int, activated: Bool) {
+    func configure(_ surface: Surface, width: Int, height: Int, states: WindowStates) {
         guard let toplevel = surface.toplevel else { return }
         toplevel.configuredSize = (width, height)
+        toplevel.configuredStates = states
+        var values: [XdgToplevel.State] = [.maximized]
+        if states.activated { values.append(.activated) }
+        if states.resizing { values.append(.resizing) }
         toplevel.resource?.sendConfigure(
             width: Int32(width), height: Int32(height),
-            states: activated
-                ? WaylandServer.states(.maximized, .activated)
-                : WaylandServer.states(.maximized))
+            states: WaylandServer.states(values))
         toplevel.xdgSurface?.sendConfigure(serial: display.nextSerial())
     }
 
     /// Window states, as the array of 32-bit values that xdg_toplevel wants.
-    private static func states(_ values: XdgToplevel.State...) -> [UInt8] {
+    private static func states(_ values: [XdgToplevel.State]) -> [UInt8] {
         var bytes: [UInt8] = []
         for value in values {
             withUnsafeBytes(of: value.rawValue.littleEndian) { bytes.append(contentsOf: $0) }
@@ -508,7 +553,7 @@ final class WaylandServer {
             let toplevel = Toplevel(xdgSurface: xdgSurface, resource: resource, surface: surface)
             surface.toplevel = toplevel
             resource.data = toplevel
-            resource.onRequest = { [unowned toplevel] request in
+            resource.onRequest = { [unowned self, unowned toplevel, unowned resource] request in
                 switch request {
                 case .setTitle(let title): toplevel.title = title
                 case .setAppId(let appID): toplevel.appID = appID
@@ -516,6 +561,26 @@ final class WaylandServer {
                     toplevel.minSize = width > 0 || height > 0
                         ? (Double(width), Double(height))
                         : nil
+                case .move(_, let serial):
+                    // A move needs the button that is down now. An app that
+                    // names an old press, or a press on another window, gets
+                    // nothing: the protocol lets the compositor ignore it.
+                    guard isPress(serial, on: toplevel.surface) else {
+                        log("WINDOW-MOVE-IGNORED \"\(toplevel.title)\" serial \(serial)")
+                        return
+                    }
+                    moveRequested(toplevel.surface)
+                case .resize(_, let serial, let edges):
+                    guard let edge = XdgToplevel.ResizeEdge(rawValue: edges) else {
+                        return resource.postError(
+                            code: XdgToplevel.ErrorCode.invalidResizeEdge.rawValue,
+                            "\(edges) is not an edge")
+                    }
+                    guard edge != .none, isPress(serial, on: toplevel.surface) else {
+                        log("WINDOW-RESIZE-IGNORED \"\(toplevel.title)\" serial \(serial)")
+                        return
+                    }
+                    resizeRequested(toplevel.surface, edges)
                 default: break
                 }
             }

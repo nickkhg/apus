@@ -223,14 +223,22 @@ expect {
 act_done
 act --pointer 1200,740
 
-# The terminal comes back to the front. Hello named a smallest size of
-# 600 x 400, so it cannot use a tile of 256: the band holds a square cell
-# for it and the shell draws a stand-in card there, while the window itself
-# waits in the rail and draws nothing.
-act_start --key super --type "terminal" --key enter
+# A click on the tile of the terminal brings it into the large cell. It goes
+# there when the button comes up, so that the press and the release both
+# reach the terminal in the tile where the person clicked. Hello named a
+# smallest size of 600 x 400, so it cannot use a tile of 256: the band holds
+# a square cell for it and the shell draws a stand-in card there, while the
+# window itself waits in the rail and draws nothing.
+act_start --pointer 1100,100 --click --pointer 1200,740
+# The terminal names its window after what the shell says, so the test
+# names it by no title.
 expect {
     -re {WINDOW-IN-RAIL "Hello from Swift"} {}
     timeout { fail "the window that cannot fit a tile did not go to the rail" }
+}
+expect {
+    -re {WINDOW-RAISED "[^"]*"} {}
+    timeout { fail "a click on a tile did not bring it into the large cell" }
 }
 act_done
 # The card is in the first cell of the band: 256 wide at x 1016, 256 tall
@@ -266,11 +274,87 @@ act_done
 # other. The head of each one sits over its own half.
 screen side-by-side 300,400=3070F0 900,400=14111E
 
-# Back to the principal layout for the steps below.
+# Side by side, the two cells have one rank. A click on the terminal gives it
+# the keys, and it stays on its half: the accent line moves to its head, and
+# nothing moves.
+act_start --pointer 900,400 --click --pointer 1200,740
+expect {
+    -re {FOCUS "(?!Hello)[^"]*"} {}
+    timeout { fail "a click on the other half did not give it the keys" }
+}
+act_done
+screen side-focus 300,400=3070F0 900,400=14111E 900,9=A9E34B 300,9-301,10!A9E34B
+act --type "echo side-ok > /tmp/side\\n"
+send "cat /tmp/side\r"
+expect {
+    "side-ok" {}
+    timeout   { fail "the keys did not follow the click" }
+}
+
+# Hello draws its own edges. A press on its right edge asks for a resize,
+# and side by side the edge between the two windows follows the pointer.
+# Hello's window ends at x 660, and its border is the last 8 of it. The edge
+# goes 200 to the right, so hello's cell is 796 wide and its window 780; the
+# terminal has the 396 that are left, and draws in 380. Hello hears that it
+# is being resized while the button is down, and that it is not any more
+# once it comes up.
+act_start --pointer 656,400 --press --pointer 856,400 --release
+expect {
+    -re {WINDOW-RESIZE-START "Hello from Swift" edges 8} {}
+    timeout { fail "a press on the edge of a window did not start a resize" }
+}
+expect {
+    -re {CLIENT-CONFIGURE 780x744 [a-z ]*resizing} {}
+    timeout { fail "the window was not given its new size while it was resized" }
+}
+expect {
+    -re {WINDOW-RESIZED "Hello from Swift" 780x744} {}
+    timeout { fail "the resize did not end at the release" }
+}
+expect {
+    -re {CLIENT-CONFIGURE 780x744 maximized activated[\r\n]} {}
+    timeout { fail "the window was not told that the resize ended" }
+}
+act_done
+act --pointer 1200,740
+screen side-resized 800,400=3070F0 1000,400=14111E
+
+# A press on the bar at the top of hello asks for a move. The window follows
+# the pointer, and on the release it changes places with the terminal,
+# whose half is under the pointer. The halves stay where the edge put them,
+# so the terminal now draws in 780 and hello in 380. Hello keeps the keys.
+act_start --pointer 300,60 --press --pointer 1000,400 --release
+expect {
+    -re {WINDOW-MOVE-START "Hello from Swift"} {}
+    timeout { fail "a press on the bar of a window did not start a move" }
+}
+expect {
+    -re {WINDOW-MOVED "Hello from Swift" to the cell of "[^"]*"} {}
+    timeout { fail "the window did not take the cell that it was dropped on" }
+}
+act_done
+act --pointer 1200,740
+screen side-moved 300,400=14111E 1100,400=3070F0 1100,9=A9E34B
+
+# Back to the principal layout for the steps below. Hello has the keys, so
+# it takes the large cell, and the terminal goes back into a tile.
 act_start --key super --type "principal" --key enter
 expect {
     -re {LAYOUT principal} {}
     timeout { fail "Summon did not go back to the principal layout" }
+}
+expect {
+    -re {WINDOW-CONFIGURED "Hello from Swift" 920x744} {}
+    timeout { fail "the window with the keys did not take the large cell" }
+}
+act_done
+
+# The large cell takes what the band leaves, so its edge is not one that a
+# person can move. Hello's right edge is at x 992 to 1000 now.
+act_start --pointer 996,400 --click --pointer 1200,740
+expect {
+    -re {WINDOW-RESIZE-REFUSED "Hello from Swift"} {}
+    timeout { fail "a resize of the large cell was not refused" }
 }
 act_done
 

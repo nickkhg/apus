@@ -60,6 +60,9 @@ public final class Compositor {
         var cell: Rect?
         /// When the window last committed a buffer, in milliseconds.
         var changed = monotonicMilliseconds()
+        /// The length of a tile that a person gave the window with a resize.
+        /// The window answers it when the layout leaves a side free.
+        var preferredLength: Double?
         init(id: String, surface: Surface, frame: Rect?) {
             (self.id, self.surface, self.frame) = (id, surface, frame)
         }
@@ -77,6 +80,46 @@ public final class Compositor {
 
     private var windows: [Window] = []   // back to front
     private var pointer: (x: Double, y: Double)
+    /// The buttons of the pointer that are down now.
+    private var buttonsDown: Set<UInt32> = []
+
+    /// What holds the pointer while a button is down.
+    private enum Grab {
+        /// A press on the window of an app. The app keeps the pointer until
+        /// the last button comes up, wherever the pointer goes, so that a
+        /// drag that leaves the window still reaches it. Wayland calls this
+        /// the implicit grab.
+        case window(Window)
+        /// A press on the chrome of the shell.
+        case shell
+        /// A move. The window follows the pointer, and it takes the cell
+        /// under the pointer when the button comes up.
+        case move(Window, from: (x: Double, y: Double))
+        /// A resize. `start` is the length that the edge had at the press:
+        /// the width of the first window side by side, or the length of a
+        /// tile.
+        case resize(Window, WindowResize, from: (x: Double, y: Double), start: Double)
+
+        var window: Window? {
+            switch self {
+            case .window(let window), .move(let window, _), .resize(let window, _, _, _): window
+            case .shell: nil
+            }
+        }
+    }
+    private var grab: Grab?
+    /// The window that a press will bring into the large cell once the
+    /// button comes up. A window that moved at the press would leave the
+    /// pointer while the button holds it, so it moves at the release.
+    private var raiseOnRelease: Window?
+    /// Where the edge between two windows side by side is. A resize moves
+    /// it, and it stays there until the next one.
+    private var split = SideBySide.even
+    /// The window that a person gave the keys, in a layout where the keys do
+    /// not follow the first place. See `focusedWindow`.
+    private weak var chosenFocus: Window?
+    /// The window that heard last that it has the keys.
+    private weak var announcedFocus: Window?
     private var running = true
     /// How the shell draws depth. It follows the renderer, because the two
     /// modes are for different costs, and APUS_SHELL_MODE overrides it.
@@ -221,7 +264,18 @@ public final class Compositor {
         server.screenChanged(to: screenInfo)
         server.sizeForNewWindow = { [unowned self] surface in sizeForNewWindow(surface) }
         server.surfaceCommitted = { [unowned self] surface in surfaceCommitted(surface) }
+        server.moveRequested = { [unowned self] surface in startMove(of: surface) }
+        server.resizeRequested = { [unowned self] surface, edges in
+            startResize(of: surface, edges: WindowEdges(rawValue: edges))
+        }
         server.surfaceDestroyed = { [unowned self] surface in
+            if grab?.window?.surface === surface {
+                // The window went away under the pointer. The shell has the
+                // pointer until the buttons come up.
+                grab = .shell
+                server.pressEnded()
+            }
+            if raiseOnRelease?.surface === surface { raiseOnRelease = nil }
             windows.removeAll { $0.surface === surface }
             arrange()
             updateFocus()
@@ -301,18 +355,19 @@ public final class Compositor {
         // it covers the whole screen whatever the scale is.
         var list: DisplayList = [.fill(Rect(x: 0, y: 0, width: screen.width, height: screen.height),
                                        color: options.background | 0xFF00_0000)]
+        var moving: (Window, Rect)?
         for window in windows {
-            guard let points = window.frame, let content = window.surface.content else { continue }
-            // The frame is in points and the buffer is in pixels, because an
-            // app draws at the scale of the screen. The frame is the
-            // layout's, not the app's: an app that drew a larger buffer is
-            // cut to its frame, and a smaller one sits in the middle of it.
-            let frame = Compositor.inPixels(points, scale: scale)
-            let x = frame.x + max(0, (frame.width - content.width) / 2)
-            let y = frame.y + max(0, (frame.height - content.height) / 2)
-            list.append(.pushClip(frame))
-            list.append(.bitmap(content, x: x, y: y))
-            list.append(.popClip)
+            guard let points = window.frame else { continue }
+            if case .move(let held, let from) = grab, held === window {
+                // A window that a person moves follows the pointer, over
+                // everything else, until the button comes up.
+                let point = pointerPoints
+                moving = (window, Rect(x: points.x + Int((point.x - from.x).rounded()),
+                                       y: points.y + Int((point.y - from.y).rounded()),
+                                       width: points.width, height: points.height))
+                continue
+            }
+            append(window, in: points, to: &list)
         }
         // The shell goes over the windows, and the pointer over both. The
         // host keeps the state of the shell views from frame to frame.
@@ -331,6 +386,7 @@ public final class Compositor {
         host.now = Double(monotonicMilliseconds()) / 1000
         list += host.displayList(for: RootView(state: state, actions: shellActions),
                                  in: screenRect, scale: scale)
+        if let moving { append(moving.0, in: moving.1, to: &list) }
         // The pointer is kept in pixels, because that is what the mouse and
         // the screen work in. A display with a plane for it draws it itself,
         // and then it is not in the frame at all: moving the mouse over an
@@ -340,6 +396,26 @@ public final class Compositor {
                                 x: Int(pointer.x), y: Int(pointer.y)))
         }
         return list
+    }
+
+    /// The content of a window, in a frame of points.
+    private func append(_ window: Window, in points: Rect, to list: inout DisplayList) {
+        guard let content = window.surface.content else { return }
+        // The frame is in points and the buffer is in pixels, because an
+        // app draws at the scale of the screen. The frame is the layout's,
+        // not the app's: an app that drew a larger buffer is cut to its
+        // frame, and a smaller one sits in the middle of it.
+        let frame = Compositor.inPixels(points, scale: scale)
+        let x = frame.x + max(0, (frame.width - content.width) / 2)
+        let y = frame.y + max(0, (frame.height - content.height) / 2)
+        list.append(.pushClip(frame))
+        list.append(.bitmap(content, x: x, y: y))
+        list.append(.popClip)
+    }
+
+    /// Where the pointer is, in points.
+    private var pointerPoints: (x: Double, y: Double) {
+        (pointer.x / scale, pointer.y / scale)
     }
 
     /// A rectangle of points, as pixels.
@@ -411,16 +487,36 @@ public final class Compositor {
 
     /// One child of the layout, for a window that may not exist yet.
     private func subview(id: AnyHashable, minimum: (width: Double, height: Double)?,
-                         content: Bitmap?) -> LayoutSubview {
+                         preferred: Double? = nil, content: Bitmap?) -> LayoutSubview {
         LayoutSubview(id: id) { proposal in
-            WindowAnswer.size(minimum: minimum, content: content, to: proposal)
+            WindowAnswer.size(minimum: minimum, preferred: preferred, content: content,
+                              to: proposal)
         }
     }
 
     private func subview(for window: Window) -> LayoutSubview {
         subview(id: ObjectIdentifier(window),
                 minimum: window.surface.toplevel?.minSize,
+                preferred: window.preferredLength,
                 content: window.surface.content)
+    }
+
+    /// The layout that owns the canvas, with the edge that a person moved.
+    private var layout: AnyLayout { layoutKind.layout(split: split) }
+
+    /// The window that has the keys.
+    ///
+    /// In the principal layout it is the window in the large cell, and in
+    /// Full the one window that shows. Side by side and in the grid the
+    /// cells have one rank, so a click gives a window the keys and moves
+    /// nothing: the keys stay with the window that a person chose, while it
+    /// has a cell.
+    private var focusedWindow: Window? {
+        if !layoutKind.keysFollowFirstPlace, let chosen = chosenFocus, chosen.frame != nil,
+           windows.contains(where: { $0 === chosen }) {
+            return chosen
+        }
+        return windows.last
     }
 
     /// Runs the layout and gives every window its frame. A window whose size
@@ -436,7 +532,7 @@ public final class Compositor {
                     WindowAnswer.size(minimum: nil, content: nil, to: proposal)
                 }
             } + ordered.map { subview(for: $0) })
-        let frames = layoutKind.layout.frames(in: canvas, subviews: subviews)
+        let frames = layout.frames(in: canvas, subviews: subviews)
         for (launch, frame) in zip(starting, frames) {
             launch.frame = frame?.pixels
         }
@@ -456,20 +552,37 @@ public final class Compositor {
                     width: Double($0.width), height: Double($0.height))))
             }
             window.frame = rect
+        }
+        // The states come after the frames, because which window has the
+        // keys depends on which windows have a cell.
+        let focused = focusedWindow
+        var resizing: Window?
+        if case .resize(let window, _, _, _) = grab { resizing = window }
+        for window in ordered {
             let title = window.surface.toplevel?.title ?? ""
-            guard let rect else {
+            guard let rect = window.frame else {
                 log("WINDOW-IN-RAIL \"\(title)\"")
                 continue
             }
+            let states = WindowStates(activated: window === focused,
+                                      resizing: window === resizing)
             let asked = window.surface.toplevel?.configuredSize
-            guard asked?.width != rect.width || asked?.height != rect.height else {
-                log("WINDOW-KEPT \"\(title)\" \(rect.width)x\(rect.height)")
-                continue
+            let sameSize = asked?.width == rect.width && asked?.height == rect.height
+            if sameSize {
+                guard window.surface.toplevel?.configuredStates != states else {
+                    log("WINDOW-KEPT \"\(title)\" \(rect.width)x\(rect.height)")
+                    continue
+                }
+                log("WINDOW-STATE \"\(title)\" \(rect.width)x\(rect.height)"
+                    + (states.activated ? " activated" : "")
+                    + (states.resizing ? " resizing" : ""))
+            } else {
+                log("WINDOW-CONFIGURED \"\(title)\" \(rect.width)x\(rect.height)"
+                    + " was \(asked.map { "\($0.width)x\($0.height)" } ?? "new")"
+                    + (states.resizing ? " resizing" : ""))
             }
-            log("WINDOW-CONFIGURED \"\(title)\" \(rect.width)x\(rect.height)"
-                + " was \(asked.map { "\($0.width)x\($0.height)" } ?? "new")")
             server.configure(window.surface, width: rect.width, height: rect.height,
-                             activated: window === ordered.first)
+                             states: states)
         }
     }
 
@@ -507,7 +620,7 @@ public final class Compositor {
         var subviews = [subview(id: ObjectIdentifier(surface),
                                 minimum: surface.toplevel?.minSize, content: nil)]
         subviews += frontFirst.map { subview(for: $0) }
-        let frames = layoutKind.layout.frames(in: canvas, subviews: LayoutSubviews(subviews))
+        let frames = layout.frames(in: canvas, subviews: LayoutSubviews(subviews))
         // A window that the layout does not place still needs a size to draw
         // at, so it gets a tile.
         let cell = (frames.first ?? nil)?.pixels
@@ -561,7 +674,7 @@ public final class Compositor {
                                title: window.surface.toplevel?.title ?? "",
                                appID: window.surface.toplevel?.appID ?? "",
                                place: place,
-                               hasFocus: window === front.first)
+                               hasFocus: window === focusedWindow)
         }
     }
 
@@ -580,7 +693,7 @@ public final class Compositor {
                               mark: app?.entry.color ?? Color(hex: 0x6C777D),
                               title: toplevel?.title ?? "",
                               sizeClass: sizeClass,
-                              hasFocus: window === front.first,
+                              hasFocus: window === focusedWindow,
                               cell: cell)
         }
     }
@@ -710,6 +823,7 @@ public final class Compositor {
         guard let index = windows.firstIndex(where: { $0.id == id }) else { return }
         let window = windows.remove(at: index)
         windows.append(window)
+        chosenFocus = window
         arrange()
         updateFocus()
         screen.setNeedsFrame()
@@ -746,9 +860,17 @@ public final class Compositor {
     /// Gives the canvas to one layout.
     private func setLayout(_ kind: WindowLayoutKind) {
         guard kind != layoutKind else { return }
+        // A layout where the keys follow the first place puts the window
+        // that has them there, so that the window a person was typing into
+        // keeps the keys and takes the large cell.
+        if kind.keysFollowFirstPlace, let focused = focusedWindow, focused !== windows.last,
+           let index = windows.firstIndex(where: { $0 === focused }) {
+            windows.append(windows.remove(at: index))
+        }
         layoutKind = kind
         log("LAYOUT \(kind.rawValue)")
         arrange()
+        updateFocus()
         screen.setNeedsFrame()
     }
 
@@ -764,7 +886,9 @@ public final class Compositor {
             // The newest window goes to the front, and the layout then gives
             // every window a frame.
             nextWindowID += 1
-            windows.append(Window(id: "w\(nextWindowID)", surface: surface, frame: nil))
+            let window = Window(id: "w\(nextWindowID)", surface: surface, frame: nil)
+            windows.append(window)
+            chosenFocus = window
             // The app opened its window, so its launch is over and the cell
             // that held its place goes back to the layout.
             endLaunch(ofApp: surface.toplevel?.appID ?? "")
@@ -787,15 +911,7 @@ public final class Compositor {
         case .pointerPosition(let x, let y):
             movePointer(to: (x * Double(screen.width), y * Double(screen.height)))
         case .button(let code, let pressed):
-            // The button goes where the pointer is: to the window under it,
-            // or to the shell. A click on a window also brings it forward.
-            if let window = windowUnderPointer {
-                if pressed, window !== windows.last { raiseWindow(window.id) }
-                server.sendPointer(button: code, pressed: pressed,
-                                   time: monotonicMilliseconds())
-            } else if code == 0x110 {
-                host.pointerButton(pressed: pressed)
-            }
+            handleButton(code, pressed: pressed)
         case .scroll(let dx, let dy, let source):
             // A scroll goes where the pointer is, as a button does. The
             // shell has nothing that scrolls yet, so a scroll over its own
@@ -843,6 +959,7 @@ public final class Compositor {
             // belong to two different windows.
             let window = windows.remove(at: index)
             windows.append(window)
+            chosenFocus = window
             arrange()
             updateFocus()
             log("APP-RAISED \(id)")
@@ -859,14 +976,18 @@ public final class Compositor {
         startLaunch(of: bundle)
     }
 
-    /// The window in front gets the keys.
+    /// The window that has the keys hears it. See `focusedWindow`.
     private func updateFocus() {
-        server.setKeyboardFocus(windows.last?.surface)
+        let focused = focusedWindow
+        server.setKeyboardFocus(focused?.surface)
+        guard focused !== announcedFocus else { return }
+        announcedFocus = focused
+        if let focused { log("FOCUS \"\(focused.surface.toplevel?.title ?? "")\"") }
     }
 
-    /// Asks the window in front to close. The app decides what it does.
+    /// Asks the window with the keys to close. The app decides what it does.
     private func closeFrontWindow() {
-        guard let window = windows.last else { return }
+        guard let window = focusedWindow else { return }
         window.surface.toplevel?.resource?.sendClose()
         server.flush()
         log("WINDOW-CLOSE-SENT \"\(window.surface.toplevel?.title ?? "")\"")
@@ -899,9 +1020,32 @@ public final class Compositor {
         }
     }
 
-    /// Gives the pointer to the window under it, or to the shell.
+    /// Gives the pointer to the window under it, or to the shell. While a
+    /// button is down, what the press started keeps it.
     private func routePointer() {
-        let point = (x: pointer.x / scale, y: pointer.y / scale)
+        let point = pointerPoints
+        switch grab {
+        case .window(let window):
+            // The app keeps the pointer, also outside its window, in the
+            // coordinates of its surface.
+            if let frame = window.frame {
+                server.sendPointer(motion: (point.x - Double(frame.x), point.y - Double(frame.y)),
+                                   time: monotonicMilliseconds())
+            }
+            return
+        case .shell:
+            host.pointerMoved(to: point.x, y: point.y)
+            return
+        case .move:
+            // The window follows the pointer, which is a new frame.
+            screen.setNeedsFrame()
+            return
+        case .resize(let window, let resize, let from, let start):
+            follow(resize, of: window, from: from, start: start, to: point)
+            return
+        case nil:
+            break
+        }
         guard let window = windowUnderPointer, let frame = window.frame else {
             // The shell has it. An app that had it hears that it left.
             server.setPointerFocus(nil, at: (0, 0))
@@ -913,5 +1057,190 @@ public final class Compositor {
         let inside = (x: point.x - Double(frame.x), y: point.y - Double(frame.y))
         server.setPointerFocus(window.surface, at: inside)
         server.sendPointer(motion: inside, time: monotonicMilliseconds())
+    }
+
+    // MARK: - Window management
+
+    /// A button of the pointer. The first press decides who holds the
+    /// pointer until the last button comes up: the window under it, or the
+    /// shell. A move or a resize then takes it from the window.
+    private func handleButton(_ code: UInt32, pressed: Bool) {
+        let first = pressed && buttonsDown.isEmpty
+        if pressed { buttonsDown.insert(code) } else { buttonsDown.remove(code) }
+        if first {
+            // A window can open or move under a pointer that stands still,
+            // so the pointer is given again before the press.
+            routePointer()
+            if let window = windowUnderPointer {
+                grab = .window(window)
+                self.pressed(on: window)
+            } else {
+                grab = .shell
+            }
+        }
+        switch grab {
+        case .window:
+            server.sendPointer(button: code, pressed: pressed, time: monotonicMilliseconds())
+        case .shell, nil:
+            if code == 0x110 { host.pointerButton(pressed: pressed) }
+        case .move, .resize:
+            // The compositor holds the pointer, and the app heard that it
+            // left, so the app hears nothing of the buttons.
+            break
+        }
+        if !pressed, buttonsDown.isEmpty { endGrab() }
+    }
+
+    /// A press on a window gives it the keys.
+    ///
+    /// Where the keys follow the first place, that means the large cell. The
+    /// window goes there when the button comes up and not now: in its new
+    /// cell it would no longer be under the pointer that holds it, and a
+    /// press that starts a move goes to the cell of the drop instead. Side
+    /// by side and in the grid, the window keeps its cell and gets the keys
+    /// at once.
+    private func pressed(on window: Window) {
+        if layoutKind.keysFollowFirstPlace {
+            if window !== windows.last { raiseOnRelease = window }
+            return
+        }
+        guard focusedWindow !== window else { return }
+        chosenFocus = window
+        arrange()
+        updateFocus()
+        screen.setNeedsFrame()
+    }
+
+    /// The last button came up. What the press started ends.
+    private func endGrab() {
+        let ended = grab
+        let raise = raiseOnRelease
+        grab = nil
+        raiseOnRelease = nil
+        server.pressEnded()
+        switch ended {
+        case .window(let window):
+            if raise === window, windows.contains(where: { $0 === window }) {
+                raiseWindow(window.id)
+                log("WINDOW-RAISED \"\(window.surface.toplevel?.title ?? "")\"")
+            }
+        case .move(let window, _):
+            drop(window)
+        case .resize(let window, _, _, _):
+            // The configure that follows has no resizing state, and it has
+            // the size that the edge stopped at.
+            arrange()
+            let size = window.frame.map { "\($0.width)x\($0.height)" } ?? "in the rail"
+            log("WINDOW-RESIZED \"\(window.surface.toplevel?.title ?? "")\" \(size)")
+        case .shell, nil:
+            break
+        }
+        routePointer()
+        screen.setNeedsFrame()
+    }
+
+    /// The window of a press, when this surface is that window and the
+    /// button is still down.
+    private func heldWindow(_ surface: Surface) -> Window? {
+        guard case .window(let window) = grab, window.surface === surface,
+              !buttonsDown.isEmpty else { return nil }
+        return window
+    }
+
+    /// An app asked to move its window (xdg_toplevel.move).
+    ///
+    /// No window floats, so the window does not stay where the pointer
+    /// leaves it. It follows the pointer while the button is down, and then
+    /// changes places with the window whose cell is under the pointer.
+    private func startMove(of surface: Surface) {
+        let title = surface.toplevel?.title ?? ""
+        guard let window = heldWindow(surface) else {
+            return log("WINDOW-MOVE-IGNORED \"\(title)\" no button holds it")
+        }
+        guard WindowMove.isPossible(in: layoutKind), window.frame != nil else {
+            return log("WINDOW-MOVE-REFUSED \"\(title)\" the layout has no other cell")
+        }
+        raiseOnRelease = nil
+        grab = .move(window, from: pointerPoints)
+        server.setPointerFocus(nil, at: (0, 0))
+        log("WINDOW-MOVE-START \"\(title)\"")
+        screen.setNeedsFrame()
+    }
+
+    /// The button came up at the end of a move.
+    private func drop(_ window: Window) {
+        let title = window.surface.toplevel?.title ?? ""
+        let front = frontFirst
+        guard let from = front.firstIndex(where: { $0 === window }) else { return }
+        // A stand-in holds a cell too, so a window can change places with a
+        // window that waits in the rail.
+        let cells = front.map { $0.cell ?? $0.reservation }
+        guard let target = WindowMove.target(at: pointerPoints, cells: cells, moving: from),
+              let a = windows.firstIndex(where: { $0 === window }),
+              let b = windows.firstIndex(where: { $0 === front[target] }) else {
+            return log("WINDOW-MOVE-DROPPED \"\(title)\" keeps its cell")
+        }
+        windows.swapAt(a, b)
+        chosenFocus = window
+        arrange()
+        updateFocus()
+        log("WINDOW-MOVED \"\(title)\" to the cell of"
+            + " \"\(front[target].surface.toplevel?.title ?? "")\"")
+    }
+
+    /// An app asked to change the size of its window from these edges
+    /// (xdg_toplevel.resize).
+    ///
+    /// The layout owns every size, so a resize moves only an edge that the
+    /// layout lets a person move. Every other resize is refused, and the app
+    /// keeps the pointer as if it had not asked.
+    private func startResize(of surface: Surface, edges: WindowEdges) {
+        let title = surface.toplevel?.title ?? ""
+        guard let window = heldWindow(surface) else {
+            return log("WINDOW-RESIZE-IGNORED \"\(title)\" no button holds it")
+        }
+        // The cells of the apps that are starting come first in the layout,
+        // so they count for the place of the window.
+        guard let place = frontFirst.firstIndex(where: { $0 === window }),
+              let cell = window.cell,
+              let resize = WindowResize.of(layout: layoutKind, index: launches.count + place,
+                                           placed: true,
+                                           edges: edges, canvas: canvas) else {
+            return log("WINDOW-RESIZE-REFUSED \"\(title)\" the layout owns that edge")
+        }
+        let start: Double
+        switch resize {
+        case .split:
+            start = SideBySide.firstWidth(split: split, in: canvas.width)
+        case .tileLength(let axis, _):
+            start = Double(axis == .vertical ? cell.height : cell.width)
+        }
+        raiseOnRelease = nil
+        grab = .resize(window, resize, from: pointerPoints, start: start)
+        server.setPointerFocus(nil, at: (0, 0))
+        log("WINDOW-RESIZE-START \"\(title)\" edges \(edges.rawValue)")
+        // The app hears at once that it is being resized.
+        arrange()
+        screen.setNeedsFrame()
+    }
+
+    /// The pointer moved during a resize. The edge follows it, and the
+    /// windows whose size changed are asked for the new one.
+    private func follow(_ resize: WindowResize, of window: Window,
+                        from: (x: Double, y: Double), start: Double,
+                        to point: (x: Double, y: Double)) {
+        switch resize {
+        case .split:
+            let moved = SideBySide.split(firstWidth: start + point.x - from.x, in: canvas.width)
+            guard moved != split else { return }
+            split = moved
+        case .tileLength(let axis, let sign):
+            let delta = axis == .vertical ? point.y - from.y : point.x - from.x
+            let length = WindowResize.tileLength(from: start, moved: delta, sign: sign)
+            guard length != window.preferredLength else { return }
+            window.preferredLength = length
+        }
+        arrange()
+        screen.setNeedsFrame()
     }
 }

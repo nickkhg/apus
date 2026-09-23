@@ -2,17 +2,23 @@
 
 ## Next steps for the compositor
 
-In this sequence:
+Apps have the pointer, and a window moves, changes its size and comes forward with a click. See [compositor.md](compositor.md#window-management) and [layouts.md](layouts.md#moving-and-resizing). Next, in this sequence:
 
-1. The pointer for apps. `wl_seat` has a keyboard already. Add `wl_pointer`, and send the events to the window under the pointer. The shell must keep the pointer when it is over the panel or the dock.
-2. Window management. A window that moves and that changes its size (`xdg_toplevel.move`, `xdg_toplevel.resize`), and a click that brings a window forward.
-3. Damage tracking. Draw only the parts of the screen that changed.
-4. Stop drawing when libseat disables the seat (for example on a VT switch), and start again when libseat enables it.
-5. A GPU renderer. Use GBM, EGL, and OpenGL ES to draw the display list. Keep `SoftwareRenderer` as a fallback.
-6. `linux-dmabuf`, so that apps can give GPU buffers.
-7. Popups (`xdg_popup` and `xdg_positioner`).
-8. Test with real Wayland apps, for example `foot` or `weston-terminal`. The clients that test the Swift Wayland server now are `apus-hello-client` and `apus-terminal`.
-9. `wl_registry.global_remove`, for globals that go away (for example a disconnected output).
+1. Damage tracking. Draw only the parts of the screen that changed.
+2. Stop drawing when libseat disables the seat (for example on a VT switch), and start again when libseat enables it.
+3. A GPU renderer. Use GBM, EGL, and OpenGL ES to draw the display list. Keep `SoftwareRenderer` as a fallback.
+4. `linux-dmabuf`, so that apps can give GPU buffers.
+5. Popups (`xdg_popup` and `xdg_positioner`).
+6. Test with real Wayland apps, for example `foot` or `weston-terminal`. The clients that test the Swift Wayland server now are `apus-hello-client` and `apus-terminal`. A real app is also the first test of a move and a resize from a title bar that someone else drew.
+7. `wl_registry.global_remove`, for globals that go away (for example a disconnected output).
+8. What window management does not have yet:
+
+   - The head that the shell draws has no bar to drag and no edge to pull. An app that draws no title bar of its own, such as the terminal, can therefore not be moved with the pointer. The head could start the same move and the same resize.
+   - A move shows no mark on the cell that the window will take.
+   - `xdg_toplevel.wm_capabilities` (version 5). It would tell an app that there is no maximize, no minimize and no window menu, so that it hides those buttons.
+   - The `tiled_left` to `tiled_bottom` states (version 2). A cell is a tile more than it is a maximized window, and an app draws square corners and no shadow for a tiled edge.
+   - `wl_pointer.set_cursor`. The compositor always draws its own arrow, also over an edge that resizes.
+   - The VM test resizes the edge between two windows side by side, and not the length of a tile. The unit tests hold the rule for a tile.
 
 ## The toolkit and the shell
 
@@ -23,7 +29,7 @@ The toolkit draws the rail and Summon, with `@State`, shapes, clipping and the p
 3. A pointer position in a handler, and a drag.
 4. More of the second mode. The shadow, the blur and the gradient are in the display list now, and both renderers draw all three. See [toolkit.md](toolkit.md#the-two-modes). Three things remain:
 
-   - A blur reads the screen back. With damage tracking (item 3 of the compositor list) it could read only the part that changed.
+   - A blur reads the screen back. With damage tracking (item 1 of the compositor list) it could read only the part that changed.
    - The GPU blur is 17 steps in each direction. A smaller copy of the screen would give the same picture for less work.
    - The compositor does not tell an app which mode the screen is in. An app therefore reads `cpu` from `\.renderMode` and asks for no blur of its own. A `wl_output` value or a value in the bundle could carry it.
    - CPU mode asks for none of the three. A slow machine in GPU mode has no way to say "the shadows only", and `Appearance` has no middle mode.
